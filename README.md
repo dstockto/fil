@@ -12,7 +12,7 @@ Found 1 spools matching 'muted red':
  - AMS A - #20 PolyTerra™ Muted Red (Matte PLA #DB3E14) - 891.7g remaining, last used 1 hours ago
 ```
 You can provide a partial match, and you can specify multiple partial matches. Each individual partial match will be 
-handled separately.  
+handled separately. 
 
 > $fil f 'marble' 'blue' 'muted green'
 ```aiignore
@@ -92,3 +92,9 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 Ideas:
 
 - Show spools that are in AMS's
+- Allow matching all spools with '*' ?
+- Allow filtering by manufacturer (partial match?)
+- Filtering by filament type (partial match?)
+- Allow filtering by location (with some special stuff for "All AMS")
+- Allow changing of position within a location???? (to line up where stuff is in the AMS)
+

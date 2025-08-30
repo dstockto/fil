@@ -11,6 +11,8 @@ import (
 	"github.com/dstockto/fil/models"
 )
 
+var NotFoundError = fmt.Errorf("no spool found")
+
 type Client struct {
 	base       string // base API endpoint
 	httpClient http.Client
@@ -20,7 +22,7 @@ type SpoolFilter func(models.FindSpool) bool
 
 func (c Client) FindSpoolsByName(name string, filter SpoolFilter) ([]models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/spool"
-	sort := "remaining_weight:asc,filament.name:asc,id:desc"
+	sort := "location:asc,remaining_weight:asc,filament.name:asc,id:desc"
 	trimmedName := strings.TrimSpace(name)
 
 	u, err := url.Parse(endpoint)
@@ -69,6 +71,47 @@ func (c Client) filterSpools(spools []models.FindSpool, filter SpoolFilter) []mo
 	}
 	spools = filtered
 	return spools
+}
+
+func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
+	endpoint := c.base + "/api/v1/spool/%d"
+	endpoint = fmt.Sprintf(endpoint, id)
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(&http.Request{
+		Method: http.MethodGet,
+		URL:    u,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("failed to close response body: %v\n", closeErr)
+		}
+	}()
+
+	if resp.StatusCode == http.StatusNotFound {
+		// No spools found, but don't return an error
+		return nil, NotFoundError
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var out models.FindSpool
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &out, nil
 }
 
 func NewClient(base string) *Client {

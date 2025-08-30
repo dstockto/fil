@@ -4,7 +4,9 @@ Copyright © 2025 David Stockton <dave@davidstockton.com>
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dstockto/fil/api"
@@ -28,16 +30,44 @@ func runFind(_ *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
-
+	var spools []models.FindSpool
 	// Allow additional filters later, for now, just default to 1.75mm filament
 	filter := onlyStandardFilament
 
 	for _, a := range args {
-		spools, err := apiClient.FindSpoolsByName(a, filter)
-		if err != nil {
-			return fmt.Errorf("error finding spools: %v", err)
+		foundFmt := "Found %d spools matching '%s':\n"
+		spools = nil
+		name := a
+		// figure out if argument is an id (int)
+		id, err := strconv.Atoi(a)
+		if err == nil {
+			name = "#" + name
+			foundFmt = "Found %d spool with ID %s:\n"
+			spool, err := apiClient.FindSpoolsById(id)
+			if errors.Is(err, api.NotFoundError) {
+				spools = []models.FindSpool{}
+			} else if err != nil {
+				return fmt.Errorf("error finding spools: %v", err)
+			} else {
+				spools = []models.FindSpool{*spool}
+			}
+		} else {
+			spools, err = apiClient.FindSpoolsByName(a, filter)
+			if err != nil {
+				return fmt.Errorf("error finding spools: %v", err)
+			}
 		}
-		fmt.Printf("Found %d spools matching '%s':\n", len(spools), a)
+
+		foundMsg := fmt.Sprintf(foundFmt, len(spools), name)
+		if len(spools) == 0 {
+			// print in red
+			fmt.Printf("\033[31m%s\033[0m\n", foundMsg)
+			return nil
+		} else {
+			// print in green
+			fmt.Printf("\033[32m%s\033[0m\n", foundMsg)
+			//fmt.Printf(foundFmt, len(spools), name)
+		}
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", getSpoolFormattedForFind(s))
 		}
@@ -48,8 +78,22 @@ func runFind(_ *cobra.Command, args []string) error {
 }
 
 func getSpoolFormattedForFind(s models.FindSpool) string {
-	//  - AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago
-	format := "%s - #%d %s (%s #%s) - %.1fg remaining, last used %s"
+	//  - AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago (archived)
+	archived := ""
+	if s.Archived {
+		archived = " (archived)"
+	}
+	colorBlock := ""
+	if s.Filament.ColorHex != "" {
+		r, g, b := convertFromHex(s.Filament.ColorHex)
+		blockChars := "████"
+		if len(s.Filament.ColorHex) > 6 {
+			blockChars = "▓▓▓▓"
+		}
+		colorBlock = fmt.Sprintf(" \x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+	}
+
+	format := "%s%s - #%d %s (%s%s) - %.1fg remaining, last used %s%s"
 	var lastUsedDuration string
 	if s.LastUsed.IsZero() {
 		lastUsedDuration = "never"
@@ -68,7 +112,19 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 		}
 
 	}
-	return fmt.Sprintf(format, s.Location, s.Id, s.Filament.Name, s.Filament.Material, s.Filament.ColorHex, s.RemainingWeight, lastUsedDuration)
+	colorHex := ""
+	if s.Filament.ColorHex != "" {
+		colorHex = " #" + s.Filament.ColorHex
+	}
+	return fmt.Sprintf(format, colorBlock, s.Location, s.Id, s.Filament.Name, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
+}
+
+func convertFromHex(hex string) (int, int, int) {
+	// convert the hex color like 45FFE0 to rgb integers
+	r, _ := strconv.ParseInt(hex[0:2], 16, 32)
+	g, _ := strconv.ParseInt(hex[2:4], 16, 32)
+	b, _ := strconv.ParseInt(hex[4:6], 16, 32)
+	return int(r), int(g), int(b)
 }
 
 func init() {
