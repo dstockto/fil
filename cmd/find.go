@@ -90,10 +90,15 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 		if len(s.Filament.ColorHex) > 6 {
 			blockChars = "▓▓▓▓"
 		}
-		colorBlock = fmt.Sprintf(" \x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+		colorBlock = fmt.Sprintf("\x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+	}
+	// Default to not showing the diameter if it's 1.75
+	diameter := ""
+	if s.Filament.Diameter != 1.75 {
+		diameter = fmt.Sprintf(" \x1b[38;2;200;128;0m(%.2fmm)\x1b[0m", s.Filament.Diameter)
 	}
 
-	format := "%s%s - #%d %s (%s%s) - %.1fg remaining, last used %s%s"
+	format := "%s%s - #%d %s%s (%s%s) - %.1fg remaining, last used %s%s"
 	var lastUsedDuration string
 	if s.LastUsed.IsZero() {
 		lastUsedDuration = "never"
@@ -116,7 +121,7 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 	if s.Filament.ColorHex != "" {
 		colorHex = " #" + s.Filament.ColorHex
 	}
-	return fmt.Sprintf(format, colorBlock, s.Location, s.Id, s.Filament.Name, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
+	return fmt.Sprintf(format, colorBlock, s.Location, s.Id, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
 }
 
 func convertFromHex(hex string) (int, int, int) {
@@ -143,4 +148,8 @@ func init() {
 
 func onlyStandardFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 1.75
+}
+
+func noFilter(_ models.FindSpool) bool {
+	return true
 }

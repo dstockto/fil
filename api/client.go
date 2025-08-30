@@ -31,7 +31,12 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter) ([]models.Find
 	}
 	q := u.Query()
 	q.Set("sort", sort)
-	q.Set("filament.name", trimmedName)
+	q.Set("limit", "1000")
+
+	// Only filter by name if it's not a wildcard
+	if trimmedName != "*" {
+		q.Set("filament.name", trimmedName)
+	}
 	u.RawQuery = q.Encode()
 
 	resp, err := c.httpClient.Get(u.String())

@@ -41,8 +41,14 @@ Found 2 spools matching 'muted green':
 If you know the ID of the spool, you can provide it to get that single spool:
 > $fil f 42
 ```aiignore
+Found 1 spool with ID #42:
 
+ - ████ Shelf 1A - #42 Black (2.85mm) (PLA #060505) - 500.0g remaining, last used never
 ```
+
+You can specify a name of '*' (with the quotes) to return all spools.
+> $fil f '*'
+
 
 Other options (ideas, not implemented):
 -a - include archived filaments
@@ -91,10 +97,10 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 
 Ideas:
 
-- Show spools that are in AMS's
 - Allow matching all spools with '*' ?
+- Show spools that are in AMS's
 - Allow filtering by manufacturer (partial match?)
 - Filtering by filament type (partial match?)
 - Allow filtering by location (with some special stuff for "All AMS")
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
-
+- Handle multi-color filaments (maybe?)
