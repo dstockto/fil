@@ -26,6 +26,7 @@ import (
 type Config struct {
 	Database        string            `json:"database"`
 	LocationAliases map[string]string `json:"location_aliases"`
+	ApiBase         string            `json:"api_base"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands

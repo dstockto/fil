@@ -1,5 +1,6 @@
 {
   "database": "spoolman.db",
+  "api_base": "http://localhost:7912",
   "location_aliases": {
     "A": "AMS A",
     "B": "AMS B",
@@ -30,6 +31,6 @@
     "TS": "Top Shelf",
     "DRY": "Polydryers",
     "POLY": "Polydryers",
-    "ULT": "Ultimaker",
+    "ULT": "Ultimaker"
   }
 }
