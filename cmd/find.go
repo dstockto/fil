@@ -53,6 +53,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 	if manufacturer, err := cmd.Flags().GetString("manufacturer"); err == nil && manufacturer != "" {
 		query["manufacturer"] = manufacturer
 	}
+	if allowedArchived, err := cmd.Flags().GetBool("allowed-archived"); err == nil && allowedArchived {
+		query["allow_archived"] = "true"
+	}
+	if onlyArchived, err := cmd.Flags().GetBool("archived-only"); err == nil && onlyArchived {
+		query["allow_archived"] = "true"        // allow archived is needed to get archived spools from the API
+		filters = append(filters, archivedOnly) // the API doesn't support only returning archived spools, so we have to filter manually
+	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
 	aggFilter := aggregateFilter(filters...)
@@ -101,7 +108,7 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 	//  - AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago (archived)
 	archived := ""
 	if s.Archived {
-		archived = " (archived)"
+		archived = " \x1b[38;2;200;0;0m(archived)\x1b[0m"
 	}
 	colorBlock := ""
 	if s.Filament.ColorHex != "" {
@@ -166,6 +173,8 @@ func init() {
 
 	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, * for all")
 	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
+	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
+	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
 }
 
 // onlyStandardFilament returns true if the spool is 1.75 mm filament
@@ -181,6 +190,11 @@ func noFilter(_ models.FindSpool) bool {
 // ultimakerFilament returns true if the spool is Ultimaker filament (2.85mm)
 func ultimakerFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 2.85
+}
+
+// onlyArchived returns true if the spool is archived
+func archivedOnly(spool models.FindSpool) bool {
+	return spool.Archived
 }
 
 // aggregateFilter returns a function that returns true if all given filters return true

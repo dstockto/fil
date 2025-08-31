@@ -34,8 +34,13 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[stri
 	q.Set("limit", "1000")
 
 	for k, v := range query {
-		if k == "manufacturer" {
+		switch k {
+		case "manufacturer":
 			q.Set("filament.vendor.name", v)
+		case "allow_archived":
+			q.Set("allow_archived", "true")
+		default:
+			fmt.Printf("unknown query param: %s\n", k)
 		}
 	}
 

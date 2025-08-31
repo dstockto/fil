@@ -14,7 +14,7 @@ Found 1 spools matching 'muted red':
 You can provide a partial match, and you can specify multiple partial matches. Each individual partial match will be 
 handled separately. 
 
-> $fil f 'marble' 'blue' 'muted green'
+> $ fil f 'marble' 'blue' 'muted green'
 ```aiignore
 Found 2 spools matching 'marble':
  - Shelf 7C - #16 Marble Brick (Marble PLA #c65454) - 966.9g remaining, last used 61 days ago
@@ -39,7 +39,7 @@ Found 2 spools matching 'muted green':
 ```
 
 If you know the ID of the spool, you can provide it to get that single spool:
-> $fil f 42
+> $ fil f 42
 ```aiignore
 Found 1 spool with ID #42:
 
@@ -47,11 +47,11 @@ Found 1 spool with ID #42:
 ```
 
 You can specify a name of '*' (with the quotes) to return all spools.
-> $fil f '*'
+> $ fil f '*'
 
 You may filter based on the filament manufacturer (partial matches) with the -m / --manufacturer flag. The manufacturer
 is case insensitive and will apply to all name matches. The -m will not apply to ID matches.
-> $fil f -m 'poly' 'red' 'blue'
+> $ fil f -m 'poly' 'red' 'blue'
 ```aiignore
 Found 5 spools matching 'red':
 
@@ -75,17 +75,36 @@ Found 8 spools matching 'blue':
 
 By default only 1.75mm filament is returned. You can specify a different diameter with the -d option. If you specify a
 diameter that is not '2.85' or '*' then it will use '1.75' as the default.
-> $fil f 'marble' -d 2.85
+> $ fil f 'marble' -d 2.85
 ```aiignore
 Found 1 spools matching 'marble':
 
  - ████ Polydryers - #49 Parthenon Gray (Marble) (2.85mm) (PLA PRO #898181) - 1000.0g remaining, last used never
 ```
-> $fil f '*' -d '*'
+> $ fil f '*' -d '*'
 ```aiignore
 Returns all filament, regardless of diameter.
 ```
 
+You can include archived spools with the -a / --archived flag.
+> $ fil f 'charcoal' -a
+```aiignore
+Found 4 spools matching 'charcoal':
+
+ - ████ AMS A - #36 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 726.4g remaining, last used 6 hours ago
+ - ████ AMS B - #123 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 0.0g remaining, last used 27 days ago (archived)
+ - ████ Shelf 4A - #126 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 1000.0g remaining, last used never
+ - ████ Top Shelf - #6 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 0.0g remaining, last used 56 days ago (archived)
+```
+
+If you want to see only archived spools, you can use the --archived-only flag.
+> $ fil f 'charcoal' --archived-only
+```aiignore
+Found 2 spools matching 'charcoal':
+
+ - ████ AMS B - #123 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 0.0g remaining, last used 27 days ago (archived)
+ - ████ Top Shelf - #6 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 0.0g remaining, last used 56 days ago (archived)
+```
 
 ---
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
@@ -130,9 +149,7 @@ Find options:
 - Filtering by filament type (partial match?)
 - Allow filtering by location (with some special stuff for "All AMS")
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
-- Handle multi-color filaments (maybe?)
   Other options (ideas, not implemented):
-  -a - include archived filaments
   --archived-only - only show archived spools
   -c / --comment = <string> - find spools based on comment (or that have a comment)? - how to do with requiring an argument?
   -f / --filament-id = <digits> - find spools based on filament id (figure out with args?)
