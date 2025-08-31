@@ -134,6 +134,20 @@ Found 3 spools matching 'white':
  - ████ Shelf 4B - #129 White (PLA #C7CDD7) - 936.2g remaining, last used 38 days ago
 ```
 
+To filter spools that have not been used, use the -p / --pristine flag. The -p will not apply to ID matches.
+> $ fil f 'white' -p
+```aiignore
+Found 8 spools matching 'white':
+
+ - ████ Shelf 1C - #130 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+ - ████ Shelf 1D - #131 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+ - ████ Shelf 2C - #78 Bone White (PLA+ #c2b9af) - 1000.0g remaining, last used never
+ - ████ Shelf 2C - #79 PLA-Matte MILKY WHITE (PLA #dfdbd8) - 1000.0g remaining, last used never
+ - ████ Shelf 2D - #132 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+ - ████ Shelf 5A - #118 PolyTerra™ Muted White (Matte PLA #AFA198) - 1000.0g remaining, last used never
+ - ████ Shelf 5A - #117 PolyTerra™ Muted White (Matte PLA #AFA198) - 1000.0g remaining, last used never
+ - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+```
 
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
 > $ fil m 20 A - (A could be an alias for AMS A)
@@ -173,15 +187,13 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 Ideas:
 
 Find options:
+- Allow filtering by location (with some special stuff for "All AMS")
 - Show spools that are in AMS's
 - Filtering by filament type (partial match?)
-- Allow filtering by location (with some special stuff for "All AMS")
 
 Move options:
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
   Other options (ideas, not implemented):
-- -u / --used - used only? - only show used spools?
-- -p / --pristine - only show unused?
 - -l / --location - show spools by location (with some special stuff for "All AMS")
 - -v / --verbose - show more info about a spool or spools (like info command)
 - -t / --template - allow customizable templates for output
