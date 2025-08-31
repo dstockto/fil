@@ -37,6 +37,7 @@ type FindSpool struct {
 	RemainingLength float64 `json:"remaining_length"`
 	UsedLength      float64 `json:"used_length"`
 	Location        string  `json:"location"`
+	Comment         string  `json:"comment"`
 	Archived        bool    `json:"archived"`
 	Extra           struct {
 	} `json:"extra"`

@@ -17,9 +17,10 @@ import (
 
 // findCmd represents the find command
 var findCmd = &cobra.Command{
-	Use:     "find",
-	Short:   "find a spool based on name or id",
-	Long:    `find a spool based on name or id`,
+	Use:   "find <name or id...>",
+	Short: "find a spool based on name or id",
+	Long: `Find a spool based on name or id. You can provide multiple names or ids. For multi-word names, enclose in quotes.
+	To show all spools, use the wildcard character '*'.`,
 	RunE:    runFind,
 	Aliases: []string{"f"},
 	Args:    cobra.MinimumNArgs(1),
@@ -59,6 +60,12 @@ func runFind(cmd *cobra.Command, args []string) error {
 	if onlyArchived, err := cmd.Flags().GetBool("archived-only"); err == nil && onlyArchived {
 		query["allow_archived"] = "true"        // allow archived is needed to get archived spools from the API
 		filters = append(filters, archivedOnly) // the API doesn't support only returning archived spools, so we have to filter manually
+	}
+	if hasComment, err := cmd.Flags().GetBool("has-comment"); err == nil && hasComment {
+		filters = append(filters, getCommentFilter("*"))
+	}
+	if comment, err := cmd.Flags().GetString("comment"); err == nil && comment != "" {
+		filters = append(filters, getCommentFilter(comment))
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -157,7 +164,9 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 	if s.Filament.ColorHex != "" {
 		colorHex = " #" + s.Filament.ColorHex
 	}
-	return fmt.Sprintf(format, colorBlock, s.Location, s.Id, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
+	location := fmt.Sprintf("\033[1m%s\033[0m", s.Location)
+
+	return fmt.Sprintf(format, colorBlock, location, s.Id, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
 }
 
 func convertFromHex(hex string) (int, int, int) {
@@ -171,10 +180,12 @@ func convertFromHex(hex string) (int, int, int) {
 func init() {
 	rootCmd.AddCommand(findCmd)
 
-	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, * for all")
+	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
 	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
 	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
 	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
+	findCmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
+	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
 }
 
 // onlyStandardFilament returns true if the spool is 1.75 mm filament
@@ -195,6 +206,19 @@ func ultimakerFilament(spool models.FindSpool) bool {
 // onlyArchived returns true if the spool is archived
 func archivedOnly(spool models.FindSpool) bool {
 	return spool.Archived
+}
+
+func getCommentFilter(comment string) api.SpoolFilter {
+	if comment == "*" {
+		return func(spool models.FindSpool) bool {
+			return spool.Comment != ""
+		}
+	}
+
+	lowerComment := strings.ToLower(comment)
+	return func(s models.FindSpool) bool {
+		return strings.Contains(strings.ToLower(s.Comment), lowerComment)
+	}
 }
 
 // aggregateFilter returns a function that returns true if all given filters return true

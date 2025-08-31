@@ -106,7 +106,25 @@ Found 2 spools matching 'charcoal':
  - ████ Top Shelf - #6 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 0.0g remaining, last used 56 days ago (archived)
 ```
 
+To filter spools that have a comment, use the -c / --comment flag. The -c will not apply to ID matches. It will match 
+on the comment, not the name.
+> $ fil f '*' -c bad
+```aiignore
+Found 1 spools matching '*':
+
+ - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+ ```
 ---
+
+If you don't care about the content of the comment, you can use the --has-comment flag.
+> $ fil f '*' --has-comment
+```aiignore
+Found 1 spools matching '*':
+
+ - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
+```
+
+
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
 > $ fil m 20 A - (A could be an alias for AMS A)
 ```
@@ -148,16 +166,13 @@ Find options:
 - Show spools that are in AMS's
 - Filtering by filament type (partial match?)
 - Allow filtering by location (with some special stuff for "All AMS")
+
+Move options:
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
   Other options (ideas, not implemented):
-  --archived-only - only show archived spools
-  -c / --comment = <string> - find spools based on comment (or that have a comment)? - how to do with requiring an argument?
-  -f / --filament-id = <digits> - find spools based on filament id (figure out with args?)
-  -u / --used - used only? - only show used spools?
-  -p / --pristine - only show unused?
+- -u / --used - used only? - only show used spools?
+- -p / --pristine - only show unused?
 - -l / --location - show spools by location (with some special stuff for "All AMS")
-- -m / --manufacturer - filter by manufacturer (partial match?)
-- -s / --sort - sort by filament type (partial match?) ???
 - -v / --verbose - show more info about a spool or spools (like info command)
-- -d / --diameter - show spools by diameter (2.85mm, 1.75mm, or all)
-- allow for matches on 2.85mm filament (1.75mm is default) (-d option?)
+- -t / --template - allow customizable templates for output
+- allow customizable templates for output

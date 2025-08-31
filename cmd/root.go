@@ -131,5 +131,5 @@ func exists(path string) bool {
 
 func init() {
 	// Global config flag for all commands
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "path to config file (config.json)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to config file (config.json)")
 }
