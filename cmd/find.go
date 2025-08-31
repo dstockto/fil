@@ -24,27 +24,48 @@ var findCmd = &cobra.Command{
 	Args:    cobra.MinimumNArgs(1),
 }
 
-func runFind(_ *cobra.Command, args []string) error {
+func runFind(cmd *cobra.Command, args []string) error {
 	if Cfg == nil || Cfg.ApiBase == "" {
 		return fmt.Errorf("apiClient endpoint not configured")
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
 	var spools []models.FindSpool
+	var filters []api.SpoolFilter
+
+	// API doesn't support diameter, so we have to filter manually
+	diameter, err := cmd.Flags().GetString("diameter")
+	if err != nil {
+		return fmt.Errorf("failed to get diameter flag: %w", err)
+	}
+	switch diameter {
+	case "*":
+		filters = append(filters, noFilter)
+	case "2.85":
+		filters = append(filters, ultimakerFilament)
+	default:
+		filters = append(filters, onlyStandardFilament)
+	}
+
+	query := make(map[string]string)
+
+	if manufacturer, err := cmd.Flags().GetString("manufacturer"); err == nil && manufacturer != "" {
+		query["manufacturer"] = manufacturer
+	}
+
 	// Allow additional filters later, for now, just default to 1.75mm filament
-	filter := onlyStandardFilament
+	aggFilter := aggregateFilter(filters...)
 
 	for _, a := range args {
 		foundFmt := "Found %d spools matching '%s':\n"
-		spools = nil
 		name := a
-		// figure out if argument is an id (int)
+		// figure out if the argument is an id (int)
 		id, err := strconv.Atoi(a)
 		if err == nil {
 			name = "#" + name
 			foundFmt = "Found %d spool with ID %s:\n"
 			spool, err := apiClient.FindSpoolsById(id)
-			if errors.Is(err, api.NotFoundError) {
+			if errors.Is(err, api.ErrSpoolNotFound) {
 				spools = []models.FindSpool{}
 			} else if err != nil {
 				return fmt.Errorf("error finding spools: %v", err)
@@ -52,7 +73,7 @@ func runFind(_ *cobra.Command, args []string) error {
 				spools = []models.FindSpool{*spool}
 			}
 		} else {
-			spools, err = apiClient.FindSpoolsByName(a, filter)
+			spools, err = apiClient.FindSpoolsByName(a, aggFilter, query)
 			if err != nil {
 				return fmt.Errorf("error finding spools: %v", err)
 			}
@@ -62,11 +83,9 @@ func runFind(_ *cobra.Command, args []string) error {
 		if len(spools) == 0 {
 			// print in red
 			fmt.Printf("\033[31m%s\033[0m\n", foundMsg)
-			return nil
 		} else {
 			// print in green
 			fmt.Printf("\033[32m%s\033[0m\n", foundMsg)
-			//fmt.Printf(foundFmt, len(spools), name)
 		}
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", getSpoolFormattedForFind(s))
@@ -126,30 +145,42 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 
 func convertFromHex(hex string) (int, int, int) {
 	// convert the hex color like 45FFE0 to rgb integers
-	r, _ := strconv.ParseInt(hex[0:2], 16, 32)
-	g, _ := strconv.ParseInt(hex[2:4], 16, 32)
-	b, _ := strconv.ParseInt(hex[4:6], 16, 32)
+	r, _ := strconv.ParseInt(hex[0:2], 16, 8)
+	g, _ := strconv.ParseInt(hex[2:4], 16, 8)
+	b, _ := strconv.ParseInt(hex[4:6], 16, 8)
 	return int(r), int(g), int(b)
 }
 
 func init() {
 	rootCmd.AddCommand(findCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// findCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// findCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, * for all")
+	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
 }
 
+// onlyStandardFilament returns true if the spool is 1.75 mm filament
 func onlyStandardFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 1.75
 }
 
+// noFilter returns true for all spools
 func noFilter(_ models.FindSpool) bool {
 	return true
+}
+
+// ultimakerFilament returns true if the spool is Ultimaker filament (2.85mm)
+func ultimakerFilament(spool models.FindSpool) bool {
+	return spool.Filament.Diameter == 2.85
+}
+
+// aggregateFilter returns a function that returns true if all given filters return true
+func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
+	return func(s models.FindSpool) bool {
+		for _, f := range filters {
+			if !f(s) {
+				return false
+			}
+		}
+		return true
+	}
 }

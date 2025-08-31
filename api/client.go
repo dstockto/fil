@@ -11,7 +11,7 @@ import (
 	"github.com/dstockto/fil/models"
 )
 
-var NotFoundError = fmt.Errorf("no spool found")
+var ErrSpoolNotFound = fmt.Errorf("no spool found")
 
 type Client struct {
 	base       string // base API endpoint
@@ -20,7 +20,7 @@ type Client struct {
 
 type SpoolFilter func(models.FindSpool) bool
 
-func (c Client) FindSpoolsByName(name string, filter SpoolFilter) ([]models.FindSpool, error) {
+func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/spool"
 	sort := "location:asc,remaining_weight:asc,filament.name:asc,id:desc"
 	trimmedName := strings.TrimSpace(name)
@@ -32,6 +32,12 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter) ([]models.Find
 	q := u.Query()
 	q.Set("sort", sort)
 	q.Set("limit", "1000")
+
+	for k, v := range query {
+		if k == "manufacturer" {
+			q.Set("filament.vendor.name", v)
+		}
+	}
 
 	// Only filter by name if it's not a wildcard
 	if trimmedName != "*" {
@@ -103,7 +109,7 @@ func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No spools found, but don't return an error
-		return nil, NotFoundError
+		return nil, ErrSpoolNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)

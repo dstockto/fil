@@ -49,15 +49,43 @@ Found 1 spool with ID #42:
 You can specify a name of '*' (with the quotes) to return all spools.
 > $fil f '*'
 
+You may filter based on the filament manufacturer (partial matches) with the -m / --manufacturer flag. The manufacturer
+is case insensitive and will apply to all name matches. The -m will not apply to ID matches.
+> $fil f -m 'poly' 'red' 'blue'
+```aiignore
+Found 5 spools matching 'red':
 
-Other options (ideas, not implemented):
--a - include archived filaments
---archived-only - only show archived spools
--c / --comment = <string> - find spools based on comment (or that have a comment)? - how to do with requiring an argument?
--f / --filament-id = <digits> - find spools based on filament id (figure out with args?)
--u / --used - used only? - only show used spools?
--p / --pristine - only show unused?
-- allow for matches on 2.85mm filament (1.75mm is default) (-d option?)
+ - ████ AMS A - #20 PolyTerra™ Muted Red (Matte PLA #DB3E14) - 880.1g remaining, last used 5 hours ago
+ - ████ Shelf 5B - #37 PolyTerra™ Army Red (Matte PLA #bf312e) - 413.3g remaining, last used 8 days ago
+ - ████ Shelf 6B - #12 PolyTerra™ Lava Red (Matte PLA #DE1619) - 971.6g remaining, last used 14 days ago
+ - ████ Shelf 6C - #139 Polylite PLA Pro Metallic Red (PLA Pro #c92626) - 991.6g remaining, last used 26 days ago
+ - ████ Shelf 7A - #154 PolyTerra™ Army Red (Matte PLA #bf312e) - 1000.0g remaining, last used never
+
+Found 8 spools matching 'blue':
+
+ - ████ AMS B - #124 PolyTerra™ Sapphire Blue (Matte PLA #005aa2) - 890.7g remaining, last used 7 days ago
+ - ████ AMS C - #145 PolyTerra™ Army Blue (Matte PLA #062B4D) - 787.3g remaining, last used 7 days ago
+ - ████ Shelf 2C - #74 PanChroma™ Matte Sky Blue (Matte PLA #1ac5fc) - 787.6g remaining, last used 27 days ago
+ - ████ Shelf 5B - #136 Panchroma Silk Blue (PLA Silk #3609e9) - 1000.0g remaining, last used never
+ - ████ Shelf 6A - #90 PolyTerra™ Muted Blue (Matte PLA #4E6A84) - 276.1g remaining, last used 35 days ago
+ - ████ Shelf 6B - #31 PolyTerra™ PLA+ Blue (Matte PLA #342de7) - 1000.0g remaining, last used never
+ - ████ Shelf 7A - #14 PolyTerra™ Muted Blue (Matte PLA #4E6A84) - 1000.0g remaining, last used never
+ - ████ Shelf 7C - #143 Polylite PLA Pro Metallic Blue (PLA Pro #2c3449) - 1000.0g remaining, last used never
+```
+
+By default only 1.75mm filament is returned. You can specify a different diameter with the -d option. If you specify a
+diameter that is not '2.85' or '*' then it will use '1.75' as the default.
+> $fil f 'marble' -d 2.85
+```aiignore
+Found 1 spools matching 'marble':
+
+ - ████ Polydryers - #49 Parthenon Gray (Marble) (2.85mm) (PLA PRO #898181) - 1000.0g remaining, last used never
+```
+> $fil f '*' -d '*'
+```aiignore
+Returns all filament, regardless of diameter.
+```
+
 
 ---
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
@@ -97,10 +125,16 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 
 Ideas:
 
-- Allow matching all spools with '*' ?
 - Show spools that are in AMS's
-- Allow filtering by manufacturer (partial match?)
 - Filtering by filament type (partial match?)
 - Allow filtering by location (with some special stuff for "All AMS")
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
 - Handle multi-color filaments (maybe?)
+  Other options (ideas, not implemented):
+  -a - include archived filaments
+  --archived-only - only show archived spools
+  -c / --comment = <string> - find spools based on comment (or that have a comment)? - how to do with requiring an argument?
+  -f / --filament-id = <digits> - find spools based on filament id (figure out with args?)
+  -u / --used - used only? - only show used spools?
+  -p / --pristine - only show unused?
+- allow for matches on 2.85mm filament (1.75mm is default) (-d option?)
