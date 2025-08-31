@@ -77,6 +77,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 			return s.UsedWeight == 0.0
 		})
 	}
+	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
+		query["location"] = location
+	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
 	aggFilter := aggregateFilter(filters...)
@@ -198,6 +201,7 @@ func init() {
 	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
 	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
 	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
+	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
 }
 
 // onlyStandardFilament returns true if the spool is 1.75 mm filament

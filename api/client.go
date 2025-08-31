@@ -39,6 +39,8 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[stri
 			q.Set("filament.vendor.name", v)
 		case "allow_archived":
 			q.Set("allow_archived", "true")
+		case "location":
+			q.Set("location", v)
 		default:
 			fmt.Printf("unknown query param: %s\n", k)
 		}

@@ -149,6 +149,23 @@ Found 8 spools matching 'white':
  - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
 ```
 
+You can filter by the location of the spool using the -l / --location flag. The -l will not apply to ID matches. The 
+location can be a partial case-insensitive match. Use 'ams' to find all spools in AMS.
+> $ fil f '*' -l 6b
+```aiignore
+Found 7 spools matching '*':
+
+ - ████ Shelf 6B - #23 PolyTerra™ Electric Indigo (Matte PLA #9917e4) - 178.0g remaining, last used 6 days ago
+ - ████ Shelf 6B - #1 PolyTerra™ Muted Green (Matte PLA #656D60) - 200.3g remaining, last used 15 days ago
+ - ████ Shelf 6B - #19 PolyTerra™ Forest Green (Matte PLA #519F61) - 316.3g remaining, last used 7 days ago
+ - ████ Shelf 6B - #12 PolyTerra™ Lava Red (Matte PLA #DE1619) - 971.6g remaining, last used 15 days ago
+ - ████ Shelf 6B - #86 Panchroma™ Matte (Formerly PolyTerra™) Lime Green (PLA #d0e740) - 1000.0g remaining, last used never
+ - ████ Shelf 6B - #32 PolyLite™ Silk Bronze (Matte PLA #a9470a) - 1000.0g remaining, last used never
+ - ████ Shelf 6B - #31 PolyTerra™ PLA+ Blue (Matte PLA #342de7) - 1000.0g remaining, last used never
+```
+
+---
+
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
 > $ fil m 20 A - (A could be an alias for AMS A)
 ```
@@ -187,14 +204,15 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 Ideas:
 
 Find options:
-- Allow filtering by location (with some special stuff for "All AMS")
-- Show spools that are in AMS's
+- Show spools that are in AMS's (in the right order)
 - Filtering by filament type (partial match?)
 
 Move options:
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)
   Other options (ideas, not implemented):
-- -l / --location - show spools by location (with some special stuff for "All AMS")
 - -v / --verbose - show more info about a spool or spools (like info command)
 - -t / --template - allow customizable templates for output
 - allow customizable templates for output
+
+Other uses for this tool:
+- Figure out what filaments are running low and show them
