@@ -125,6 +125,7 @@ Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
 
 Ideas:
 
+Find options:
 - Show spools that are in AMS's
 - Filtering by filament type (partial match?)
 - Allow filtering by location (with some special stuff for "All AMS")
@@ -137,4 +138,9 @@ Ideas:
   -f / --filament-id = <digits> - find spools based on filament id (figure out with args?)
   -u / --used - used only? - only show used spools?
   -p / --pristine - only show unused?
+- -l / --location - show spools by location (with some special stuff for "All AMS")
+- -m / --manufacturer - filter by manufacturer (partial match?)
+- -s / --sort - sort by filament type (partial match?) ???
+- -v / --verbose - show more info about a spool or spools (like info command)
+- -d / --diameter - show spools by diameter (2.85mm, 1.75mm, or all)
 - allow for matches on 2.85mm filament (1.75mm is default) (-d option?)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dstockto/fil/api"
@@ -110,6 +111,15 @@ func getSpoolFormattedForFind(s models.FindSpool) string {
 			blockChars = "▓▓▓▓"
 		}
 		colorBlock = fmt.Sprintf("\x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+	}
+	if s.Filament.MultiColorHexes != "" {
+		// multicolor is represented by comma-separated hex values
+		colors := strings.SplitN(s.Filament.MultiColorHexes, ",", 2)
+		r1, g1, b1 := convertFromHex(colors[0])
+		r2, g2, b2 := convertFromHex(colors[1])
+		colorBlock1 := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m", r1, g1, b1, "██")
+		colorBlock2 := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r2, g2, b2, "██")
+		colorBlock = colorBlock1 + colorBlock2
 	}
 	// Default to not showing the diameter if it's 1.75
 	diameter := ""

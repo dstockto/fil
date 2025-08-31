@@ -18,14 +18,16 @@ type FindSpool struct {
 			Extra      struct {
 			} `json:"extra"`
 		} `json:"vendor"`
-		Material    string  `json:"material"`
-		Price       float64 `json:"price"`
-		Density     float64 `json:"density"`
-		Diameter    float64 `json:"diameter"`
-		Weight      float64 `json:"weight"`
-		SpoolWeight float64 `json:"spool_weight"`
-		ColorHex    string  `json:"color_hex"`
-		Extra       struct {
+		Material            string  `json:"material"`
+		Price               float64 `json:"price"`
+		Density             float64 `json:"density"`
+		Diameter            float64 `json:"diameter"`
+		Weight              float64 `json:"weight"`
+		SpoolWeight         float64 `json:"spool_weight"`
+		ColorHex            string  `json:"color_hex"`
+		MultiColorHexes     string  `json:"multi_color_hexes"`
+		MultiColorDirection string  `json:"multi_color_direction"`
+		Extra               struct {
 		} `json:"extra"`
 	} `json:"filament"`
 	RemainingWeight float64 `json:"remaining_weight"`
