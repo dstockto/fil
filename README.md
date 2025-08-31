@@ -166,40 +166,24 @@ Found 7 spools matching '*':
 
 ---
 
-move (m) - move a spool from one location to another, allows for aliased locations for ease of use
-> $ fil m 20 A - (A could be an alias for AMS A)
-```
-Moved #20 Polymaker Muted Red from Shelf 6B to AMS A
-```
-Consider allowing multiple moves in one command?
-fil m 20 A 45 6c 13 6c 12 B
-Would move #20 -> AMS A, #45 -> Shelf 6C, #12 -> AMS B in one command
-
+Use (u) - Mark a specified amount of a spool as used. You can specify several spools at once by repeating the spool id and amount.
+For negative amounts (like undoing a usage), you'll need to use `--` before you start doing the negative amount. Otherwise
+it will think you're trying to give a flag that does not exist. Filament amounts will be rounded to the nearest 0.1g.
 ---
-info (i) - Show more info about a spool or spools - should allow for spool ID or for partial matches
-> $ fil i muted
-```
-Found 9 spools:
-- #1  PolyTerra™ Muted Green (Shelf 6B) - 199g remaining, last used 8/15/2025
-- #14 PolyTerra™ Muted Blue (Shelf 7A) - 1000g remaining, never used
-....
-```
-Consider a -v (verbose) flag that will give all the info: Spool location, remaining, used, last used, filament ID, comment
-Need to figure out how to display these and if it would be useful
----
-> $ fil used
-Show how much filament has been used total
-Flags:
-- -a / --archived - include archived spools
-- -f / --by-filament - instead of showing just a total for all, show total by filament
----
-use (u) - Marks filament as used
-> $ fil u 20 43.5
-```
-Used 43.5g of Polymaker Muted Red in AMS A. 654.5g remaining.
+> $ fil u 106 -- -2.01 106 2.01
+```aiignore
+- Unusing spool #106 [Green - eSun] (-2.0g of filament) - 993.8g remaining.
+- Marking spool #106 [Green - eSun] as used (2.0g of filament) - 991.8g remaining.
 ```
 
+If you tell fil to use more filament than the spool has remaining, you'll get an error:
+> $ fil u 127 104.5
+Not enough filament on spool #127 [PolyTerra™ Cotton White - Polymaker] (only 91.5g available).
+Error: not enough filament on spool #127 [PolyTerra™ Cotton White - Polymaker] (only 91.5g available)
+exit status 1
 ---
+If you did tell fil to use more than one filament, the other ones that have enough will succeed, but you'll still see an
+error and a non-zero exit code.
 
 Ideas:
 
@@ -216,3 +200,23 @@ Move options:
 
 Other uses for this tool:
 - Figure out what filaments are running low and show them
+
+move (m) - move a spool from one location to another, allows for aliased locations for ease of use
+> $ fil m 20 A - (A could be an alias for AMS A)
+```
+Moved #20 Polymaker Muted Red from Shelf 6B to AMS A
+```
+
+Consider allowing multiple moves in one command?
+fil m 20 A 45 6c 13 6c 12 B
+Would move #20 -> AMS A, #45 -> Shelf 6C, #12 -> AMS B in one command
+
+Add https://github.com/fatih/color for color output
+
+Use ideas:
+- --by-label "PLA Black" 50 (resolve the most recent/open spool with that label), use the one in the AMS if we can get to a single spool?
+- --interactive / -i - present menus to allow selection of spools instead of requiring ID
+- --dry-run - show what would happen without actually doing it
+- --summary prints totals per filament and overall weight used/remaining.
+
+Provide a way to archive spools.

@@ -132,6 +132,51 @@ func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
 	return &out, nil
 }
 
+func (c Client) UseFilament(spoolId int, amount float64) error {
+	endpoint := c.base + "/api/v1/spool/%d/use"
+	body := map[string]any{
+		"use_weight": amount,
+	}
+	endpoint = fmt.Sprintf(endpoint, spoolId)
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid base url: %w", err)
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal body: %w", err)
+	}
+	bytesReader := strings.NewReader(string(jsonBody))
+
+	// send the PUT request
+	req, err := http.NewRequest(http.MethodPut, u.String(), bytesReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("failed to close response body: %v\n", closeErr)
+		}
+	}()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrSpoolNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return nil
+}
+
 func NewClient(base string) *Client {
 	return &Client{
 		base:       base,
