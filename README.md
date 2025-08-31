@@ -124,6 +124,16 @@ Found 1 spools matching '*':
  - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
 ```
 
+To filter spools that have been used, at least some, use the -u / --used flag. The -u will not apply to ID matches.
+> $ fil f 'white' -u
+```aiignore
+Found 3 spools matching 'white':
+
+ - ████ AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago
+ - ████ AMS C - #70 PolyTerra™ Muted White (Matte PLA #AFA198) - 814.9g remaining, last used 5 hours ago
+ - ████ Shelf 4B - #129 White (PLA #C7CDD7) - 936.2g remaining, last used 38 days ago
+```
+
 
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
 > $ fil m 20 A - (A could be an alias for AMS A)
