@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/dstockto/fil/api"
@@ -52,8 +53,10 @@ func runUse(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Invalid filament amount (must be a float): %s.\n", args[i+1])
 			return fmt.Errorf("invalid filament amount")
 		}
-		// limit amount to 1 decimal places
-		amount = float64(int(amount*10)) / 10
+
+		// round to 1 decimal place
+		amount = math.RoundToEven(amount*10) / 10
+
 		// add to the list of usages
 		usages = append(usages, SpoolUsage{
 			SpoolId: spoolId,
