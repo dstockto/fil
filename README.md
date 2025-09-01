@@ -218,5 +218,22 @@ Use ideas:
 - --interactive / -i - present menus to allow selection of spools instead of requiring ID
 - --dry-run - show what would happen without actually doing it
 - --summary prints totals per filament and overall weight used/remaining.
+- `fil u black 42.2` - would try to find one filament that matches black in the AMS and use it - if there were more than one then it will give an error
+
+Move ideas:
+- `fil m -f ams black -d 4A` - would try to find one filament that matches black in the AMS and move it to Shelf 4A
+- `fil m -f ams blue green yellow -d TOP` - would try to find a single blue, green and yellow filament in the AMS and move it to the top shelf
+- `fil m 'metallic blue' -d C` - would try to find a single blue metallic filament anywhere and move it to AMS C
+- `fil m -f 6a -d B yellow` - would try to find a single yellow filament in Shelf 6A and move it to AMS B
+- `fil m 42 6a` - would move spool #42 to Shelf 6A
+- `fil m 42 6a 43 6a` - would move spool #42 to Shelf 6A, #43 to Shelf 6A
+- `fil m 42 43 -d 6b` - would move spool #42 to Shelf 6B, #43 to Shelf 6B - the -d flag would set the destination for all of the spools
+- `fil m 13 'sunrise pink' -d 'AMS C'` - would move spool 13 to AMS C, and find a single sunrise pink filament anywhere and move it to AMS C
+- For use command, -f (from) would limit where it would search non-id matches for spools to move. The -d (destination) would set the destination for all of the spools.
+- If -d is not specified, then the location would follow each of the spools.
+- If -f is not specified, then the search area for a spool (other than ID) would be all locations.
+- Locations specified with -f or -d can use the aliases first to get to a full location name. Otherwise, they need to match the actual location name. Error if they do not.
 
 Provide a way to archive spools.
+Provide a way to move spools to no location (for archiving)
+Make the movement of spools be consistent with the spool ordering data (it now has the same spool id in multiple locations)

@@ -36,7 +36,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	// arguments should be a spool ID followed by a filament amount. It should check that the spool exists and that the amount is valid.
 	// then it should call the API to mark the spool so some of it is used (if there's enough filament). If there is not enough,
 	// it should print an error.
-	if len(args)%2 != 0 {
+	if len(args)%2 != 0 || len(args) < 2 {
 		fmt.Println("Arguments must be a spool ID followed by a filament amount.")
 		return fmt.Errorf("arguments should be a spool ID followed by a filament amount")
 	}
