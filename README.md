@@ -214,6 +214,8 @@ Would move #20 -> AMS A, #45 -> Shelf 6C, #12 -> AMS B in one command
 Add https://github.com/fatih/color for color output
 
 Use ideas:
+- `fil -m -f <limit search> <spool selector> <amount> <spool selector> <amount>...`
+- {spool selector} must result in a single spool. If it doesn't, then it will give an error.
 - --by-label "PLA Black" 50 (resolve the most recent/open spool with that label), use the one in the AMS if we can get to a single spool?
 - --interactive / -i - present menus to allow selection of spools instead of requiring ID
 - --dry-run - show what would happen without actually doing it
