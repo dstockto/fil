@@ -11,6 +11,7 @@ import (
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -111,10 +112,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 		foundMsg := fmt.Sprintf(foundFmt, len(spools), name)
 		if len(spools) == 0 {
 			// print in red
-			fmt.Printf("\033[31m%s\033[0m\n", foundMsg)
+			color.Red(foundMsg)
 		} else {
 			// print in green
-			fmt.Printf("\033[32m%s\033[0m\n", foundMsg)
+			color.Green(foundMsg)
 		}
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", s)

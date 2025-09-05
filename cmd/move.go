@@ -11,6 +11,7 @@ import (
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -161,7 +162,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 
 		moveErr := apiClient.MoveSpool(m.spoolId, m.to)
 		if moveErr != nil {
-			fmt.Printf("\u001B[38;2;255;0;0merror moving spool %s: %v\u001B[0m", m.spool, moveErr)
+			color.Red("Error moving spool %s: %v\n", m.spool, moveErr)
 			errs = errors.Join(errs, fmt.Errorf("error moving spool %s: %v", m.spool, moveErr))
 			continue
 		}
@@ -169,8 +170,6 @@ func runMove(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Moving %s to %s\n", m.spool, to)
 	}
 
-	// fil m 1 2 3 -t 'A' # moves spool 1, 2, and 3 to location 'AMS A' by using location aliases
-	// fil m 1 -t 'A' -p 0 # moves spool 1 to location 'AMS A' in position 0
 	cmd.SilenceUsage = true
 	return errs
 }
