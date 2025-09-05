@@ -57,11 +57,18 @@ func (s FindSpool) String() string {
 	colorBlock := ""
 	if s.Filament.ColorHex != "" {
 		r, g, b := convertFromHex(s.Filament.ColorHex)
+
+		semiTransparent := len(s.Filament.ColorHex) > 6
 		blockChars := "████"
-		if len(s.Filament.ColorHex) > 6 {
+		if semiTransparent {
 			blockChars = "▓▓▓▓"
 		}
-		colorBlock = fmt.Sprintf("\x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+
+		if semiTransparent {
+			colorBlock = fmt.Sprintf("\x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+		} else {
+			colorBlock = fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+		}
 	}
 	if s.Filament.MultiColorHexes != "" {
 		// multicolor is represented by comma-separated hex values
@@ -78,7 +85,7 @@ func (s FindSpool) String() string {
 		diameter = fmt.Sprintf(" \x1b[38;2;200;128;0m(%.2fmm)\x1b[0m", s.Filament.Diameter)
 	}
 
-	format := "%s%s - #%d %s%s (%s%s) - %.1fg remaining, last used %s%s"
+	format := "%s%s - #%d %s %s%s (%s%s) - %.1fg remaining, last used %s%s"
 	var lastUsedDuration string
 	if s.LastUsed.IsZero() {
 		lastUsedDuration = "never"
@@ -107,13 +114,13 @@ func (s FindSpool) String() string {
 	}
 	location = fmt.Sprintf("\033[1m%s\033[0m", location)
 
-	return fmt.Sprintf(format, colorBlock, location, s.Id, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
+	return fmt.Sprintf(format, colorBlock, location, s.Id, s.Filament.Vendor.Name, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
 }
 
 func convertFromHex(hex string) (int, int, int) {
 	// convert the hex color like 45FFE0 to rgb integers
-	r, _ := strconv.ParseInt(hex[0:2], 16, 8)
-	g, _ := strconv.ParseInt(hex[2:4], 16, 8)
-	b, _ := strconv.ParseInt(hex[4:6], 16, 8)
+	r, _ := strconv.ParseInt(hex[0:2], 16, 16)
+	g, _ := strconv.ParseInt(hex[2:4], 16, 16)
+	b, _ := strconv.ParseInt(hex[4:6], 16, 16)
 	return int(r), int(g), int(b)
 }

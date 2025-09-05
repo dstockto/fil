@@ -65,7 +65,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 			query := make(map[string]string)
 			location, locerr := cmd.Flags().GetString("location")
 			if locerr == nil && location != "" {
+				location = mapToAlias(location)
 				query["location"] = location
+				fmt.Printf("Filtering by location: %s\n", location)
 			}
 			spools, finderr := apiClient.FindSpoolsByName(args[i], nil, query)
 			if finderr != nil {

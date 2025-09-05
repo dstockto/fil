@@ -77,7 +77,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 		})
 	}
 	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
+		location = mapToAlias(location)
 		query["location"] = location
+		fmt.Printf("Filtering by location: %s\n", location)
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
