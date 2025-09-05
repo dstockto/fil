@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/dstockto/fil/api"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -40,8 +41,10 @@ func runUse(cmd *cobra.Command, args []string) error {
 	}
 
 	if dryRun {
-		// TODO: make this in a different color
-		fmt.Println("Dry run, nothing will be changed:")
+		_, err := color.New(color.FgHiYellow).Println("Dry run mode enabled. Nothing will be changed.")
+		if err != nil {
+			return err
+		}
 	}
 
 	// arguments should be a spool ID followed by a filament amount. It should check that the spool exists and that the amount is valid.
@@ -110,13 +113,14 @@ func runUse(cmd *cobra.Command, args []string) error {
 		// check that the spool exists
 		spool, err := apiClient.FindSpoolsById(u.SpoolId)
 		if errors.Is(err, api.ErrSpoolNotFound) {
-			fmt.Printf("\u001B[38;2;200;0;0mSpool %d not found.\n\x1b[0m", u.SpoolId)
+			notFound := color.RGB(200, 0, 0).Sprintf("Spool %d not found.\n", u.SpoolId)
+			fmt.Printf(notFound)
 			continue
 		}
 
 		// check that the amount is available on the spool
 		if spool.RemainingWeight < u.Amount {
-			fmt.Printf("\u001B[38;2;200;200;0mNot enough filament on spool #%d [%s - %s] (only %.1fg available).\n\x1b[0m", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, spool.RemainingWeight)
+			color.Yellow("Not enough filament on spool #%d [%s - %s] (only %.1fg available).\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, spool.RemainingWeight)
 			errs = errors.Join(errs, fmt.Errorf("not enough filament on spool #%d [%s - %s] (only %.1fg available)", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, spool.RemainingWeight))
 			continue
 		}
@@ -130,9 +134,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 		remaining := spool.RemainingWeight - u.Amount
 		if u.Amount < 0 {
-			fmt.Printf("\u001B[38;2;255;0;255m - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg remaining.\x1b[0m\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
+			color.RGB(255, 0, 255).Printf(" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
 		} else {
-			fmt.Printf("\u001B[38;2;0;255;0m - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg remaining.\x1b[0m\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
+			color.RGB(0, 255, 0).Printf(" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
 		}
 	}
 

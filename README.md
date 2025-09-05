@@ -207,36 +207,13 @@ move (m) - move a spool from one location to another, allows for aliased locatio
 Moved #20 Polymaker Muted Red from Shelf 6B to AMS A
 ```
 
-Consider allowing multiple moves in one command?
-fil m 20 A 45 6c 13 6c 12 B
-Would move #20 -> AMS A, #45 -> Shelf 6C, #12 -> AMS B in one command
-
-Add https://github.com/fatih/color for color output
-
 Use ideas:
 - `fil -m -f <limit search> <spool selector> <amount> <spool selector> <amount>...`
 - {spool selector} must result in a single spool. If it doesn't, then it will give an error.
-- --by-label "PLA Black" 50 (resolve the most recent/open spool with that label), use the one in the AMS if we can get to a single spool?
 - --interactive / -i - present menus to allow selection of spools instead of requiring ID
-- --dry-run - show what would happen without actually doing it
 - --summary prints totals per filament and overall weight used/remaining.
-- `fil u black 42.2` - would try to find one filament that matches black in the AMS and use it - if there were more than one then it will give an error
 
-Move ideas:
-- [x] `fil m -f ams black -d 4A` - would try to find one filament that matches black in the AMS and move it to Shelf 4A
-- [x] `fil m -f ams blue green yellow -d TOP` - would try to find a single blue, green and yellow filament in the AMS and move it to the top shelf
-- [x] `fil m 'metallic blue' -d C` - would try to find a single blue metallic filament anywhere and move it to AMS C
-- [x] `fil m -f 6a -d B yellow` - would try to find a single yellow filament in Shelf 6A and move it to AMS B
-- [x] `fil m 42 6a` - would move spool #42 to Shelf 6A
-- [x] `fil m 42 6a 43 6a` - would move spool #42 to Shelf 6A, #43 to Shelf 6A
-- [x] `fil m 42 43 -d 6b` - would move spool #42 to Shelf 6B, #43 to Shelf 6B - the -d flag would set the destination for all of the spools
-- [x] `fil m 13 'sunrise pink' -d 'AMS C'` - would move spool 13 to AMS C, and find a single sunrise pink filament anywhere and move it to AMS C
-- [x] For use command, -f (from) would limit where it would search non-id matches for spools to move. The -d (destination) would set the destination for all of the spools.
-- [x] If -d is not specified, then the location would follow each of the spools.
-- [x] If -f is not specified, then the search area for a spool (other than ID) would be all locations.
-- [x] Locations specified with -d can use the aliases first to get to a full location name. Otherwise, they need to match the actual location name. Error if they do not.
 
-I did not implement alias for -f - it allows for wider searches. Should figure out if I need to if I need to move stuff from alias-only areas. Probably not since those are the no-location spools which are all archived
 Provide a way to archive spools.
 Special output when using the last bit of a spool (when it goes empty)
 Find spools that have more or less than a specified amount of filament.

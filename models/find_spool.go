@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fatih/color"
 )
 
 type FindSpool struct {
@@ -52,11 +54,13 @@ func (s FindSpool) String() string {
 	//  - AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago (archived)
 	archived := ""
 	if s.Archived {
-		archived = " \x1b[38;2;200;0;0m(archived)\x1b[0m"
+		// print archived in red
+		archived = color.RGB(200, 0, 0).Sprintf(" (archived)")
 	}
 	colorBlock := ""
 	if s.Filament.ColorHex != "" {
 		r, g, b := convertFromHex(s.Filament.ColorHex)
+		customColor := color.RGB(r, g, b)
 
 		semiTransparent := len(s.Filament.ColorHex) > 6
 		blockChars := "████"
@@ -65,9 +69,10 @@ func (s FindSpool) String() string {
 		}
 
 		if semiTransparent {
-			colorBlock = fmt.Sprintf("\x1b[48;2;255;255;255m\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+			customColor.AddBgRGB(255, 255, 255)
+			colorBlock = customColor.Sprintf("%s", blockChars) + " "
 		} else {
-			colorBlock = fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r, g, b, blockChars)
+			colorBlock = customColor.Sprintf("%s", blockChars) + " "
 		}
 	}
 	if s.Filament.MultiColorHexes != "" {
@@ -75,14 +80,14 @@ func (s FindSpool) String() string {
 		colors := strings.SplitN(s.Filament.MultiColorHexes, ",", 2)
 		r1, g1, b1 := convertFromHex(colors[0])
 		r2, g2, b2 := convertFromHex(colors[1])
-		colorBlock1 := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m", r1, g1, b1, "██")
-		colorBlock2 := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s\x1b[0m ", r2, g2, b2, "██")
-		colorBlock = colorBlock1 + colorBlock2
+		colorBlock1 := color.RGB(r1, g1, b1).Sprintf("██")
+		colorBlock2 := color.RGB(r2, g2, b2).Sprintf("██")
+		colorBlock = colorBlock1 + colorBlock2 + " "
 	}
 	// Default to not showing the diameter if it's 1.75
 	diameter := ""
 	if s.Filament.Diameter != 1.75 {
-		diameter = fmt.Sprintf(" \x1b[38;2;200;128;0m(%.2fmm)\x1b[0m", s.Filament.Diameter)
+		diameter = color.RGB(200, 128, 0).Sprintf(" %.2fmm", s.Filament.Diameter)
 	}
 
 	format := "%s%s - #%d %s %s%s (%s%s) - %.1fg remaining, last used %s%s"
@@ -112,7 +117,7 @@ func (s FindSpool) String() string {
 	if location == "" {
 		location = "N/A"
 	}
-	location = fmt.Sprintf("\033[1m%s\033[0m", location)
+	location = color.New(color.Bold).Sprintf(location)
 
 	return fmt.Sprintf(format, colorBlock, location, s.Id, s.Filament.Vendor.Name, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
 }
