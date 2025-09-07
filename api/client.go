@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -178,7 +179,6 @@ func (c Client) UseFilament(spoolId int, amount float64) error {
 }
 
 func (c Client) MoveSpool(spoolId int, to string) error {
-	endpoint := c.base + "/api/v1/spool/%d"
 	if to == "<empty>" {
 		to = ""
 	}
@@ -186,24 +186,28 @@ func (c Client) MoveSpool(spoolId int, to string) error {
 	body := map[string]any{
 		"location": to,
 	}
-	endpoint = fmt.Sprintf(endpoint, spoolId)
 
+	return c.PatchSpool(spoolId, body)
+}
+
+func (c Client) PatchSpool(spoolId int, updates map[string]any) error {
+	endpoint := c.base + "/api/v1/spool/%d"
+	endpoint = fmt.Sprintf(endpoint, spoolId)
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid base url: %w", err)
 	}
 
-	jsonBody, err := json.Marshal(body)
+	jsonBody, err := json.Marshal(updates)
 	if err != nil {
 		return fmt.Errorf("failed to marshal body: %w", err)
 	}
-	bytesReader := strings.NewReader(string(jsonBody))
-
-	// send the PATCH request
-	req, err := http.NewRequest(http.MethodPatch, u.String(), bytesReader)
+	bodyBuffer := bytes.NewBuffer(jsonBody)
+	req, err := http.NewRequest(http.MethodPatch, u.String(), bodyBuffer)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -215,6 +219,7 @@ func (c Client) MoveSpool(spoolId int, to string) error {
 			fmt.Printf("failed to close response body: %v\n", closeErr)
 		}
 	}()
+
 	if resp.StatusCode == http.StatusNotFound {
 		return ErrSpoolNotFound
 	}
@@ -224,6 +229,14 @@ func (c Client) MoveSpool(spoolId int, to string) error {
 	}
 
 	return nil
+}
+
+func (c Client) ArchiveSpool(spoolId int) error {
+	body := map[string]any{
+		"archived": true,
+		"location": "",
+	}
+	return c.PatchSpool(spoolId, body)
 }
 
 func NewClient(base string) *Client {

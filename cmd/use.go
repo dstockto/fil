@@ -114,12 +114,12 @@ func runUse(cmd *cobra.Command, args []string) error {
 		spool, err := apiClient.FindSpoolsById(u.SpoolId)
 		if errors.Is(err, api.ErrSpoolNotFound) {
 			notFound := color.RGB(200, 0, 0).Sprintf("Spool %d not found.\n", u.SpoolId)
-			fmt.Printf(notFound)
+			fmt.Println(notFound)
 			continue
 		}
 
 		// check that the amount is available on the spool
-		if spool.RemainingWeight < u.Amount {
+		if spool.RemainingWeight < (u.Amount - 0.1) {
 			color.Yellow("Not enough filament on spool #%d [%s - %s] (only %.1fg available).\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, spool.RemainingWeight)
 			errs = errors.Join(errs, fmt.Errorf("not enough filament on spool #%d [%s - %s] (only %.1fg available)", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, spool.RemainingWeight))
 			continue
@@ -134,9 +134,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 		remaining := spool.RemainingWeight - u.Amount
 		if u.Amount < 0 {
-			color.RGB(255, 0, 255).Printf(" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
+			_, _ = color.RGB(255, 0, 255).Printf(" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
 		} else {
-			color.RGB(0, 255, 0).Printf(" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
+			_, _ = color.RGB(0, 255, 0).Printf(" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg remaining.\n", u.SpoolId, spool.Filament.Name, spool.Filament.Vendor.Name, u.Amount, remaining)
 		}
 	}
 
