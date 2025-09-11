@@ -24,9 +24,10 @@ import (
 //
 // Add fields here as config grows.
 type Config struct {
-	Database        string            `json:"database"`
-	LocationAliases map[string]string `json:"location_aliases"`
-	ApiBase         string            `json:"api_base"`
+	Database        string             `json:"database"`
+	LocationAliases map[string]string  `json:"location_aliases"`
+	ApiBase         string             `json:"api_base"`
+	LowThresholds   map[string]float64 `json:"low_thresholds"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands
@@ -45,30 +46,24 @@ var rootCmd = &cobra.Command{
 		if Cfg != nil {
 			return nil
 		}
-		// Determine path: explicit flag takes precedence; else try default path
-		path := cfgFile
-		if path == "" {
-			if def, ok := defaultConfigPath(); ok {
-				path = def
-			} else {
-				// No config available; not an error per requirements ("if possible")
-				return nil
+		// Determine path: explicit flag takes precedence; else try merge from standard locations
+		if cfgFile != "" {
+			cfg, err := LoadConfig(cfgFile)
+			if err != nil {
+				return fmt.Errorf("failed to load config from %s: %w", cfgFile, err)
 			}
+			Cfg = cfg
+			return nil
 		}
-		cfg, err := LoadConfig(path)
-		if err != nil {
-			// If user explicitly set a path, and it fails, surface the error
-			if cfgFile != "" {
-				return fmt.Errorf("failed to load config from %s: %w", path, err)
-			}
 
+		cfg, err := LoadMergedConfig()
+		if err != nil {
 			return fmt.Errorf("unable to load config: %v", err)
 		}
-
-		if cfg == nil {
-			return fmt.Errorf("failed to load config from %s: empty config", path)
+		// Config is optional; only set if any file existed
+		if cfg != nil {
+			Cfg = cfg
 		}
-		Cfg = cfg
 		return nil
 	},
 }
@@ -95,32 +90,6 @@ func LoadConfig(path string) (*Config, error) {
 	return &c, nil
 }
 
-// defaultConfigPath returns a default config.json path if it exists in common locations
-func defaultConfigPath() (string, bool) {
-	// Prefer current working directory config.json
-	cwd, _ := os.Getwd()
-	if cwd != "" {
-		p := filepath.Join(cwd, "config.json")
-		if exists(p) {
-			return p, true
-		}
-	}
-	// Also check XDG config: $XDG_CONFIG_HOME/fil/config.json or $HOME/.config/fil/config.json
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		p := filepath.Join(xdg, "fil", "config.json")
-		if exists(p) {
-			return p, true
-		}
-	}
-	if home, _ := os.UserHomeDir(); home != "" {
-		p := filepath.Join(home, ".config", "fil", "config.json")
-		if exists(p) {
-			return p, true
-		}
-	}
-	return "", false
-}
-
 func exists(path string) bool {
 	if path == "" {
 		return false
@@ -132,4 +101,85 @@ func exists(path string) bool {
 func init() {
 	// Global config flag for all commands
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to config file (config.json)")
+}
+
+// LoadMergedConfig attempts to load and merge configs from standard locations when no explicit --config is provided.
+// Precedence (later overrides earlier):
+//  1. $HOME/.config/fil/config.json
+//  2. $XDG_CONFIG_HOME/fil/config.json
+//  3. ./config.json (current working directory)
+//
+// If none exist, returns (nil, nil).
+func LoadMergedConfig() (*Config, error) {
+	paths := discoverConfigPaths()
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	merged := &Config{}
+	for _, p := range paths {
+		c, err := LoadConfig(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed loading %s: %w", p, err)
+		}
+		mergeInto(merged, c)
+	}
+	return merged, nil
+}
+
+// discoverConfigPaths returns existing config paths in merge order.
+func discoverConfigPaths() []string {
+	var out []string
+	// 1) HOME
+	if home, _ := os.UserHomeDir(); home != "" {
+		p := filepath.Join(home, ".config", "fil", "config.json")
+		if exists(p) {
+			out = append(out, p)
+		}
+	}
+	// 2) XDG
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		p := filepath.Join(xdg, "fil", "config.json")
+		if exists(p) {
+			out = append(out, p)
+		}
+	}
+	// 3) CWD
+	if cwd, _ := os.Getwd(); cwd != "" {
+		p := filepath.Join(cwd, "config.json")
+		if exists(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// mergeInto copies non-zero values and maps from src into dst.
+// Maps are merged by keys; src keys override dst.
+func mergeInto(dst, src *Config) {
+	if src == nil || dst == nil {
+		return
+	}
+	if src.Database != "" {
+		dst.Database = src.Database
+	}
+	if src.ApiBase != "" {
+		dst.ApiBase = src.ApiBase
+	}
+	// maps
+	if src.LocationAliases != nil {
+		if dst.LocationAliases == nil {
+			dst.LocationAliases = map[string]string{}
+		}
+		for k, v := range src.LocationAliases {
+			dst.LocationAliases[k] = v
+		}
+	}
+	if src.LowThresholds != nil {
+		if dst.LowThresholds == nil {
+			dst.LowThresholds = map[string]float64{}
+		}
+		for k, v := range src.LowThresholds {
+			dst.LowThresholds[k] = v
+		}
+	}
 }

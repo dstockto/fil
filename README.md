@@ -240,6 +240,26 @@ Flags:
 - -d, --diameter: 1.75 (default), 2.85, or '*' for all.
 - -m, --manufacturer: filter by filament manufacturer.
 
+Configuration lookup and overrides:
+- If you do not pass --config, fil will merge configs from these locations (later entries override earlier):
+  1) $HOME/.config/fil/config.json
+  2) $XDG_CONFIG_HOME/fil/config.json
+  3) ./config.json (current working directory)
+- Pass --config <path> to use a single explicit config file instead.
+
+Custom thresholds via config:
+- You can set per-filament custom low thresholds in your config.json using the `low_thresholds` map. Keys are matched case-insensitively against the filament name (substring match). If a key matches, its value (in grams) overrides `--max-remaining` for that filament.
+- Example config.json snippet:
+  {
+    "low_thresholds": {
+      "Charcoal Black": 1000,
+      "Cotton White": 500
+    }
+  }
+- Notes:
+  - Matching is by filament name only (e.g., "PolyTerra™ Charcoal Black" matches key "Charcoal Black").
+  - The first matching key found is used. Values <= 0 are ignored.
+
 Examples:
 > $ fil reorder --max-remaining 150
 > $ fil low -m Polymaker

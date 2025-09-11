@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
@@ -35,6 +36,27 @@ func runLow(cmd *cobra.Command, args []string) error {
 	maxRemaining, err := cmd.Flags().GetFloat64("max-remaining")
 	if err != nil {
 		return fmt.Errorf("failed to get max-remaining: %w", err)
+	}
+
+	// helper to resolve custom threshold overrides from config by filament name (case-insensitive substring)
+	resolveThreshold := func(filamentName string) float64 {
+		thr := maxRemaining
+		if Cfg != nil && Cfg.LowThresholds != nil {
+			lname := strings.ToLower(filamentName)
+			for k, v := range Cfg.LowThresholds {
+				if k == "" {
+					continue
+				}
+				if v <= 0 {
+					continue
+				}
+				if strings.Contains(lname, strings.ToLower(k)) {
+					thr = v
+					break
+				}
+			}
+		}
+		return thr
 	}
 
 	// Build filters similar to find
@@ -77,10 +99,11 @@ func runLow(cmd *cobra.Command, args []string) error {
 			name = "#" + name
 			var spoolsToShow []models.FindSpool
 			if spool, err := apiClient.FindSpoolsById(id); err == nil && spool != nil && aggFilter(*spool) {
-				// For a single spool, evaluate grams threshold only
+				// For a single spool, evaluate grams threshold with possible override
 				grpRemaining := spool.RemainingWeight
-				lowByGrams := maxRemaining > 0 && grpRemaining <= maxRemaining+1e-9
-				if maxRemaining > 0 && lowByGrams {
+				thr := resolveThreshold(spool.Filament.Name)
+				lowByGrams := thr > 0 && grpRemaining <= thr+1e-9
+				if thr > 0 && lowByGrams {
 					spoolsToShow = append(spoolsToShow, *spool)
 				}
 			}
@@ -126,11 +149,12 @@ func runLow(cmd *cobra.Command, args []string) error {
 			g.InitSum += s.InitialWeight
 		}
 
-		// Decide which groups are low (grams threshold only)
+		// Decide which groups are low using per-filament threshold overrides when present
 		var lowGroups []*group
 		for _, g := range groups {
-			lowByGrams := maxRemaining > 0 && g.RemainSum <= maxRemaining+1e-9
-			if maxRemaining > 0 && lowByGrams {
+			thr := resolveThreshold(g.Name)
+			lowByGrams := thr > 0 && g.RemainSum <= thr+1e-9
+			if thr > 0 && lowByGrams {
 				lowGroups = append(lowGroups, g)
 			}
 		}
