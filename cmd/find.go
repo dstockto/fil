@@ -23,12 +23,15 @@ var findCmd = &cobra.Command{
 	To show all spools, use the wildcard character '*'.`,
 	RunE:    runFind,
 	Aliases: []string{"f"},
-	Args:    cobra.MinimumNArgs(1),
 }
 
 func runFind(cmd *cobra.Command, args []string) error {
 	if Cfg == nil || Cfg.ApiBase == "" {
 		return fmt.Errorf("apiClient endpoint not configured")
+	}
+
+	if len(args) == 0 {
+		args = append(args, "*")
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
