@@ -221,3 +221,26 @@ Make the movement of spools be consistent with the spool ordering data (it now h
 Moving filament locations does not remove it from the old location, it just adds it to the new location. I suspect spoolman iterates the whole 
 deal and only renders the spool if the spool's location matches the location it is iterating over (from the settings/location json value). Cleaning this up could be a good thing.
 Perhaps a periodic cleanup job that removes spools from locations that are no longer in use instead of keeping it clean all the time?
+
+---
+
+Low (reorder) - Show filaments that are running low so you know what to reorder. By default, it shows 1.75mm filaments with
+200g or less remaining. You can filter by manufacturer. Archived spools are excluded.
+
+> $ fil low '*'
+```aiignore
+Filaments running low matching '*': 3
+ - ████ Shelf 6B - #23 PolyTerra™ Electric Indigo (Matte PLA #9917e4) - 178.0g remaining, last used 6 days ago
+ - ████ AMS B - #127 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago
+ - ████ Shelf 6B - #1 PolyTerra™ Muted Green (Matte PLA #656D60) - 200.3g remaining, last used 15 days ago
+```
+
+Flags:
+- --max-remaining: grams threshold (default 200). Set to 0 to disable grams threshold.
+- -d, --diameter: 1.75 (default), 2.85, or '*' for all.
+- -m, --manufacturer: filter by filament manufacturer.
+
+Examples:
+> $ fil reorder --max-remaining 150
+> $ fil low -m Polymaker
+> $ fil low '*' -d '*'
