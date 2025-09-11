@@ -115,15 +115,27 @@ func runFind(cmd *cobra.Command, args []string) error {
 		foundMsg := fmt.Sprintf(foundFmt, len(spools), name)
 		if len(spools) == 0 {
 			// print in red
-			color.Red(foundMsg)
+			color.HiRed(foundMsg)
 		} else {
 			// print in green
 			color.Green(foundMsg)
 		}
+
+		totalRemaining := 0.0
+		totalUsed := 0.0
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", s)
+			totalRemaining += s.RemainingWeight
+			totalUsed += s.UsedWeight
 		}
-		fmt.Println()
+		if len(spools) > 0 {
+			bold := color.New(color.Bold).SprintFunc()
+			spoolPlural := "spools"
+			if len(spools) == 1 {
+				spoolPlural = "spool"
+			}
+			fmt.Printf("%s: %d %s, %s: %.1fg, %s: %.1fg\n\n", bold("Summary"), len(spools), spoolPlural, bold("Remaining"), totalRemaining, bold("Used"), totalUsed)
+		}
 	}
 
 	return nil
