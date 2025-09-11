@@ -38,11 +38,15 @@ func runLow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get max-remaining: %w", err)
 	}
 
-	// helper to resolve custom threshold overrides from config by filament name (case-insensitive substring)
-	resolveThreshold := func(filamentName string) float64 {
+	// helper to resolve custom threshold overrides from config.
+	// Supports two key forms in LowThresholds (case-insensitive substring matching):
+	//  1) "NamePart" → match by filament name only
+	//  2) "VendorPart::NamePart" → match when both vendor and name contain the given parts
+	resolveThreshold := func(vendor string, filamentName string) float64 {
 		thr := maxRemaining
 		if Cfg != nil && Cfg.LowThresholds != nil {
-			lname := strings.ToLower(filamentName)
+			lvendor := strings.ToLower(strings.TrimSpace(vendor))
+			lname := strings.ToLower(strings.TrimSpace(filamentName))
 			for k, v := range Cfg.LowThresholds {
 				if k == "" {
 					continue
@@ -50,13 +54,64 @@ func runLow(cmd *cobra.Command, args []string) error {
 				if v <= 0 {
 					continue
 				}
-				if strings.Contains(lname, strings.ToLower(k)) {
+				lk := strings.ToLower(strings.TrimSpace(k))
+				if strings.Contains(lk, "::") {
+					parts := strings.SplitN(lk, "::", 2)
+					vendPart := strings.TrimSpace(parts[0])
+					namePart := strings.TrimSpace(parts[1])
+					if vendPart == "" || namePart == "" {
+						continue
+					}
+					if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
+						thr = v
+						break
+					}
+					continue
+				}
+				// name-only fallback
+				if strings.Contains(lname, lk) {
 					thr = v
 					break
 				}
 			}
 		}
 		return thr
+	}
+
+	// helper to determine if a filament should be ignored by low command
+	// Supports two pattern forms in config LowIgnore:
+	//  1) "NamePart" -> matches by filament name substring (case-insensitive)
+	//  2) "VendorPart::NamePart" -> matches when both vendor and filament name contain the given substrings (case-insensitive)
+	isIgnored := func(vendor string, filamentName string) bool {
+		if Cfg == nil || Cfg.LowIgnore == nil {
+			return false
+		}
+		lvendor := strings.ToLower(vendor)
+		lname := strings.ToLower(filamentName)
+		for _, pat := range Cfg.LowIgnore {
+			p := strings.TrimSpace(pat)
+			if p == "" {
+				continue
+			}
+			lp := strings.ToLower(p)
+			if strings.Contains(lp, "::") {
+				parts := strings.SplitN(lp, "::", 2)
+				vendPart := strings.TrimSpace(parts[0])
+				namePart := strings.TrimSpace(parts[1])
+				if vendPart == "" || namePart == "" {
+					continue
+				}
+				if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
+					return true
+				}
+				continue
+			}
+			// name-only fallback
+			if strings.Contains(lname, lp) {
+				return true
+			}
+		}
+		return false
 	}
 
 	// Build filters similar to find
@@ -99,12 +154,15 @@ func runLow(cmd *cobra.Command, args []string) error {
 			name = "#" + name
 			var spoolsToShow []models.FindSpool
 			if spool, err := apiClient.FindSpoolsById(id); err == nil && spool != nil && aggFilter(*spool) {
-				// For a single spool, evaluate grams threshold with possible override
-				grpRemaining := spool.RemainingWeight
-				thr := resolveThreshold(spool.Filament.Name)
-				lowByGrams := thr > 0 && grpRemaining <= thr+1e-9
-				if thr > 0 && lowByGrams {
-					spoolsToShow = append(spoolsToShow, *spool)
+				// Skip ignored filaments
+				if !isIgnored(spool.Filament.Vendor.Name, spool.Filament.Name) {
+					// For a single spool, evaluate grams threshold with possible override
+					grpRemaining := spool.RemainingWeight
+					thr := resolveThreshold(spool.Filament.Vendor.Name, spool.Filament.Name)
+					lowByGrams := thr > 0 && grpRemaining <= thr+1e-9
+					if thr > 0 && lowByGrams {
+						spoolsToShow = append(spoolsToShow, *spool)
+					}
 				}
 			}
 
@@ -152,7 +210,11 @@ func runLow(cmd *cobra.Command, args []string) error {
 		// Decide which groups are low using per-filament threshold overrides when present
 		var lowGroups []*group
 		for _, g := range groups {
-			thr := resolveThreshold(g.Name)
+			// Skip ignored filaments
+			if isIgnored(g.Vendor, g.Name) {
+				continue
+			}
+			thr := resolveThreshold(g.Vendor, g.Name)
 			lowByGrams := thr > 0 && g.RemainSum <= thr+1e-9
 			if thr > 0 && lowByGrams {
 				lowGroups = append(lowGroups, g)

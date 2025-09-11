@@ -248,19 +248,39 @@ Configuration lookup and overrides:
 - Pass --config <path> to use a single explicit config file instead.
 
 Custom thresholds via config:
-- You can set per-filament custom low thresholds in your config.json using the `low_thresholds` map. Keys are matched case-insensitively against the filament name (substring match). If a key matches, its value (in grams) overrides `--max-remaining` for that filament.
+- You can set per-filament custom low thresholds in your config.json using the `low_thresholds` map. Keys are matched case-insensitively and support two forms:
+  1) "NamePart" → match by filament name substring
+  2) "VendorPart::NamePart" → match only when both the manufacturer/vendor and the filament name contain the given substrings
+  If a key matches, its value (in grams) overrides `--max-remaining` for that filament.
 - Example config.json snippet:
   {
     "low_thresholds": {
       "Charcoal Black": 1000,
-      "Cotton White": 500
+      "Bambu::Orange": 1500
     }
   }
 - Notes:
-  - Matching is by filament name only (e.g., "PolyTerra™ Charcoal Black" matches key "Charcoal Black").
+  - When using the specific form, both sides are substring matches; whitespace is ignored around the :: separator.
+  - If no "::" is present, the pattern matches by name only.
   - The first matching key found is used. Values <= 0 are ignored.
 
 Examples:
 > $ fil reorder --max-remaining 150
 > $ fil low -m Polymaker
 > $ fil low '*' -d '*'
+
+Ignoring retired filaments via config:
+- You can exclude certain filaments from appearing in `fil low` by listing patterns in `low_ignore` within your config.json.
+  - Simple form: "NamePart" → matches by filament name substring (case-insensitive).
+  - Specific form: "VendorPart::NamePart" → matches only when both the manufacturer/vendor AND the filament name contain the given substrings (case-insensitive). This lets you retire something like Bambu "Orange" without ignoring "Sunrise Orange" from other vendors.
+- Example config.json snippet:
+  {
+    "low_ignore": [
+      "Charcoal Black",
+      "Bambu::Orange"
+    ]
+  }
+- Notes:
+  - Ignored entries are excluded from low evaluation in both single-spool and grouped modes.
+  - When using the specific form, both sides are substring matches; whitespace is ignored around the :: separator.
+  - If no "::" is present, the pattern matches by name only.

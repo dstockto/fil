@@ -28,6 +28,7 @@ type Config struct {
 	LocationAliases map[string]string  `json:"location_aliases"`
 	ApiBase         string             `json:"api_base"`
 	LowThresholds   map[string]float64 `json:"low_thresholds"`
+	LowIgnore       []string           `json:"low_ignore"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands
@@ -181,5 +182,10 @@ func mergeInto(dst, src *Config) {
 		for k, v := range src.LowThresholds {
 			dst.LowThresholds[k] = v
 		}
+	}
+	// slices
+	if src.LowIgnore != nil {
+		// append to allow layered config; duplicates are acceptable
+		dst.LowIgnore = append(dst.LowIgnore, src.LowIgnore...)
 	}
 }
