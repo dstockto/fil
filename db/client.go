@@ -54,6 +54,7 @@ func NewClient(path string) (*Client, error) {
 	// Verify connectivity
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
+
 		return nil, fmt.Errorf("ping sqlite database: %w", err)
 	}
 
@@ -65,5 +66,6 @@ func (c *Client) Close() error {
 	if c == nil || c.DB == nil {
 		return nil
 	}
+
 	return c.DB.Close()
 }

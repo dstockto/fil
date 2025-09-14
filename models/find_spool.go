@@ -57,12 +57,15 @@ func (s FindSpool) String() string {
 		// print archived in red
 		archived = color.RGB(200, 0, 0).Sprintf(" (archived)")
 	}
+
 	colorBlock := ""
+
 	if s.Filament.ColorHex != "" {
 		r, g, b := convertFromHex(s.Filament.ColorHex)
 		customColor := color.RGB(r, g, b)
 
 		semiTransparent := len(s.Filament.ColorHex) > 6
+
 		blockChars := "████"
 		if semiTransparent {
 			blockChars = "▓▓▓▓"
@@ -75,6 +78,7 @@ func (s FindSpool) String() string {
 			colorBlock = customColor.Sprintf("%s", blockChars) + " "
 		}
 	}
+
 	if s.Filament.MultiColorHexes != "" {
 		// multicolor is represented by comma-separated hex values
 		colors := strings.SplitN(s.Filament.MultiColorHexes, ",", 2)
@@ -91,6 +95,7 @@ func (s FindSpool) String() string {
 	}
 
 	format := "%s%s - #%d %s %s%s (%s%s) - %.1fg remaining, last used %s%s"
+
 	var lastUsedDuration string
 	if s.LastUsed.IsZero() {
 		lastUsedDuration = "never"
@@ -107,19 +112,34 @@ func (s FindSpool) String() string {
 		} else {
 			lastUsedDuration = time.Since(s.LastUsed).String() + " ago"
 		}
-
 	}
+
 	colorHex := ""
 	if s.Filament.ColorHex != "" {
 		colorHex = " #" + s.Filament.ColorHex
 	}
+
 	location := s.Location
 	if location == "" {
 		location = "N/A"
 	}
+
 	location = color.New(color.Bold).Sprintf(location)
 
-	return fmt.Sprintf(format, colorBlock, location, s.Id, s.Filament.Vendor.Name, s.Filament.Name, diameter, s.Filament.Material, colorHex, s.RemainingWeight, lastUsedDuration, archived)
+	return fmt.Sprintf(
+		format,
+		colorBlock,
+		location,
+		s.Id,
+		s.Filament.Vendor.Name,
+		s.Filament.Name,
+		diameter,
+		s.Filament.Material,
+		colorHex,
+		s.RemainingWeight,
+		lastUsedDuration,
+		archived,
+	)
 }
 
 func convertFromHex(hex string) (int, int, int) {
@@ -127,5 +147,6 @@ func convertFromHex(hex string) (int, int, int) {
 	r, _ := strconv.ParseInt(hex[0:2], 16, 16)
 	g, _ := strconv.ParseInt(hex[2:4], 16, 16)
 	b, _ := strconv.ParseInt(hex[4:6], 16, 16)
+
 	return int(r), int(g), int(b)
 }

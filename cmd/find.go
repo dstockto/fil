@@ -15,19 +15,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// findCmd represents the find command
+// findCmd represents the find command.
 var findCmd = &cobra.Command{
 	Use:   "find <name or id...>",
 	Short: "find a spool based on name or id",
-	Long: `Find a spool based on name or id. You can provide multiple names or ids. For multi-word names, enclose in quotes.
-	To show all spools, use the wildcard character '*'.`,
+	Long: `Find a spool based on name or id. You can provide multiple names or ids. For multi-word names, enclose in 
+	quotes. To show all spools, use the wildcard character '*'.`,
 	RunE:    runFind,
 	Aliases: []string{"f"},
 }
 
 func runFind(cmd *cobra.Command, args []string) error {
 	if Cfg == nil || Cfg.ApiBase == "" {
-		return fmt.Errorf("apiClient endpoint not configured")
+		return errors.New("apiClient endpoint not configured")
 	}
 
 	if len(args) == 0 {
@@ -35,14 +35,18 @@ func runFind(cmd *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
-	var spools []models.FindSpool
-	var filters []api.SpoolFilter
+
+	var (
+		spools  []models.FindSpool
+		filters []api.SpoolFilter
+	)
 
 	// API doesn't support diameter, so we have to filter manually
 	diameter, err := cmd.Flags().GetString("diameter")
 	if err != nil {
 		return fmt.Errorf("failed to get diameter flag: %w", err)
 	}
+
 	switch diameter {
 	case "*":
 		filters = append(filters, noFilter)
@@ -57,29 +61,38 @@ func runFind(cmd *cobra.Command, args []string) error {
 	if manufacturer, err := cmd.Flags().GetString("manufacturer"); err == nil && manufacturer != "" {
 		query["manufacturer"] = manufacturer
 	}
+
 	if allowedArchived, err := cmd.Flags().GetBool("allowed-archived"); err == nil && allowedArchived {
 		query["allow_archived"] = "true"
 	}
+
 	if onlyArchived, err := cmd.Flags().GetBool("archived-only"); err == nil && onlyArchived {
-		query["allow_archived"] = "true"        // allow archived is needed to get archived spools from the API
-		filters = append(filters, archivedOnly) // the API doesn't support only returning archived spools, so we have to filter manually
+		query["allow_archived"] = "true" // allow archived is needed to get archived spools from the API
+
+		// the API doesn't support only returning archived spools, so we have to filter manually
+		filters = append(filters, archivedOnly)
 	}
+
 	if hasComment, err := cmd.Flags().GetBool("has-comment"); err == nil && hasComment {
 		filters = append(filters, getCommentFilter("*"))
 	}
+
 	if comment, err := cmd.Flags().GetString("comment"); err == nil && comment != "" {
 		filters = append(filters, getCommentFilter(comment))
 	}
+
 	if used, err := cmd.Flags().GetBool("used"); err == nil && used {
 		filters = append(filters, func(s models.FindSpool) bool {
 			return s.UsedWeight != 0.0
 		})
 	}
+
 	if pristine, err := cmd.Flags().GetBool("pristine"); err == nil && pristine {
 		filters = append(filters, func(s models.FindSpool) bool {
 			return s.UsedWeight == 0.0
 		})
 	}
+
 	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
 		location = mapToAlias(location)
 		query["location"] = location
@@ -97,18 +110,19 @@ func runFind(cmd *cobra.Command, args []string) error {
 		if err == nil {
 			name = "#" + name
 			foundFmt = "Found %d spool with ID %s:\n"
+
 			spool, err := apiClient.FindSpoolsById(id)
 			if errors.Is(err, api.ErrSpoolNotFound) {
 				spools = []models.FindSpool{}
 			} else if err != nil {
-				return fmt.Errorf("error finding spools: %v", err)
+				return fmt.Errorf("error finding spools: %w", err)
 			} else {
 				spools = []models.FindSpool{*spool}
 			}
 		} else {
 			spools, err = apiClient.FindSpoolsByName(a, aggFilter, query)
 			if err != nil {
-				return fmt.Errorf("error finding spools: %v", err)
+				return fmt.Errorf("error finding spools: %w", err)
 			}
 		}
 
@@ -123,18 +137,31 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 		totalRemaining := 0.0
 		totalUsed := 0.0
+
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", s)
 			totalRemaining += s.RemainingWeight
 			totalUsed += s.UsedWeight
 		}
+
 		if len(spools) > 0 {
 			bold := color.New(color.Bold).SprintFunc()
 			spoolPlural := "spools"
+
 			if len(spools) == 1 {
 				spoolPlural = "spool"
 			}
-			fmt.Printf("%s: %d %s, %s: %.1fg, %s: %.1fg\n\n", bold("Summary"), len(spools), spoolPlural, bold("Remaining"), totalRemaining, bold("Used"), totalUsed)
+
+			fmt.Printf(
+				"%s: %d %s, %s: %.1fg, %s: %.1fg\n\n",
+				bold("Summary"),
+				len(spools),
+				spoolPlural,
+				bold("Remaining"),
+				totalRemaining,
+				bold("Used"),
+				totalUsed,
+			)
 		}
 	}
 
@@ -155,22 +182,22 @@ func init() {
 	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
 }
 
-// onlyStandardFilament returns true if the spool is 1.75 mm filament
+// onlyStandardFilament returns true if the spool is 1.75 mm filament.
 func onlyStandardFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 1.75
 }
 
-// noFilter returns true for all spools
+// noFilter returns true for all spools.
 func noFilter(_ models.FindSpool) bool {
 	return true
 }
 
-// ultimakerFilament returns true if the spool is Ultimaker filament (2.85mm)
+// ultimakerFilament returns true if the spool is Ultimaker filament (2.85mm).
 func ultimakerFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 2.85
 }
 
-// onlyArchived returns true if the spool is archived
+// onlyArchived returns true if the spool is archived.
 func archivedOnly(spool models.FindSpool) bool {
 	return spool.Archived
 }
@@ -183,12 +210,13 @@ func getCommentFilter(comment string) api.SpoolFilter {
 	}
 
 	lowerComment := strings.ToLower(comment)
+
 	return func(s models.FindSpool) bool {
 		return strings.Contains(strings.ToLower(s.Comment), lowerComment)
 	}
 }
 
-// aggregateFilter returns a function that returns true if all given filters return true
+// aggregateFilter returns a function that returns true if all given filters return true.
 func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
 	return func(s models.FindSpool) bool {
 		for _, f := range filters {
@@ -196,6 +224,7 @@ func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
 				return false
 			}
 		}
+
 		return true
 	}
 }

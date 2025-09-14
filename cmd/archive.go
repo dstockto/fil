@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// archiveCmd represents the archive command
+// archiveCmd represents the archive command.
 var archiveCmd = &cobra.Command{
 	Use:          "archive",
 	Short:        "Archives a spool and moves it out of any locations",
@@ -27,7 +27,7 @@ var archiveCmd = &cobra.Command{
 
 func runArchive(cmd *cobra.Command, args []string) error {
 	if Cfg == nil || Cfg.ApiBase == "" {
-		return fmt.Errorf("apiClient endpoint not configured")
+		return errors.New("apiClient endpoint not configured")
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
@@ -36,18 +36,21 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	location, err := cmd.Flags().GetString("location")
 	if err != nil {
 		return err
 	}
+
 	location = mapToAlias(location)
 
 	if dryRun {
 		color.HiRed("Dry run mode enabled. Nothing will be changed.")
 	}
 
-	var spools []models.FindSpool
 	var errs error
+
+	spools := []models.FindSpool{}
 
 	for _, a := range args {
 		selector := a
@@ -56,10 +59,12 @@ func runArchive(cmd *cobra.Command, args []string) error {
 			spool, err := apiClient.FindSpoolsById(id)
 			if err != nil {
 				color.Red("Error finding spool %d: %v\n", id, err)
-				errs = errors.Join(errs, fmt.Errorf("error finding spool %d: %v", id, err))
+				errs = errors.Join(errs, fmt.Errorf("error finding spool %d: %w", id, err))
+
 				continue
 			} else {
 				spools = []models.FindSpool{*spool}
+
 				continue
 			}
 		}
@@ -68,22 +73,30 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		if location != "" {
 			query["location"] = location
 		}
+
 		foundSpools, err := apiClient.FindSpoolsByName(a, nil, query)
 		if err != nil {
 			color.Red("Error finding spool '%s': %v\n", selector, err)
 			errs = errors.Join(errs, err)
+
 			continue
 		}
+
 		if len(foundSpools) == 0 {
 			color.Red("No spools found for '%s'\n", selector)
+
 			errs = errors.Join(errs, errors.New("no spools found for '%s'"))
+
 			continue
 		}
+
 		if len(foundSpools) > 1 {
 			color.Red("Multiple spools found for '%s'\n", selector)
 			errs = errors.Join(errs, fmt.Errorf("multiple spools found for '%s'", selector))
+
 			continue
 		}
+
 		spools = append(spools, foundSpools[0])
 	}
 
@@ -92,9 +105,11 @@ func runArchive(cmd *cobra.Command, args []string) error {
 			err := apiClient.ArchiveSpool(s.Id)
 			if err != nil {
 				errs = errors.Join(errs, fmt.Errorf("error archiving spool %d: %w", s.Id, err))
+
 				continue
 			}
 		}
+
 		color.Green("Archived %s\n", s)
 	}
 

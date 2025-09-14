@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// lowCmd lists spools that are running low so you know what to reorder
+// lowCmd lists spools that are running low so you know what to reorder.
 var lowCmd = &cobra.Command{
 	Use:     "low [name|#id]",
 	Short:   "Show spools running low so you know what to reorder",
@@ -21,8 +23,19 @@ var lowCmd = &cobra.Command{
 }
 
 func runLow(cmd *cobra.Command, args []string) error {
+	makeAmazonSearch := func(vendor, name string) string {
+		q := url.QueryEscape(strings.TrimSpace(vendor + " " + name))
+
+		return "https://www.amazon.com/s?k=" + q
+	}
+	// Build an iTerm2-compatible OSC 8 hyperlink: label "text" pointing to "link".
+	// Example format: \x1b]8;;http://example.com\x1b\\This is a link\x1b]8;;\x1b\\
+	termLink := func(text, link string) string {
+		return "\x1b]8;;" + link + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+	}
+
 	if Cfg == nil || Cfg.ApiBase == "" {
-		return fmt.Errorf("apiClient endpoint not configured")
+		return errors.New("apiClient endpoint not configured")
 	}
 
 	// Default to wildcard if no name provided
@@ -44,66 +57,83 @@ func runLow(cmd *cobra.Command, args []string) error {
 	//  2) "VendorPart::NamePart" → match when both vendor and name contain the given parts
 	resolveThreshold := func(vendor string, filamentName string) float64 {
 		thr := maxRemaining
+
 		if Cfg != nil && Cfg.LowThresholds != nil {
 			lvendor := strings.ToLower(strings.TrimSpace(vendor))
 			lname := strings.ToLower(strings.TrimSpace(filamentName))
+
 			for k, v := range Cfg.LowThresholds {
 				if k == "" {
 					continue
 				}
+
 				if v <= 0 {
 					continue
 				}
+
 				lk := strings.ToLower(strings.TrimSpace(k))
 				if strings.Contains(lk, "::") {
 					parts := strings.SplitN(lk, "::", 2)
 					vendPart := strings.TrimSpace(parts[0])
+
 					namePart := strings.TrimSpace(parts[1])
 					if vendPart == "" || namePart == "" {
 						continue
 					}
+
 					if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
 						thr = v
+
 						break
 					}
+
 					continue
 				}
 				// name-only fallback
 				if strings.Contains(lname, lk) {
 					thr = v
+
 					break
 				}
 			}
 		}
+
 		return thr
 	}
 
 	// helper to determine if a filament should be ignored by low command
 	// Supports two pattern forms in config LowIgnore:
 	//  1) "NamePart" -> matches by filament name substring (case-insensitive)
-	//  2) "VendorPart::NamePart" -> matches when both vendor and filament name contain the given substrings (case-insensitive)
+	//  2) "VendorPart::NamePart" -> matches when both vendor and filament name contain the given substrings
+	// (case-insensitive)
 	isIgnored := func(vendor string, filamentName string) bool {
 		if Cfg == nil || Cfg.LowIgnore == nil {
 			return false
 		}
+
 		lvendor := strings.ToLower(vendor)
 		lname := strings.ToLower(filamentName)
+
 		for _, pat := range Cfg.LowIgnore {
 			p := strings.TrimSpace(pat)
 			if p == "" {
 				continue
 			}
+
 			lp := strings.ToLower(p)
 			if strings.Contains(lp, "::") {
 				parts := strings.SplitN(lp, "::", 2)
 				vendPart := strings.TrimSpace(parts[0])
+
 				namePart := strings.TrimSpace(parts[1])
 				if vendPart == "" || namePart == "" {
 					continue
 				}
+
 				if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
 					return true
 				}
+
 				continue
 			}
 			// name-only fallback
@@ -111,6 +141,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 				return true
 			}
 		}
+
 		return false
 	}
 
@@ -122,6 +153,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get diameter flag: %w", err)
 	}
+
 	switch diameter {
 	case "*":
 		filters = append(filters, noFilter)
@@ -152,13 +184,16 @@ func runLow(cmd *cobra.Command, args []string) error {
 		// ID lookups: keep legacy behavior (evaluate that single spool)
 		if id, err := strconv.Atoi(a); err == nil {
 			name = "#" + name
+
 			var spoolsToShow []models.FindSpool
+
 			if spool, err := apiClient.FindSpoolsById(id); err == nil && spool != nil && aggFilter(*spool) {
 				// Skip ignored filaments
 				if !isIgnored(spool.Filament.Vendor.Name, spool.Filament.Name) {
 					// For a single spool, evaluate grams threshold with possible override
 					grpRemaining := spool.RemainingWeight
 					thr := resolveThreshold(spool.Filament.Vendor.Name, spool.Filament.Name)
+
 					lowByGrams := thr > 0 && grpRemaining <= thr+1e-9
 					if thr > 0 && lowByGrams {
 						spoolsToShow = append(spoolsToShow, *spool)
@@ -169,20 +204,25 @@ func runLow(cmd *cobra.Command, args []string) error {
 			header := fmt.Sprintf("Filaments running low matching '%s': %d\n", name, len(spoolsToShow))
 			if len(spoolsToShow) == 0 {
 				color.HiRed(header)
+
 				continue
 			}
+
 			color.Green(header)
+
 			for _, s := range spoolsToShow {
-				fmt.Printf(" - %s\n", s)
+				fmt.Printf(" - %s\n%s\n", s, termLink("Amazon Order", makeAmazonSearch(s.Filament.Vendor.Name, s.Filament.Name)))
 			}
+
 			fmt.Println()
+
 			continue
 		}
 
 		// Name/path lookups: fetch, then group by vendor+name+diameter, evaluate totals
 		found, err := apiClient.FindSpoolsByName(a, aggFilter, query)
 		if err != nil {
-			return fmt.Errorf("error finding spools: %v", err)
+			return fmt.Errorf("error finding spools: %w", err)
 		}
 
 		// Build groups
@@ -194,14 +234,18 @@ func runLow(cmd *cobra.Command, args []string) error {
 			RemainSum float64
 			InitSum   float64
 		}
+
 		groups := map[string]*group{}
+
 		for _, s := range found {
 			key := fmt.Sprintf("%s|%s|%.2f", s.Filament.Vendor.Name, s.Filament.Name, s.Filament.Diameter)
+
 			g, ok := groups[key]
 			if !ok {
 				g = &group{Vendor: s.Filament.Vendor.Name, Name: s.Filament.Name, Diameter: s.Filament.Diameter}
 				groups[key] = g
 			}
+
 			g.Spools = append(g.Spools, s)
 			g.RemainSum += s.RemainingWeight
 			g.InitSum += s.InitialWeight
@@ -209,12 +253,15 @@ func runLow(cmd *cobra.Command, args []string) error {
 
 		// Decide which groups are low using per-filament threshold overrides when present
 		var lowGroups []*group
+
 		for _, g := range groups {
 			// Skip ignored filaments
 			if isIgnored(g.Vendor, g.Name) {
 				continue
 			}
+
 			thr := resolveThreshold(g.Vendor, g.Name)
+
 			lowByGrams := thr > 0 && g.RemainSum <= thr+1e-9
 			if thr > 0 && lowByGrams {
 				lowGroups = append(lowGroups, g)
@@ -230,12 +277,20 @@ func runLow(cmd *cobra.Command, args []string) error {
 		header := fmt.Sprintf("Filaments running low matching '%s': %d\n", name, len(lowGroups))
 		if len(lowGroups) == 0 {
 			color.HiRed(header)
+
 			continue
 		}
+
 		color.Green(header)
+
 		for _, s := range spools {
-			fmt.Printf(" - %s\n", s)
+			fmt.Printf(
+				" - %s\n%s\n",
+				s,
+				termLink("Amazon Order "+s.Filament.Name, makeAmazonSearch(s.Filament.Vendor.Name, s.Filament.Name)),
+			)
 		}
+
 		fmt.Println()
 	}
 
@@ -245,7 +300,16 @@ func runLow(cmd *cobra.Command, args []string) error {
 func init() {
 	rootCmd.AddCommand(lowCmd)
 
-	lowCmd.Flags().Float64("max-remaining", 200, "threshold in grams; spools with remaining <= this are shown (0 to disable)")
+	lowCmd.Flags().Float64(
+		"max-remaining",
+		200,
+		"threshold in grams; spools with remaining <= this are shown (0 to disable)",
+	)
 	lowCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
-	lowCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
+	lowCmd.Flags().StringP(
+		"diameter",
+		"d",
+		"1.75",
+		"filter by diameter, default is 1.75mm, '*' for all",
+	)
 }
