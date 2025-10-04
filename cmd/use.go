@@ -61,6 +61,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 		errs   error
 	)
 
+	location, locerr := cmd.Flags().GetString("location")
+	fmt.Printf("Filtering by location: %s\n", location)
 	for i := 0; i < len(args); i += 2 {
 		spoolSelector := args[i]
 		// Try for an ID first
@@ -72,11 +74,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 		if spoolId == -1 {
 			query := make(map[string]string)
 
-			location, locerr := cmd.Flags().GetString("location")
 			if locerr == nil && location != "" {
 				location = mapToAlias(location)
 				query["location"] = location
-				fmt.Printf("Filtering by location: %s\n", location)
 			}
 
 			spools, finderr := apiClient.FindSpoolsByName(args[i], nil, query)
