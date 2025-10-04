@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -102,6 +103,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 	// Allow additional filters later, for now, just default to 1.75mm filament
 	aggFilter := aggregateFilter(filters...)
 
+	// determine if we should sort by least or most recently used
+	lruSort, _ := cmd.Flags().GetBool("lru")
+	mruSort, _ := cmd.Flags().GetBool("mru")
+	if lruSort && mruSort {
+		return fmt.Errorf("flags --lru and --mru are mutually exclusive; please specify only one")
+	}
+
 	for _, a := range args {
 		foundFmt := "Found %d spools matching '%s':\n"
 		name := a
@@ -124,6 +132,27 @@ func runFind(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("error finding spools: %w", err)
 			}
+		}
+
+		// If requested, sort by least- or most-recently used; never-used at the end
+		if (lruSort || mruSort) && len(spools) > 1 {
+			sort.Slice(spools, func(i, j int) bool {
+				li, lj := spools[i].LastUsed, spools[j].LastUsed
+				zi, zj := li.IsZero(), lj.IsZero()
+				if zi && !zj {
+					return false // i has never been used; place after j
+				}
+				if !zi && zj {
+					return true // i used, j never used; i comes first
+				}
+				if zi && zj {
+					return false // keep relative order for never-used
+				}
+				if lruSort {
+					return li.Before(lj) // older last-used first
+				}
+				return li.After(lj) // newer last-used first
+			})
 		}
 
 		foundMsg := fmt.Sprintf(foundFmt, len(spools), name)
@@ -180,6 +209,8 @@ func init() {
 	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
 	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
 	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
+	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
 }
 
 // onlyStandardFilament returns true if the spool is 1.75 mm filament.
