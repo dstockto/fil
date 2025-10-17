@@ -274,3 +274,175 @@ func (c Client) filterSpools(spools []models.FindSpool, filter SpoolFilter) []mo
 
 	return spools
 }
+
+// Settings API models and methods added for cleaning locations_spoolorders
+// These are appended after existing methods.
+
+// SettingEntry represents a settings value as returned by /api/v1/setting/
+// Note: The API returns Value as a JSON string for complex types (arrays/objects),
+// so callers may need to json.Unmarshal twice: first into a string, then that
+// string into the concrete type.
+type SettingEntry struct {
+	Value json.RawMessage `json:"value"`
+	IsSet bool            `json:"is_set"`
+	Type  string          `json:"type"`
+}
+
+// GetSettings fetches all settings from the server at /api/v1/setting/
+func (c Client) GetSettings() (map[string]SettingEntry, error) {
+	endpoint := c.base + "/api/v1/setting/"
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+
+	resp, err := c.httpClient.Get(u.String())
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var out map[string]SettingEntry
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode settings response: %w", err)
+	}
+
+	return out, nil
+}
+
+// PatchSettings sends a PATCH to /api/v1/setting/ with the provided fields.
+// The body should be a flat object of key -> value, where value matches what the server expects.
+// For complex settings that are represented as JSON strings in the API (e.g., arrays/objects),
+// pass a Go value (map/slice) and this method will marshal it into a JSON string so that the
+// server receives a string containing JSON (to match current behavior of the endpoint).
+func (c Client) PatchSettings(fields map[string]any) error {
+	endpoint := c.base + "/api/v1/setting/"
+
+	// Marshal fields, converting maps/slices to JSON strings where necessary.
+	payload := map[string]any{}
+	for k, v := range fields {
+		switch vv := v.(type) {
+		case string, bool, float64, int, int64, nil:
+			payload[k] = vv
+		default:
+			// For maps/slices/structs: marshal to JSON, then embed as string
+			b, err := json.Marshal(v)
+			if err != nil {
+				return fmt.Errorf("failed to marshal field %s: %w", k, err)
+			}
+			payload[k] = string(b)
+		}
+	}
+
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings patch body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return nil
+}
+
+// PostSettingObject updates a single setting key using POST /api/v1/setting/{key}
+// For object/array settings, the API expects the "value" field to be a JSON string
+// containing the serialized object, alongside is_set=true and an appropriate type.
+// This helper marshals obj to JSON and wraps it as a string in the request body with type "object".
+func (c Client) PostSettingObject(key string, obj any) error {
+	endpoint := c.base + "/api/v1/setting/" + key
+
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Errorf("failed to marshal setting %s: %w", key, err)
+	}
+
+	// First attempt: send wrapper object {value,is_set,type}
+	payload := map[string]any{
+		"value":  string(b),
+		"is_set": true,
+		"type":   "object",
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal setting payload for %s: %w", key, err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	// We need body text possibly for retry decision; don't defer close until after reading
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		_ = resp.Body.Close()
+		return nil
+	}
+	// Read error body and decide whether to retry with raw string
+	errBody, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	status := resp.StatusCode
+	errText := strings.TrimSpace(string(errBody))
+
+	// If server expects a plain string body, it may return 422 with a message like
+	// "Input should be a valid string". In that case, retry by sending the JSON string itself.
+	if status == http.StatusUnprocessableEntity || strings.Contains(strings.ToLower(errText), "valid string") || strings.Contains(strings.ToLower(errText), "string_type") {
+		// Second attempt: send the JSON string as the whole body (as a JSON string literal)
+		jsonStringBody, mErr := json.Marshal(string(b))
+		if mErr != nil {
+			return fmt.Errorf("failed to marshal raw string payload for %s: %w", key, mErr)
+		}
+
+		req2, rErr := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(jsonStringBody))
+		if rErr != nil {
+			return fmt.Errorf("failed to create request: %w", rErr)
+		}
+		req2.Header.Set("Content-Type", "application/json")
+
+		resp2, dErr := c.httpClient.Do(req2)
+		if dErr != nil {
+			return fmt.Errorf("request failed: %w", dErr)
+		}
+		defer func() { _ = resp2.Body.Close() }()
+
+		if resp2.StatusCode == http.StatusOK || resp2.StatusCode == http.StatusCreated {
+			return nil
+		}
+
+		b2, _ := io.ReadAll(resp2.Body)
+		return fmt.Errorf("api error: status %d: %s", resp2.StatusCode, strings.TrimSpace(string(b2)))
+	}
+
+	// Otherwise, return the original error
+	return fmt.Errorf("api error: status %d: %s", status, errText)
+}
