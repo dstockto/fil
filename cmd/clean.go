@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/dstockto/fil/api"
 	"github.com/spf13/cobra"
@@ -26,6 +27,10 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	apiClient := api.NewClient(Cfg.ApiBase)
 
 	write, err := cmd.Flags().GetBool("write")
+	if err != nil {
+		return err
+	}
+	addMissing, err := cmd.Flags().GetBool("add-missing")
 	if err != nil {
 		return err
 	}
@@ -68,10 +73,12 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to parse locations_spoolorders JSON: %w", err)
 	}
 
-	// 3) Clean: keep only IDs currently at the same location
+	// 3) Clean: keep only IDs currently at the same location. Optionally add missing IDs.
 	cleaned := make(map[string][]int, len(orders))
 	removedTotal := 0
+	addedTotal := 0
 
+	// Process locations already present in orders
 	for loc, ids := range orders {
 		set := current[loc] // nil map is fine; membership will be false
 		kept := make([]int, 0, len(ids))
@@ -83,22 +90,72 @@ func runClean(cmd *cobra.Command, _ []string) error {
 				removed = append(removed, id)
 			}
 		}
-		// preserve original order of remaining IDs
-		cleaned[loc] = kept
 		removedTotal += len(removed)
-
 		if len(removed) > 0 {
 			fmt.Printf("%s: removing %d stale id(s): %v\n", locLabel(loc), len(removed), removed)
 		}
+
+		// Optionally append missing IDs (those present in current but not listed)
+		added := make([]int, 0)
+		if addMissing && len(set) > 0 && loc != "" {
+			present := make(map[int]struct{}, len(kept))
+			for _, id := range kept {
+				present[id] = struct{}{}
+			}
+			for id := range set {
+				if _, ok := present[id]; !ok {
+					added = append(added, id)
+				}
+			}
+			if len(added) > 0 {
+				sort.Ints(added)
+				kept = append(kept, added...)
+				addedTotal += len(added)
+				fmt.Printf("%s: adding %d missing id(s): %v\n", locLabel(loc), len(added), added)
+			}
+		}
+
+		// preserve relative order of existing IDs; newly added go to the end
+		cleaned[loc] = kept
 	}
 
-	if removedTotal == 0 {
-		fmt.Println("No stale spool IDs found; nothing to clean.")
+	// Also handle locations that exist in current but are absent from orders
+	if addMissing {
+		for loc, set := range current {
+			if loc == "" {
+				// Do not add missing spools to the <empty> location
+				continue
+			}
+			if _, seen := orders[loc]; seen {
+				continue
+			}
+			if len(set) == 0 {
+				continue
+			}
+			ids := make([]int, 0, len(set))
+			for id := range set {
+				ids = append(ids, id)
+			}
+			sort.Ints(ids)
+			cleaned[loc] = ids
+			addedTotal += len(ids)
+			fmt.Printf("%s: adding %d missing id(s): %v\n", locLabel(loc), len(ids), ids)
+		}
+	}
+
+	if removedTotal == 0 && addedTotal == 0 {
+		fmt.Println("No changes needed; nothing to clean or add.")
 		return nil
 	}
 
 	if !write {
-		fmt.Printf("Dry run: would remove %d stale id(s). Use --write to apply changes.\n", removedTotal)
+		if addedTotal > 0 && removedTotal > 0 {
+			fmt.Printf("Dry run: would remove %d stale id(s) and add %d missing id(s). Use --write to apply changes.\n", removedTotal, addedTotal)
+		} else if removedTotal > 0 {
+			fmt.Printf("Dry run: would remove %d stale id(s). Use --write to apply changes.\n", removedTotal)
+		} else {
+			fmt.Printf("Dry run: would add %d missing id(s). Use --write to apply changes.\n", addedTotal)
+		}
 		return nil
 	}
 
@@ -107,7 +164,13 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
-	fmt.Printf("Updated locations_spoolorders; removed %d stale id(s).\n", removedTotal)
+	if addedTotal > 0 && removedTotal > 0 {
+		fmt.Printf("Updated locations_spoolorders; removed %d stale id(s) and added %d missing id(s).\n", removedTotal, addedTotal)
+	} else if removedTotal > 0 {
+		fmt.Printf("Updated locations_spoolorders; removed %d stale id(s).\n", removedTotal)
+	} else {
+		fmt.Printf("Updated locations_spoolorders; added %d missing id(s).\n", addedTotal)
+	}
 	return nil
 }
 
@@ -120,5 +183,6 @@ func locLabel(loc string) string {
 
 func init() { //nolint:gochecknoinits
 	cleanCmd.Flags().Bool("write", false, "apply changes (by default runs as a dry run)")
+	cleanCmd.Flags().Bool("add-missing", false, "also add missing spool IDs to each location based on current data")
 	rootCmd.AddCommand(cleanCmd)
 }
