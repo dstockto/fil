@@ -42,6 +42,23 @@ func runFind(cmd *cobra.Command, args []string) error {
 		filters []api.SpoolFilter
 	)
 
+	// Preload settings-based location orders to sort results accordingly.
+	// The settings key 'locations_spoolorders' stores, per location, the ordered list of spool IDs.
+	orders, err := loadLocationOrders(apiClient)
+	if err != nil {
+		// Non-fatal: if settings cannot be loaded, continue without settings-based ordering.
+		orders = map[string][]int{}
+	}
+	// Build quick lookup of ranks per location for O(1) index lookups.
+	ranks := make(map[string]map[int]int, len(orders))
+	for loc, ids := range orders {
+		m := make(map[int]int, len(ids))
+		for i, id := range ids {
+			m[id] = i
+		}
+		ranks[loc] = m
+	}
+
 	// API doesn't support diameter, so we have to filter manually
 	diameter, err := cmd.Flags().GetString("diameter")
 	if err != nil {
@@ -152,6 +169,33 @@ func runFind(cmd *cobra.Command, args []string) error {
 					return li.Before(lj) // older last-used first
 				}
 				return li.After(lj) // newer last-used first
+			})
+		} else if len(spools) > 1 && len(ranks) > 0 {
+			// Default behavior: sort according to settings-defined order within each location.
+			// Items with a known rank (present in settings for their location) come before unknowns.
+			sort.SliceStable(spools, func(i, j int) bool {
+				ai := spools[i]
+				aj := spools[j]
+				locI := mapToAlias(ai.Location)
+				locJ := mapToAlias(aj.Location)
+				rI, okI := ranks[locI][ai.Id]
+				rJ, okJ := ranks[locJ][aj.Id]
+				if okI && !okJ {
+					return true
+				}
+				if !okI && okJ {
+					return false
+				}
+				if okI && okJ {
+					// When both have ranks (possibly in different locations), order by rank number.
+					if rI != rJ {
+						return rI < rJ
+					}
+					// As a tie-breaker across locations with same rank, keep stable order by returning false.
+					return false
+				}
+				// Neither has a rank; keep current relative order (stable sort preserves input order).
+				return false
 			})
 		}
 
