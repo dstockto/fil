@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -37,12 +38,20 @@ var Cfg *Config
 // cfgFile is set from -c/--config flag.
 var cfgFile string
 
+// noColor toggles ANSI color output off when set via --no-color flag.
+var noColor bool
+
 // rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "fil",
 	Short: "Fil is a command line tool for managing spoolman information",
 	Long:  `Fil is a command line tool for managing spoolman information.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Apply color preference as early as possible, but only disable if the flag is set
+		if noColor {
+			color.NoColor = true
+		}
+
 		// Load config only once; subsequent subcommands in the chain need not reload
 		if Cfg != nil {
 			return nil
@@ -109,6 +118,8 @@ func exists(path string) bool {
 func init() {
 	// Global config flag for all commands
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "path to config file (config.json)")
+	// Global color toggle
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable ANSI color output")
 }
 
 // LoadMergedConfig attempts to load and merge configs from standard locations when no explicit --config is provided.
