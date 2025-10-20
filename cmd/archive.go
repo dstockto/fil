@@ -100,16 +100,36 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		spools = append(spools, foundSpools[0])
 	}
 
+	// Load current locations_spoolorders to compute removals for dry-run and updates
+	orders, loadErr := loadLocationOrders(apiClient)
+	if loadErr != nil {
+		return loadErr
+	}
+
+	// Remove each selected spool ID from all location lists
 	for _, s := range spools {
-		if !dryRun {
-			err := apiClient.ArchiveSpool(s.Id)
-			if err != nil {
-				errs = errors.Join(errs, fmt.Errorf("error archiving spool %d: %w", s.Id, err))
+		orders = removeFromAllOrders(orders, s.Id)
+	}
 
-				continue
-			}
+	if dryRun {
+		for _, s := range spools {
+			fmt.Printf("Would archive %s and remove it from locations_spoolorders.\n", s)
 		}
+		return errs
+	}
 
+	// Persist settings first so UI order reflects immediately
+	if err := apiClient.PostSettingObject("locations_spoolorders", orders); err != nil {
+		return fmt.Errorf("failed to update locations_spoolorders: %w", err)
+	}
+
+	// Then archive each spool (sets archived=true and clears location)
+	for _, s := range spools {
+		err := apiClient.ArchiveSpool(s.Id)
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("error archiving spool %d: %w", s.Id, err))
+			continue
+		}
 		color.Green("Archived %s\n", s)
 	}
 
