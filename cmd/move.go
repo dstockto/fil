@@ -68,6 +68,14 @@ func runMove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// interactive mode control
+	nonInteractive, err := cmd.Flags().GetBool("non-interactive")
+	if err != nil {
+		return err
+	}
+	simpleSelect, _ := cmd.Flags().GetBool("simple-select")
+	allowInteractive := isInteractiveAllowed(nonInteractive)
+
 	// Optional default destination (can include :pos or @pos)
 	allTo, err := cmd.Flags().GetString("destination")
 	if err != nil {
@@ -123,12 +131,28 @@ func runMove(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			if len(spools) != 1 {
-				theErr := fmt.Errorf("multiple spools found (%d): %s", len(spools), spoolSelector)
-				errs = errors.Join(errs, theErr)
-				moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: theErr})
-				continue
+				if allowInteractive {
+					// let the user pick from a broad list honoring any filters (e.g., location)
+					chosen, canceled, selErr := selectSpoolInteractively(apiClient, spoolSelector, query, spools, simpleSelect)
+					if selErr != nil {
+						errs = errors.Join(errs, fmt.Errorf("selection error: %w", selErr))
+						moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: selErr})
+						continue
+					}
+					if canceled {
+						// abort entire operation before executing any changes
+						return errors.New("selection canceled; no moves executed")
+					}
+					spoolId = chosen.Id
+				} else {
+					theErr := fmt.Errorf("multiple spools found (%d): %s", len(spools), spoolSelector)
+					errs = errors.Join(errs, theErr)
+					moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: theErr})
+					continue
+				}
+			} else {
+				spoolId = spools[0].Id
 			}
-			spoolId = spools[0].Id
 		}
 
 		moves = append(moves, move{spoolId: spoolId, to: destination, dest: dspec})
@@ -406,4 +430,6 @@ func init() {
 	moveCmd.Flags().StringP("from", "f", "", "source location for all spools (limits name lookups)")
 	// Note: slot is specified inline as part of the destination token (e.g., A:2); no separate --slot flag.
 	moveCmd.Flags().Bool("debug", false, "show extra debug details in --dry-run output")
+	moveCmd.Flags().BoolP("non-interactive", "n", false, "do not prompt; if multiple spools match, behave as current non-interactive error behavior")
+	moveCmd.Flags().Bool("simple-select", false, "use a basic numbered selector instead of interactive menu (fallback for limited terminals)")
 }

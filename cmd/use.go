@@ -40,6 +40,13 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	nonInteractive, err := cmd.Flags().GetBool("non-interactive")
+	if err != nil {
+		return err
+	}
+	simpleSelect, _ := cmd.Flags().GetBool("simple-select")
+	allowInteractive := isInteractiveAllowed(nonInteractive)
+
 	if dryRun {
 		_, err := color.New(color.FgHiYellow).Println("Dry run mode enabled. Nothing will be changed.")
 		if err != nil {
@@ -93,19 +100,28 @@ func runUse(cmd *cobra.Command, args []string) error {
 			}
 
 			if len(spools) != 1 {
-				errs = errors.Join(errs, fmt.Errorf("multiple spools found (%d): %s", len(spools), spoolSelector))
-				fmt.Printf("Multiple spools found (%d): %s\n", len(spools), spoolSelector)
-
-				for _, s := range spools {
-					fmt.Printf(" - %s\n", s)
+				if allowInteractive {
+					chosen, canceled, selErr := selectSpoolInteractively(apiClient, spoolSelector, query, spools, simpleSelect)
+					if selErr != nil {
+						errs = errors.Join(errs, fmt.Errorf("selection error: %w", selErr))
+						continue
+					}
+					if canceled {
+						return errors.New("selection canceled; no usages executed")
+					}
+					spoolId = chosen.Id
+				} else {
+					errs = errors.Join(errs, fmt.Errorf("multiple spools found (%d): %s", len(spools), spoolSelector))
+					fmt.Printf("Multiple spools found (%d): %s\n", len(spools), spoolSelector)
+					for _, s := range spools {
+						fmt.Printf(" - %s\n", s)
+					}
+					fmt.Println()
+					continue
 				}
-
-				fmt.Println()
-
-				continue
+			} else {
+				spoolId = spools[0].Id
 			}
-
-			spoolId = spools[0].Id
 		}
 
 		amount, floatErr := strconv.ParseFloat(args[i+1], 64)
@@ -208,4 +224,6 @@ func init() {
 
 	useCmd.Flags().BoolP("dry-run", "d", false, "show what would be used, but don't actually use anything")
 	useCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	useCmd.Flags().BoolP("non-interactive", "n", false, "do not prompt; if multiple spools match, behave as current non-interactive error behavior")
+	useCmd.Flags().Bool("simple-select", false, "use a basic numbered selector instead of interactive menu (fallback for limited terminals)")
 }

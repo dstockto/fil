@@ -209,9 +209,21 @@ Moved #20 Polymaker Muted Red from Shelf 6B to AMS A
 
 Use ideas:
 - `fil -m -f <limit search> <spool selector> <amount> <spool selector> <amount>...`
-- {spool selector} must result in a single spool. If it doesn't, then it will give an error.
-- --interactive / -i - present menus to allow selection of spools instead of requiring ID
 - --summary prints totals per filament and overall weight used/remaining.
+
+Interactive selection for move and use:
+- When a spool selector matches more than one spool, `fil move` and `fil use` will now open an interactive selector to pick the intended spool.
+- The selector supports arrow keys and live filtering; start typing to filter the list. The initial label shows your query.
+- You can choose from all available spools within the current filters (e.g., `--from`/`--location`), not only the initial matches.
+- If you cancel at any selection prompt (Esc/Ctrl+C), the entire command is aborted and no changes are made.
+- In dry-run mode, prompts still appear unless you also pass `--non-interactive`.
+- To disable prompting and keep the prior behavior (error on ambiguous match), pass `--non-interactive` (alias `-n`).
+  - Interaction is also disabled automatically when stdout/stderr are not TTYs (e.g., when piping output).
+
+Examples:
+- `fil move "muted green" A:2` → if multiple spools match "muted green", you will be prompted to pick one before applying the move.
+- `fil use "cotton white" 2.5` → prompts to choose the exact spool, then applies the usage.
+- `fil use -n "blue" 5.0` → non-interactive; if multiple "blue" spools match, prints an error and does nothing.
 
 
 Provide a way to archive spools.
