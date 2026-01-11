@@ -190,6 +190,7 @@ error and a non-zero exit code.
 Find options:
 - Show spools that are in AMS's (in the right order)
 - Filtering by filament type (partial match?)
+- Add purchase link in normal find (with switch)
     
 Move options:
 - Allow changing of position within a location???? (to line up where stuff is in the AMS)

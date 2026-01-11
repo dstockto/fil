@@ -211,8 +211,14 @@ func runFind(cmd *cobra.Command, args []string) error {
 		totalRemaining := 0.0
 		totalUsed := 0.0
 
+		showPurchase, _ := cmd.Flags().GetBool("purchase")
+
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", s)
+			if showPurchase {
+				fmt.Printf(" - %s\n%s\n", s, amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+				//fmt.Printf("%s\n", amazonLink(s.Filament.Name, s.Filament.Vendor.Name))
+			}
 			totalRemaining += s.RemainingWeight
 			totalUsed += s.UsedWeight
 		}
@@ -255,6 +261,7 @@ func init() {
 	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
 	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
 	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
+	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
 }
 
 // onlyStandardFilament returns true if the spool is 1.75 mm filament.

@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -23,17 +22,6 @@ var lowCmd = &cobra.Command{
 }
 
 func runLow(cmd *cobra.Command, args []string) error {
-	makeAmazonSearch := func(vendor, name string) string {
-		q := url.QueryEscape(strings.TrimSpace(vendor + " " + name))
-
-		return "https://www.amazon.com/s?k=" + q
-	}
-	// Build an iTerm2-compatible OSC 8 hyperlink: label "text" pointing to "link".
-	// Example format: \x1b]8;;http://example.com\x1b\\This is a link\x1b]8;;\x1b\\
-	termLink := func(text, link string) string {
-		return "\x1b]8;;" + link + "\x1b\\" + text + "\x1b]8;;\x1b\\"
-	}
-
 	if Cfg == nil || Cfg.ApiBase == "" {
 		return errors.New("apiClient endpoint not configured")
 	}
@@ -211,7 +199,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 			color.Green(header)
 
 			for _, s := range spoolsToShow {
-				fmt.Printf(" - %s\n%s\n", s, termLink("Amazon Order", makeAmazonSearch(s.Filament.Vendor.Name, s.Filament.Name)))
+				fmt.Printf(" - %s\n%s\n", s, amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
 			}
 
 			fmt.Println()
