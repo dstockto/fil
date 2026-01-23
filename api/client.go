@@ -99,6 +99,62 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[stri
 	return out, nil
 }
 
+func (c Client) GetFilamentById(id int) (*models.FindSpool, error) {
+	endpoint := c.base + "/api/v1/filament/%d"
+	endpoint = fmt.Sprintf(endpoint, id)
+
+	findUrl, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(&http.Request{
+		Method: http.MethodGet,
+		URL:    findUrl,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("failed to close response body: %v\n", closeErr)
+		}
+	}()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.New("filament not found")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	// The Spoolman API for /filament/{id} returns a filament object.
+	// Our models.FindSpool has a Filament field which matches this structure.
+	// We can wrap it or just decode into a struct that matches.
+	var out struct {
+		Id       int    `json:"id"`
+		Name     string `json:"name"`
+		Material string `json:"material"`
+	}
+
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Return a dummy FindSpool with the filament info populated
+	res := &models.FindSpool{}
+	res.Filament.Id = out.Id
+	res.Filament.Name = out.Name
+	res.Filament.Material = out.Material
+
+	return res, nil
+}
+
 func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/spool/%d"
 	endpoint = fmt.Sprintf(endpoint, id)

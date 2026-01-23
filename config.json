@@ -34,6 +34,11 @@
     "ULT": "Ultimaker",
     "NONE": "<empty>"
   },
+  "location_capacity": {
+    "AMS A": { "capacity": 4 },
+    "AMS B": { "capacity": 4 },
+    "AMS C": { "capacity": 4 }
+  },
   "plans_dir": "/Users/davidstockton/Documents/3d-prints/plans",
   "archive_dir": "/Users/davidstockton/Documents/3d-prints/archive"
 }

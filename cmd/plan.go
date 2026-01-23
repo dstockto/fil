@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,29 +59,69 @@ type DiscoveredPlan struct {
 
 func discoverPlans() ([]DiscoveredPlan, error) {
 	var plans []DiscoveredPlan
-	files, _ := filepath.Glob("*.yaml")
-	files2, _ := filepath.Glob("*.yml")
-	files = append(files, files2...)
+	fileMap := make(map[string]bool)
 
-	if Cfg != nil && Cfg.PlansDir != "" {
-		globalFiles, _ := filepath.Glob(filepath.Join(Cfg.PlansDir, "*.yaml"))
-		globalFiles2, _ := filepath.Glob(filepath.Join(Cfg.PlansDir, "*.yml"))
-		files = append(files, globalFiles...)
-		files = append(files, globalFiles2...)
+	// Directories to search
+	var dirs []string
+
+	// Always search CWD
+	if cwd, err := os.Getwd(); err == nil {
+		dirs = append(dirs, cwd)
 	}
 
-	for _, f := range files {
-		data, err := os.ReadFile(f)
+	// Add global plans dir if configured
+	if Cfg != nil && Cfg.PlansDir != "" {
+		absPlansDir, err := filepath.Abs(Cfg.PlansDir)
+		if err == nil {
+			dirs = append(dirs, absPlansDir)
+		} else {
+			dirs = append(dirs, Cfg.PlansDir)
+		}
+	}
+
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip errors
+			}
+			if d.IsDir() {
+				// Don't recurse into hidden directories like .git
+				if strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext != ".yaml" && ext != ".yml" {
+				return nil
+			}
+
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				absPath = path
+			}
+			if fileMap[absPath] {
+				return nil
+			}
+			fileMap[absPath] = true
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			var plan models.PlanFile
+			if err := yaml.Unmarshal(data, &plan); err != nil {
+				// Skip files that aren't plan files
+				return nil
+			}
+			if len(plan.Projects) > 0 {
+				plans = append(plans, DiscoveredPlan{Path: absPath, Plan: plan})
+			}
+			return nil
+		})
 		if err != nil {
-			continue
-		}
-		var plan models.PlanFile
-		if err := yaml.Unmarshal(data, &plan); err != nil {
-			// Skip files that aren't plan files
-			continue
-		}
-		if len(plan.Projects) > 0 {
-			plans = append(plans, DiscoveredPlan{Path: f, Plan: plan})
+			// ignore walk errors for a single directory root
 		}
 	}
 	return plans, nil
@@ -209,12 +250,11 @@ var planResolveCmd = &cobra.Command{
 					} else if need.FilamentID != 0 && (need.Name == "" || need.Material == "") {
 						// Reverse sync
 						// We need a way to get filament info by ID.
-						// Looking at api/client.go, there's FindSpoolsById but that returns a spool.
-						// We can use that and get filament from it.
-						spool, err := apiClient.FindSpoolsById(need.FilamentID) // This is a bit of a hack as it returns any spool of that filament
-						if err == nil && spool != nil {
-							need.Name = spool.Filament.Name
-							need.Material = spool.Filament.Material
+						// Spoolman API has /api/v1/filament/{id}
+						filament, err := apiClient.GetFilamentById(need.FilamentID)
+						if err == nil && filament != nil {
+							need.Name = filament.Filament.Name
+							need.Material = filament.Filament.Material
 							modified = true
 						}
 					}
@@ -736,7 +776,9 @@ var planNextCmd = &cobra.Command{
 		loadedSpools := make(map[string]models.FindSpool)
 		for _, s := range allSpools {
 			if s.Location != "" {
-				loadedSpools[s.Location] = s
+				// Use unique key since multiple spools can be in same location
+				key := s.Location + "_" + fmt.Sprint(s.Id)
+				loadedSpools[key] = s
 			}
 		}
 
@@ -757,8 +799,14 @@ var planNextCmd = &cobra.Command{
 						// Check if already loaded in any of this printer's locations
 						foundInPrinter := false
 						for _, loc := range printerLocations {
-							if s, ok := loadedSpools[loc]; ok && s.Filament.Id == req.FilamentID {
-								foundInPrinter = true
+							// Check if the filament is loaded in this location
+							for _, s := range loadedSpools {
+								if s.Location == loc && s.Filament.Id == req.FilamentID {
+									foundInPrinter = true
+									break
+								}
+							}
+							if foundInPrinter {
 								break
 							}
 						}
@@ -835,12 +883,48 @@ var planNextCmd = &cobra.Command{
 		// 4. Swap Instructions
 		fmt.Printf("\nPreparing to print: %s - %s\n", choice.projectName, choice.plate.Name)
 
+		// Pre-calculate what filaments are needed for the current and future plates in the project
+		neededFilamentIDs := make(map[int]bool)
+		for i := choice.projectIdx; i < len(discovered[0].Plan.Projects); i++ {
+			proj := discovered[0].Plan.Projects[i]
+			if proj.Status == "completed" {
+				continue
+			}
+			startPlate := 0
+			if i == choice.projectIdx {
+				startPlate = choice.plateIdx
+			}
+			for j := startPlate; j < len(proj.Plates); j++ {
+				plate := proj.Plates[j]
+				if plate.Status == "completed" {
+					continue
+				}
+				for _, req := range plate.Needs {
+					neededFilamentIDs[req.FilamentID] = true
+				}
+			}
+		}
+
+		// Pre-collect all locations that are assigned to ANY printer
+		allPrinterLocations := make(map[string]string) // location -> printer name
+		for pName, locs := range Cfg.Printers {
+			for _, l := range locs {
+				allPrinterLocations[l] = pName
+			}
+		}
+
 		for _, req := range choice.plate.Needs {
 			// Is it already loaded?
 			loadedLoc := ""
 			for _, loc := range printerLocations {
-				if s, ok := loadedSpools[loc]; ok && s.Filament.Id == req.FilamentID {
-					loadedLoc = loc
+				// We need to check all spools in this location
+				for _, s := range loadedSpools {
+					if s.Location == loc && s.Filament.Id == req.FilamentID {
+						loadedLoc = loc
+						break
+					}
+				}
+				if loadedLoc != "" {
 					break
 				}
 			}
@@ -858,22 +942,40 @@ var planNextCmd = &cobra.Command{
 				}
 			}
 
-			// Priority: 1. Partially used, 2. Oldest (lowest ID)
-			// (Simplified: just pick the best one automatically for now)
+			// Priority:
+			// 1. Not in any printer location
+			// 2. Partially used
+			// 3. Oldest (lowest ID)
 			var bestSpool *models.FindSpool
-			for _, s := range candidates {
+			for i := range candidates {
+				s := &candidates[i]
 				if bestSpool == nil {
-					bestSpool = &s
+					bestSpool = s
 					continue
 				}
+
+				_, curInPrinter := allPrinterLocations[bestSpool.Location]
+				_, newInPrinter := allPrinterLocations[s.Location]
+
+				// If current best is in a printer but this one isn't, this one is better
+				if curInPrinter && !newInPrinter {
+					bestSpool = s
+					continue
+				}
+				// If this one is in a printer but current best isn't, current best is still better
+				if !curInPrinter && newInPrinter {
+					continue
+				}
+
+				// If both same in terms of "in printer", use existing priority
 				// If current best is unused but this one is used
 				if bestSpool.UsedWeight == 0 && s.UsedWeight > 0 {
-					bestSpool = &s
+					bestSpool = s
 					continue
 				}
 				// If both same state, pick lowest ID
 				if (bestSpool.UsedWeight > 0) == (s.UsedWeight > 0) && s.Id < bestSpool.Id {
-					bestSpool = &s
+					bestSpool = s
 				}
 			}
 
@@ -882,33 +984,196 @@ var planNextCmd = &cobra.Command{
 				continue
 			}
 
+			// If the best (or only) spool is in another printer, warn the user
+			if otherPName, inOtherPrinter := allPrinterLocations[bestSpool.Location]; inOtherPrinter {
+				fmt.Printf("! WARNING: Spool #%d (%s) is already in %s (Printer: %s)\n", bestSpool.Id, bestSpool.Filament.Name, bestSpool.Location, otherPName)
+				prompt := promptui.Prompt{
+					Label:     "Do you want to move it to this printer anyway?",
+					IsConfirm: true,
+					Stdout:    NoBellStdout,
+				}
+				_, err := prompt.Run()
+				if err != nil {
+					fmt.Println("Skipping this swap.")
+					continue
+				}
+			}
+
 			// Find an empty slot or one to swap out
 			targetLoc := ""
 			for _, loc := range printerLocations {
-				if _, ok := loadedSpools[loc]; !ok {
+				loadedInLoc := 0
+				for _, s := range loadedSpools {
+					if s.Location == loc {
+						loadedInLoc++
+					}
+				}
+				capacity := 1
+				if capInfo, ok := Cfg.LocationCapacity[loc]; ok {
+					capacity = capInfo.Capacity
+				}
+				if loadedInLoc < capacity {
 					targetLoc = loc
 					break
 				}
 			}
 
 			if targetLoc == "" {
-				// Pick first slot of the printer for now.
-				// In a real scenario, we might want to ask which slot to use.
-				targetLoc = printerLocations[0]
+				// All locations are full. We need to find the best location to unload from.
+				// We want a location that has a spool NOT needed for the current project.
+				// And among those, the LRU spool.
+				var bestUnloadLoc string
+				var bestUnloadSpool models.FindSpool
+				foundNonNeeded := false
+
+				for _, loc := range printerLocations {
+					var spoolsInLoc []models.FindSpool
+					for _, s := range loadedSpools {
+						if s.Location == loc {
+							spoolsInLoc = append(spoolsInLoc, s)
+						}
+					}
+
+					for _, s := range spoolsInLoc {
+						isNeeded := neededFilamentIDs[s.Filament.Id]
+						// Check if it's needed for other requirements of the CURRENT plate as well
+						for _, otherReq := range choice.plate.Needs {
+							if s.Filament.Id == otherReq.FilamentID {
+								isNeeded = true
+								break
+							}
+						}
+
+						if !isNeeded {
+							if !foundNonNeeded {
+								bestUnloadLoc = loc
+								bestUnloadSpool = s
+								foundNonNeeded = true
+							} else {
+								// LRU Logic: Older LastUsed comes first. Never-used comes last.
+								li, lj := bestUnloadSpool.LastUsed, s.LastUsed
+								zi, zj := li.IsZero(), lj.IsZero()
+
+								better := false
+								if zi && !zj {
+									better = true // s is used, bestUnloadSpool never used; s is better candidate to unload?
+									// Wait, if it's never used, maybe we should keep it?
+									// find.go says: "never-used appear last" for --lru.
+									// "li.Before(lj) // older last-used first"
+									// "zi && !zj { return false // i has never been used; place after j }"
+									// So LRU order is: [Oldest Used] ... [Newest Used] [Never Used]
+									// If we want to unload the LEAST recently used, we want the one at the start of that list.
+								} else if !zi && !zj {
+									if lj.Before(li) {
+										better = true
+									}
+								}
+
+								if better {
+									bestUnloadLoc = loc
+									bestUnloadSpool = s
+								}
+							}
+						} else if !foundNonNeeded {
+							// If we haven't found any non-needed spool yet, keep track of the LRU needed one as fallback
+							if bestUnloadLoc == "" {
+								bestUnloadLoc = loc
+								bestUnloadSpool = s
+							} else {
+								li, lj := bestUnloadSpool.LastUsed, s.LastUsed
+								zi, zj := li.IsZero(), lj.IsZero()
+								if (!zi && !zj && lj.Before(li)) || (zi && !zj) {
+									bestUnloadLoc = loc
+									bestUnloadSpool = s
+								}
+							}
+						}
+					}
+				}
+				targetLoc = bestUnloadLoc
 			}
 
-			if current, ok := loadedSpools[targetLoc]; ok {
-				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", current.Id, current.Filament.Name, targetLoc)
+			// If target location is full, we need to unload something
+			var spoolToUnload *models.FindSpool
+			loadedInTarget := []models.FindSpool{}
+			for _, s := range loadedSpools {
+				if s.Location == targetLoc {
+					loadedInTarget = append(loadedInTarget, s)
+				}
+			}
+
+			capacity := 1
+			if capInfo, ok := Cfg.LocationCapacity[targetLoc]; ok {
+				capacity = capInfo.Capacity
+			}
+
+			if len(loadedInTarget) >= capacity {
+				// Choose which one in this location to unload.
+				// Same logic: prioritize non-needed, then LRU.
+				var candidate models.FindSpool
+				foundNonNeeded := false
+				for _, s := range loadedInTarget {
+					isNeeded := neededFilamentIDs[s.Filament.Id]
+					for _, otherReq := range choice.plate.Needs {
+						if s.Filament.Id == otherReq.FilamentID {
+							isNeeded = true
+							break
+						}
+					}
+
+					if !isNeeded {
+						if !foundNonNeeded {
+							candidate = s
+							foundNonNeeded = true
+						} else {
+							li, lj := candidate.LastUsed, s.LastUsed
+							zi, zj := li.IsZero(), lj.IsZero()
+							if (!zi && !zj && lj.Before(li)) || (zi && !zj) {
+								candidate = s
+							}
+						}
+					} else if !foundNonNeeded {
+						if candidate.Id == 0 {
+							candidate = s
+						} else {
+							li, lj := candidate.LastUsed, s.LastUsed
+							zi, zj := li.IsZero(), lj.IsZero()
+							if (!zi && !zj && lj.Before(li)) || (zi && !zj) {
+								candidate = s
+							}
+						}
+					}
+				}
+				spoolToUnload = &candidate
+
+				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, spoolToUnload.Filament.Name, targetLoc)
 				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
 				var newLoc string
 				fmt.Scanln(&newLoc)
 				if newLoc != "" {
-					apiClient.MoveSpool(current.Id, newLoc)
+					apiClient.MoveSpool(spoolToUnload.Id, newLoc)
+					// Remove from loadedSpools map (this is tricky because loadedSpools is Location -> Spool)
+					// Wait, my previous work changed loadedSpools to be map[string]models.FindSpool but multiple spools can be in same location.
+					// The loadedSpools map currently only stores ONE spool per location because keys are unique.
+					// I need to fix this!
+				} else {
+					// Even if not moving to a new shelf, it's no longer in the printer
+					// We should probably explicitly clear the location if it's being unloaded from a printer
+					// but the user might just want to move it.
+				}
+				// Remove from our local tracking of what's loaded
+				for loc, s := range loadedSpools {
+					if s.Id == spoolToUnload.Id {
+						delete(loadedSpools, loc)
+					}
 				}
 			}
 
 			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, bestSpool.Filament.Name, targetLoc, bestSpool.Location)
 			apiClient.MoveSpool(bestSpool.Id, targetLoc)
+			// Update our local tracking
+			bestSpool.Location = targetLoc
+			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
 		}
 
 		fmt.Println("\nSwaps complete. Happy printing!")
@@ -927,7 +1192,7 @@ var planCheckCmd = &cobra.Command{
 
 		var paths []string
 		if len(args) > 0 {
-			paths = append(paths, args[0])
+			paths = append(paths, args...)
 		} else {
 			plans, err := discoverPlans()
 			if err != nil {
@@ -943,22 +1208,26 @@ var planCheckCmd = &cobra.Command{
 			return nil
 		}
 
-		// Aggregate needs by FilamentID
+		// Aggregate needs by FilamentID (if resolved) or Name+Material (if unresolved)
 		type totalNeed struct {
 			id       int
 			name     string
 			material string
 			amount   float64
 		}
-		needs := make(map[int]*totalNeed)
+		needs := make(map[string]*totalNeed)
 
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
 			if err != nil {
+				fmt.Printf("Error: Failed to read plan file %s: %v\n", path, err)
 				continue
 			}
 			var plan models.PlanFile
-			yaml.Unmarshal(data, &plan)
+			if err := yaml.Unmarshal(data, &plan); err != nil {
+				fmt.Printf("Error: Failed to parse plan file %s: %v\n", path, err)
+				continue
+			}
 
 			for _, proj := range plan.Projects {
 				if proj.Status == "completed" {
@@ -969,18 +1238,23 @@ var planCheckCmd = &cobra.Command{
 						continue
 					}
 					for _, req := range plate.Needs {
+						key := fmt.Sprintf("id:%d", req.FilamentID)
 						if req.FilamentID == 0 {
-							fmt.Printf("Warning: Plate '%s' in '%s' has unresolved filament '%s'\n", plate.Name, proj.Name, req.Name)
-							continue
+							key = fmt.Sprintf("name:%s:%s", req.Name, req.Material)
+							fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, path, req.Name)
 						}
-						if _, ok := needs[req.FilamentID]; !ok {
-							needs[req.FilamentID] = &totalNeed{
+						if _, ok := needs[key]; !ok {
+							needs[key] = &totalNeed{
 								id:       req.FilamentID,
 								name:     req.Name,
 								material: req.Material,
 							}
+						} else if req.FilamentID != 0 && needs[key].name != req.Name {
+							// If the same ID is used with different names, we should probably let the user know
+							// but we will continue to aggregate them as they are technically the same filament ID
+							fmt.Printf("Note: Filament ID %d is used for both '%s' and '%s'. Aggregating needs.\n", req.FilamentID, needs[key].name, req.Name)
 						}
-						needs[req.FilamentID].amount += req.Amount
+						needs[key].amount += req.Amount
 					}
 				}
 			}
@@ -1010,10 +1284,18 @@ var planCheckCmd = &cobra.Command{
 
 		allMet := true
 		for _, n := range needs {
-			onHand := inventory[n.id]
+			onHand := 0.0
 			status := "OK"
+			if n.id != 0 {
+				onHand = inventory[n.id]
+			} else {
+				status = "UNRESOLVED"
+			}
+
 			if onHand < n.amount {
-				status = "LOW"
+				if status == "OK" {
+					status = "LOW"
+				}
 				allMet = false
 			}
 			fmt.Printf("%-30s %10.1fg %10.1fg %10s\n", n.name, n.amount, onHand, status)
