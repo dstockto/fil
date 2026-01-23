@@ -570,6 +570,33 @@ var planCompleteCmd = &cobra.Command{
 				plan.Projects[choice.projIdx].Status = "completed"
 			}
 
+			// Printer selection for filament usage tracking
+			var printerName string
+			if len(Cfg.Printers) > 0 {
+				var printerNames []string
+				for name := range Cfg.Printers {
+					printerNames = append(printerNames, name)
+				}
+				if len(printerNames) == 1 {
+					printerName = printerNames[0]
+				} else {
+					promptPrinter := promptui.Select{
+						Label:  "Which printer was used?",
+						Items:  append([]string{"None/Other"}, printerNames...),
+						Stdout: NoBellStdout,
+					}
+					_, result, err := promptPrinter.Run()
+					if err == nil && result != "None/Other" {
+						printerName = result
+					}
+				}
+			}
+
+			var printerLocations []string
+			if printerName != "" {
+				printerLocations = Cfg.Printers[printerName]
+			}
+
 			// Interactive usage recording
 			fmt.Printf("Updating filament usage for %s...\n", plan.Projects[choice.projIdx].Plates[choice.plateIdx].Name)
 			for _, req := range plan.Projects[choice.projIdx].Plates[choice.plateIdx].Needs {
@@ -581,15 +608,65 @@ var planCompleteCmd = &cobra.Command{
 					fmt.Sscanf(input, "%f", &used)
 				}
 
-				// Find which spool to deduct from (must be loaded in a printer or we ask)
-				// Simplified: ask for Spool ID
-				fmt.Printf("Enter Spool ID to deduct from (or leave blank to skip): ")
-				var spoolIdStr string
-				fmt.Scanln(&spoolIdStr)
-				if spoolIdStr != "" {
-					var sid int
-					fmt.Sscanf(spoolIdStr, "%d", &sid)
-					apiClient.UseFilament(sid, used)
+				// Find which spool to deduct from
+				var matchedSpool *models.FindSpool
+
+				// 1. Try to find a matching spool in the printer
+				if len(printerLocations) > 0 {
+					allSpools, _ := apiClient.FindSpoolsByName("*", nil, nil)
+					var candidates []models.FindSpool
+					for _, s := range allSpools {
+						inPrinter := false
+						for _, loc := range printerLocations {
+							if s.Location == loc {
+								inPrinter = true
+								break
+							}
+						}
+						if !inPrinter {
+							continue
+						}
+
+						// Check if it matches the requirement (either by ID or by name)
+						if req.FilamentID != 0 && s.Filament.Id == req.FilamentID {
+							candidates = append(candidates, s)
+						} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
+							candidates = append(candidates, s)
+						}
+					}
+
+					if len(candidates) == 1 {
+						matchedSpool = &candidates[0]
+						fmt.Printf("Using spool #%d (%s) from %s\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location)
+					} else if len(candidates) > 1 {
+						var items []string
+						for _, c := range candidates {
+							items = append(items, fmt.Sprintf("#%d: %s (%s)", c.Id, c.Filament.Name, c.Location))
+						}
+						promptSpool := promptui.Select{
+							Label:  fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
+							Items:  append(items, "Other/Manual"),
+							Stdout: NoBellStdout,
+						}
+						idx, _, err := promptSpool.Run()
+						if err == nil && idx < len(candidates) {
+							matchedSpool = &candidates[idx]
+						}
+					}
+				}
+
+				if matchedSpool != nil {
+					apiClient.UseFilament(matchedSpool.Id, used)
+				} else {
+					// Fallback: ask for Spool ID
+					fmt.Printf("Enter Spool ID to deduct from (or leave blank to skip): ")
+					var spoolIdStr string
+					fmt.Scanln(&spoolIdStr)
+					if spoolIdStr != "" {
+						var sid int
+						fmt.Sscanf(spoolIdStr, "%d", &sid)
+						apiClient.UseFilament(sid, used)
+					}
 				}
 			}
 		}

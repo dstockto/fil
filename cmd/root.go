@@ -214,9 +214,28 @@ func mergeInto(dst, src *Config) {
 			dst.LowThresholds[k] = v
 		}
 	}
+
+	if src.Printers != nil {
+		if dst.Printers == nil {
+			dst.Printers = map[string][]string{}
+		}
+
+		for k, v := range src.Printers {
+			dst.Printers[k] = v
+		}
+	}
+
 	// slices
 	if src.LowIgnore != nil {
 		// append to allow layered config; duplicates are acceptable
 		dst.LowIgnore = append(dst.LowIgnore, src.LowIgnore...)
+	}
+
+	if src.PlansDir != "" {
+		dst.PlansDir = src.PlansDir
+	}
+
+	if src.ArchiveDir != "" {
+		dst.ArchiveDir = src.ArchiveDir
 	}
 }
