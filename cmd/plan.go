@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
@@ -493,7 +494,12 @@ var planArchiveCmd = &cobra.Command{
 			}
 
 			if allDone {
-				dest := filepath.Join(Cfg.ArchiveDir, filepath.Base(path))
+				ext := filepath.Ext(path)
+				base := strings.TrimSuffix(filepath.Base(path), ext)
+				timestamp := time.Now().Format("20060102150405")
+				newFilename := fmt.Sprintf("%s-%s%s", base, timestamp, ext)
+
+				dest := filepath.Join(Cfg.ArchiveDir, newFilename)
 				fmt.Printf("Archiving %s to %s\n", path, dest)
 				err := os.Rename(path, dest)
 				if err != nil {
