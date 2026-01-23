@@ -114,8 +114,9 @@ var planResolveCmd = &cobra.Command{
 					items = append(items, p.Path)
 				}
 				prompt := promptui.Select{
-					Label: "Select plan file to resolve",
-					Items: items,
+					Label:  "Select plan file to resolve",
+					Items:  items,
+					Stdout: NoBellStdout,
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -140,7 +141,6 @@ var planResolveCmd = &cobra.Command{
 				for k := range plan.Projects[i].Plates[j].Needs {
 					need := &plan.Projects[i].Plates[j].Needs[k]
 					if need.FilamentID == 0 && (need.Name != "" || need.Material != "") {
-						fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 						// Search Spoolman
 						query := make(map[string]string)
 						if need.Material != "" {
@@ -148,11 +148,13 @@ var planResolveCmd = &cobra.Command{
 						}
 						spools, err := apiClient.FindSpoolsByName(need.Name, nil, query)
 						if err != nil {
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 							fmt.Printf("  Error searching Spoolman: %v\n", err)
 							continue
 						}
 
 						if len(spools) == 0 {
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 							fmt.Printf("  No matches found for '%s' '%s'\n", need.Name, need.Material)
 							continue
 						}
@@ -182,14 +184,16 @@ var planResolveCmd = &cobra.Command{
 						if len(matchIds) == 1 {
 							selectedId = matchIds[0]
 						} else {
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 							var items []string
 							for _, id := range matchIds {
 								m := matches[id]
 								items = append(items, fmt.Sprintf("%s - %s (%s) [#%d]", m.vendor, m.name, m.mat, id))
 							}
 							prompt := promptui.Select{
-								Label: "Select matching filament",
-								Items: items,
+								Label:  "Select matching filament",
+								Items:  items,
+								Stdout: NoBellStdout,
 							}
 							idx, _, err := prompt.Run()
 							if err != nil {
@@ -269,8 +273,9 @@ var planMoveCmd = &cobra.Command{
 				path = files[0]
 			} else {
 				prompt := promptui.Select{
-					Label: "Select plan file to move",
-					Items: files,
+					Label:  "Select plan file to move",
+					Items:  files,
+					Stdout: NoBellStdout,
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -488,8 +493,9 @@ var planCompleteCmd = &cobra.Command{
 					items = append(items, p.Path)
 				}
 				prompt := promptui.Select{
-					Label: "Select plan file",
-					Items: items,
+					Label:  "Select plan file",
+					Items:  items,
+					Stdout: NoBellStdout,
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -534,9 +540,10 @@ var planCompleteCmd = &cobra.Command{
 		}
 
 		prompt := promptui.Select{
-			Label: "What did you complete?",
-			Items: options,
-			Size:  10,
+			Label:  "What did you complete?",
+			Items:  options,
+			Size:   10,
+			Stdout: NoBellStdout,
 		}
 		idx, _, err := prompt.Run()
 		if err != nil {
@@ -612,8 +619,9 @@ var planNextCmd = &cobra.Command{
 			printerNames = append(printerNames, name)
 		}
 		promptPrinter := promptui.Select{
-			Label: "Which printer are you using?",
-			Items: printerNames,
+			Label:  "Which printer are you using?",
+			Items:  printerNames,
+			Stdout: NoBellStdout,
 		}
 		_, printerName, err := promptPrinter.Run()
 		if err != nil {
@@ -736,9 +744,10 @@ var planNextCmd = &cobra.Command{
 		}
 
 		promptPlate := promptui.Select{
-			Label: "Select plate to print",
-			Items: items,
-			Size:  10,
+			Label:  "Select plate to print",
+			Items:  items,
+			Size:   10,
+			Stdout: NoBellStdout,
 		}
 		selectedIdx, _, err := promptPlate.Run()
 		if err != nil {
