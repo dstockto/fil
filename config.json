@@ -33,5 +33,7 @@
     "POLY": "Polydryers",
     "ULT": "Ultimaker",
     "NONE": "<empty>"
-  }
+  },
+  "plans_dir": "/Users/davidstockton/Documents/3d-prints/plans",
+  "archive_dir": "/Users/davidstockton/Documents/3d-prints/archive"
 }

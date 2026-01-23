@@ -25,11 +25,14 @@ import (
 //
 // Add fields here as config grows.
 type Config struct {
-	Database        string             `json:"database"`
-	LocationAliases map[string]string  `json:"location_aliases"`
-	ApiBase         string             `json:"api_base"`
-	LowThresholds   map[string]float64 `json:"low_thresholds"`
-	LowIgnore       []string           `json:"low_ignore"`
+	Database        string              `json:"database"`
+	LocationAliases map[string]string   `json:"location_aliases"`
+	ApiBase         string              `json:"api_base"`
+	LowThresholds   map[string]float64  `json:"low_thresholds"`
+	LowIgnore       []string            `json:"low_ignore"`
+	Printers        map[string][]string `json:"printers"`
+	PlansDir        string              `json:"plans_dir"`
+	ArchiveDir      string              `json:"archive_dir"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands.

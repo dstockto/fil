@@ -282,6 +282,29 @@ Examples:
 > $ fil low -m Polymaker
 > $ fil low '*' -d '*'
 
+---
+
+Project Management - Manage complex 3D printing projects involving multiple plates and filaments.
+
+`fil plan list` - List all discovered plans and their completion status. Plans are discovered from the current directory and the `plans_dir` configured in `config.json`.
+
+`fil plan new [-m]` - Create a new template plan YAML file in the current directory. The project name is taken from the current directory name. If STL files are present, they are added as plates.
+- `-m, --move`: Automatically move the created plan to the `plans_dir` central location.
+
+`fil plan move [file]` - Move a YAML plan file from the current directory to the `plans_dir` central location.
+
+`fil plan check [file]` - Check if enough filament is on hand across all spools in Spoolman to complete the pending plates in the plan(s).
+
+`fil plan resolve [file]` - Interactively link human-readable filament names in a plan to specific Spoolman Filament IDs.
+
+`fil plan next` - Interactively recommend the next plate to print based on currently loaded filaments in your printers (minimizing swaps). Provides step-by-step unload/load instructions.
+
+`fil plan complete [file]` - Mark a plate or project as completed and optionally record filament usage in Spoolman.
+
+`fil plan archive [file]` - Move completed plan files to the `archive_dir` configured in `config.json`.
+
+---
+
 Ignoring retired filaments via config:
 - You can exclude certain filaments from appearing in `fil low` by listing patterns in `low_ignore` within your config.json.
   - Simple form: "NamePart" → matches by filament name substring (case-insensitive).

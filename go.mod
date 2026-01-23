@@ -4,7 +4,10 @@ go 1.23.1
 
 require modernc.org/sqlite v1.30.1
 
-require github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
+require (
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
