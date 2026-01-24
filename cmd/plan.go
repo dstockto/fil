@@ -113,7 +113,7 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 			}
 			var plan models.PlanFile
 			if err := yaml.Unmarshal(data, &plan); err != nil {
-				// Skip files that aren't plan files
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
 				return nil
 			}
 			if len(plan.Projects) > 0 {
@@ -197,8 +197,16 @@ var planResolveCmd = &cobra.Command{
 
 						if len(spools) == 0 {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
-							fmt.Printf("  No matches found for '%s' '%s'\n", need.Name, need.Material)
-							continue
+							fmt.Printf("  No matches found for '%s' '%s'. Choosing from full list...\n", need.Name, need.Material)
+							spools, err = apiClient.FindSpoolsByName("*", nil, query)
+							if err != nil {
+								fmt.Printf("  Error fetching all filaments: %v\n", err)
+								continue
+							}
+							if len(spools) == 0 {
+								fmt.Printf("  Still no matches found in full list with type filtering.\n")
+								continue
+							}
 						}
 
 						// Group by filament ID to avoid picking individual spools
@@ -223,7 +231,10 @@ var planResolveCmd = &cobra.Command{
 						}
 
 						var selectedId int
-						if len(matchIds) == 1 {
+						if len(matchIds) == 1 && need.Name != "" {
+							// If we found exactly one match by name, use it.
+							// But if we are in the "full list" fallback, we should probably still ask if need.Name was empty.
+							// Actually, if it was found by FindSpoolsByName(need.Name), and it's unique, it's safe.
 							selectedId = matchIds[0]
 						} else {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
@@ -233,9 +244,26 @@ var planResolveCmd = &cobra.Command{
 								items = append(items, fmt.Sprintf("%s - %s (%s) [#%d]", m.vendor, m.name, m.mat, id))
 							}
 							prompt := promptui.Select{
-								Label:  "Select matching filament",
-								Items:  items,
-								Stdout: NoBellStdout,
+								Label:             "Select matching filament",
+								Items:             items,
+								Stdout:            NoBellStdout,
+								Size:              10,
+								StartInSearchMode: true,
+								Searcher: func(input string, index int) bool {
+									m := matches[matchIds[index]]
+									needle := strings.ToLower(strings.TrimSpace(input))
+									if needle == "" {
+										return true
+									}
+									fields := []string{
+										fmt.Sprintf("%d", m.id),
+										m.name,
+										m.mat,
+										m.vendor,
+									}
+									joined := strings.ToLower(strings.Join(fields, " "))
+									return strings.Contains(joined, needle)
+								},
 							}
 							idx, _, err := prompt.Run()
 							if err != nil {
@@ -346,7 +374,7 @@ var planMoveCmd = &cobra.Command{
 }
 
 var planNewCmd = &cobra.Command{
-	Use:   "new",
+	Use:   "new [filename]",
 	Short: "Create a new template plan file in the current directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
@@ -354,6 +382,16 @@ var planNewCmd = &cobra.Command{
 			return err
 		}
 		projectName := filepath.Base(cwd)
+
+		var filename string
+		if len(args) > 0 {
+			filename = args[0]
+			if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
+				filename += ".yaml"
+			}
+		} else {
+			filename = projectName + ".yaml"
+		}
 
 		var plates []models.Plate
 		files, err := os.ReadDir(cwd)
@@ -407,7 +445,6 @@ var planNewCmd = &cobra.Command{
 			},
 		}
 
-		filename := projectName + ".yaml"
 		// If filename already exists, try to avoid overwriting by adding a suffix or just erroring
 		if _, err := os.Stat(filename); err == nil {
 			return fmt.Errorf("file %s already exists", filename)
