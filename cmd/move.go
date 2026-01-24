@@ -19,8 +19,8 @@ import (
 // moveCmd represents the move command.
 var moveCmd = &cobra.Command{
 	Use:     "move",
-	Short:   "Moves a spool to a new location",
-	Long:    `Moves a spool to a new location.`,
+	Short:   "Moves a spool to a new Location",
+	Long:    `Moves a spool to a new Location.`,
 	RunE:    runMove,
 	Aliases: []string{"mv", "m", "mov"},
 }
@@ -30,12 +30,12 @@ type move struct {
 	spool   models.FindSpool
 	from    string
 	to      string // may include slot shorthand like "A:2"; resolve later
-	dest    destSpec
+	dest    DestSpec
 	err     error
 }
 
-type destSpec struct {
-	location string
+type DestSpec struct {
+	Location string
 	pos      int  // 1-based desired position
 	hasPos   bool // whether a position was provided
 }
@@ -102,7 +102,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		dspec, derr := parseDestSpec(destination)
+		dspec, derr := ParseDestSpec(destination)
 		if derr != nil {
 			// mark this move as errored but continue parsing others
 			moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: derr})
@@ -116,7 +116,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 		} else {
 			query := make(map[string]string)
 			if allFrom != "" {
-				query["location"] = allFrom
+				query["Location"] = allFrom
 			}
 			spools, lookupErr := apiClient.FindSpoolsByName(spoolSelector, nil, query)
 			if lookupErr != nil {
@@ -132,7 +132,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			}
 			if len(spools) != 1 {
 				if allowInteractive {
-					// let the user pick from a broad list honoring any filters (e.g., location)
+					// let the user pick from a broad list honoring any filters (e.g., Location)
 					chosen, canceled, selErr := selectSpoolInteractively(apiClient, spoolSelector, query, spools, simpleSelect)
 					if selErr != nil {
 						errs = errors.Join(errs, fmt.Errorf("selection error: %w", selErr))
@@ -181,7 +181,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load current locations_spoolorders
-	orders, loadErr := loadLocationOrders(apiClient)
+	orders, loadErr := LoadLocationOrders(apiClient)
 	if loadErr != nil {
 		return loadErr
 	}
@@ -196,17 +196,17 @@ func runMove(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Snapshot before state once per touched destination location
-		if _, ok := touched[m.dest.location]; !ok {
-			before[m.dest.location] = append([]int(nil), orders[m.dest.location]...)
-			touched[m.dest.location] = struct{}{}
+		// Snapshot before state once per touched destination Location
+		if _, ok := touched[m.dest.Location]; !ok {
+			before[m.dest.Location] = append([]int(nil), orders[m.dest.Location]...)
+			touched[m.dest.Location] = struct{}{}
 		}
 
 		// Remove ID from all lists to avoid duplicates in settings
-		orders = removeFromAllOrders(orders, m.spoolId)
+		orders = RemoveFromAllOrders(orders, m.spoolId)
 
 		// Insert/append into destination
-		list := orders[m.dest.location]
+		list := orders[m.dest.Location]
 		if m.dest.hasPos {
 			p := m.dest.pos
 			if p < 1 {
@@ -216,11 +216,11 @@ func runMove(cmd *cobra.Command, args []string) error {
 				p = len(list) + 1
 			}
 			idx := p - 1
-			list = insertAt(list, idx, m.spoolId)
+			list = InsertAt(list, idx, m.spoolId)
 		} else {
 			list = append(list, m.spoolId)
 		}
-		orders[m.dest.location] = list
+		orders[m.dest.Location] = list
 	}
 
 	// Execute
@@ -231,7 +231,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Skipping due to error - %s\n", m)
 				continue
 			}
-			to := m.dest.location
+			to := m.dest.Location
 			label := to
 			if to == "" {
 				label = "<empty>"
@@ -263,7 +263,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 					beforeList, m.spoolId, srcIdx+1, srcIdx, m.dest.pos, clampedPos, insIdx)
 			}
 		}
-		// Show per-location before/after
+		// Show per-Location before/after
 		for loc := range touched {
 			label := loc
 			if label == "" {
@@ -282,12 +282,12 @@ func runMove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update locations_spoolorders: %w", err)
 	}
 
-	// Then update each spool's location
+	// Then update each spool's Location
 	for _, m := range moves {
 		if m.err != nil || m.spoolId <= 0 {
 			continue
 		}
-		to := m.dest.location
+		to := m.dest.Location
 		if moveErr := apiClient.MoveSpool(m.spoolId, to); moveErr != nil {
 			color.Red("Error moving spool %s: %v\n", m.spool, moveErr)
 			errs = errors.Join(errs, fmt.Errorf("error moving spool %s: %w", m.spool, moveErr))
@@ -308,8 +308,8 @@ func runMove(cmd *cobra.Command, args []string) error {
 	return errs
 }
 
-// mapToAlias maps a location alias to a location name. If it's not found in the map, it returns the original string.
-func mapToAlias(to string) string {
+// MapToAlias maps a Location alias to a Location name. If it's not found in the map, it returns the original string.
+func MapToAlias(to string) string {
 	aliasMap := Cfg.LocationAliases
 	if aliasMap == nil {
 		return to
@@ -322,21 +322,21 @@ func mapToAlias(to string) string {
 	return to
 }
 
-// parseDestSpec parses a destination token that may include a slot, e.g.,
+// ParseDestSpec parses a destination token that may include a slot, e.g.,
 // "A:2", "AMS A@3", or "Shelf 6B" (no slot). Aliases apply only to the
-// location part (before the separator). Positions are 1-based.
-func parseDestSpec(input string) (destSpec, error) {
+// Location part (before the separator). Positions are 1-based.
+func ParseDestSpec(input string) (DestSpec, error) {
 	in := strings.TrimSpace(input)
 	if in == "" {
-		return destSpec{location: ""}, nil
+		return DestSpec{Location: ""}, nil
 	}
 	if strings.EqualFold(in, "<empty>") {
-		return destSpec{location: ""}, nil
+		return DestSpec{Location: ""}, nil
 	}
 	// Find last occurrence of either ':' or '@'
 	idx := strings.LastIndexAny(in, "@:")
 	if idx <= 0 || idx == len(in)-1 { // no separator or nothing after it
-		return destSpec{location: mapToAlias(in)}, nil
+		return DestSpec{Location: MapToAlias(in)}, nil
 	}
 
 	locPart := strings.TrimSpace(in[:idx])
@@ -345,19 +345,19 @@ func parseDestSpec(input string) (destSpec, error) {
 		locPart = ""
 	}
 
-	// If the pos part isn't a valid int, treat as pure location
+	// If the pos part isn't a valid int, treat as pure Location
 	p, err := strconv.Atoi(posPart)
 	if err != nil {
-		return destSpec{location: mapToAlias(in)}, nil
+		return DestSpec{Location: MapToAlias(in)}, nil
 	}
 
-	return destSpec{location: mapToAlias(locPart), pos: p, hasPos: true}, nil
+	return DestSpec{Location: MapToAlias(locPart), pos: p, hasPos: true}, nil
 }
 
-// loadLocationOrders reads the settings entry 'locations_spoolorders' and
-// returns it as a map[location][]spoolID. If not set or empty, returns an
+// LoadLocationOrders reads the settings entry 'locations_spoolorders' and
+// returns it as a map[Location][]spoolID. If not set or empty, returns an
 // empty map.
-func loadLocationOrders(apiClient *api.Client) (map[string][]int, error) {
+func LoadLocationOrders(apiClient *api.Client) (map[string][]int, error) {
 	settings, err := apiClient.GetSettings()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch settings: %w", err)
@@ -384,8 +384,8 @@ func loadLocationOrders(apiClient *api.Client) (map[string][]int, error) {
 	return orders, nil
 }
 
-// removeFromAllOrders removes id from every location list to avoid duplicates.
-func removeFromAllOrders(orders map[string][]int, id int) map[string][]int {
+// RemoveFromAllOrders removes id from every Location list to avoid duplicates.
+func RemoveFromAllOrders(orders map[string][]int, id int) map[string][]int {
 	for loc, ids := range orders {
 		kept := make([]int, 0, len(ids))
 		for _, v := range ids {
@@ -398,8 +398,8 @@ func removeFromAllOrders(orders map[string][]int, id int) map[string][]int {
 	return orders
 }
 
-// insertAt inserts val at index i (0-based) into slice s, shifting elements to the right.
-func insertAt(s []int, i int, val int) []int {
+// InsertAt inserts val at index i (0-based) into slice s, shifting elements to the right.
+func InsertAt(s []int, i int, val int) []int {
 	if i < 0 {
 		i = 0
 	}
@@ -427,7 +427,7 @@ func init() {
 
 	moveCmd.Flags().Bool("dry-run", false, "show what would be moved, but don't actually move anything")
 	moveCmd.Flags().StringP("destination", "d", "", "destination for all spools (supports alias and optional :slot or @slot)")
-	moveCmd.Flags().StringP("from", "f", "", "source location for all spools (limits name lookups)")
+	moveCmd.Flags().StringP("from", "f", "", "source Location for all spools (limits name lookups)")
 	// Note: slot is specified inline as part of the destination token (e.g., A:2); no separate --slot flag.
 	moveCmd.Flags().Bool("debug", false, "show extra debug details in --dry-run output")
 	moveCmd.Flags().BoolP("non-interactive", "n", false, "do not prompt; if multiple spools match, behave as current non-interactive error behavior")

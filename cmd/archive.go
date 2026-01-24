@@ -37,12 +37,12 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	location, err := cmd.Flags().GetString("location")
+	location, err := cmd.Flags().GetString("Location")
 	if err != nil {
 		return err
 	}
 
-	location = mapToAlias(location)
+	location = MapToAlias(location)
 
 	if dryRun {
 		color.HiRed("Dry run mode enabled. Nothing will be changed.")
@@ -71,7 +71,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 
 		query := make(map[string]string)
 		if location != "" {
-			query["location"] = location
+			query["Location"] = location
 		}
 
 		foundSpools, err := apiClient.FindSpoolsByName(a, nil, query)
@@ -101,14 +101,14 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load current locations_spoolorders to compute removals for dry-run and updates
-	orders, loadErr := loadLocationOrders(apiClient)
+	orders, loadErr := LoadLocationOrders(apiClient)
 	if loadErr != nil {
 		return loadErr
 	}
 
-	// Remove each selected spool ID from all location lists
+	// Remove each selected spool ID from all Location lists
 	for _, s := range spools {
-		orders = removeFromAllOrders(orders, s.Id)
+		orders = RemoveFromAllOrders(orders, s.Id)
 	}
 
 	if dryRun {
@@ -123,7 +123,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update locations_spoolorders: %w", err)
 	}
 
-	// Then archive each spool (sets archived=true and clears location)
+	// Then archive each spool (sets archived=true and clears Location)
 	for _, s := range spools {
 		err := apiClient.ArchiveSpool(s.Id)
 		if err != nil {
@@ -140,7 +140,7 @@ func init() {
 	rootCmd.AddCommand(archiveCmd)
 
 	archiveCmd.Flags().BoolP("dry-run", "d", false, "show what would be archived, but don't actually archive anything")
-	archiveCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	archiveCmd.Flags().StringP("Location", "l", "", "filter by Location, default is all")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

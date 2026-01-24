@@ -42,14 +42,14 @@ func runFind(cmd *cobra.Command, args []string) error {
 		filters []api.SpoolFilter
 	)
 
-	// Preload settings-based location orders to sort results accordingly.
-	// The settings key 'locations_spoolorders' stores, per location, the ordered list of spool IDs.
-	orders, err := loadLocationOrders(apiClient)
+	// Preload settings-based Location orders to sort results accordingly.
+	// The settings key 'locations_spoolorders' stores, per Location, the ordered list of spool IDs.
+	orders, err := LoadLocationOrders(apiClient)
 	if err != nil {
 		// Non-fatal: if settings cannot be loaded, continue without settings-based ordering.
 		orders = map[string][]int{}
 	}
-	// Build quick lookup of ranks per location for O(1) index lookups.
+	// Build quick lookup of ranks per Location for O(1) index lookups.
 	ranks := make(map[string]map[int]int, len(orders))
 	for loc, ids := range orders {
 		m := make(map[int]int, len(ids))
@@ -111,10 +111,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
-		location = mapToAlias(location)
-		query["location"] = location
-		fmt.Printf("Filtering by location: %s\n", location)
+	if location, err := cmd.Flags().GetString("Location"); err == nil && location != "" {
+		location = MapToAlias(location)
+		query["Location"] = location
+		fmt.Printf("Filtering by Location: %s\n", location)
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -171,13 +171,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 				return li.After(lj) // newer last-used first
 			})
 		} else if len(spools) > 1 && len(ranks) > 0 {
-			// Default behavior: sort according to settings-defined order within each location.
-			// Items with a known rank (present in settings for their location) come before unknowns.
+			// Default behavior: sort according to settings-defined order within each Location.
+			// Items with a known rank (present in settings for their Location) come before unknowns.
 			sort.SliceStable(spools, func(i, j int) bool {
 				ai := spools[i]
 				aj := spools[j]
-				locI := mapToAlias(ai.Location)
-				locJ := mapToAlias(aj.Location)
+				locI := MapToAlias(ai.Location)
+				locJ := MapToAlias(aj.Location)
 				rI, okI := ranks[locI][ai.Id]
 				rJ, okJ := ranks[locJ][aj.Id]
 				if okI && !okJ {
@@ -258,7 +258,7 @@ func init() {
 	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
 	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
 	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
-	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	findCmd.Flags().StringP("Location", "l", "", "filter by Location, default is all")
 	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
 	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
 	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")

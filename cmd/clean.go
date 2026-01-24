@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cleanCmd cleans up locations_spoolorders by removing spool IDs that are no longer at that location.
+// cleanCmd cleans up locations_spoolorders by removing spool IDs that are no longer at that Location.
 var cleanCmd = &cobra.Command{
 	Use:   "clean-orders",
 	Short: "Clean locations_spoolorders by removing stale spool IDs",
@@ -73,7 +73,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to parse locations_spoolorders JSON: %w", err)
 	}
 
-	// 3) Clean: keep only IDs currently at the same location. Optionally add missing IDs.
+	// 3) Clean: keep only IDs currently at the same Location. Optionally add missing IDs.
 	cleaned := make(map[string][]int, len(orders))
 	removedTotal := 0
 	addedTotal := 0
@@ -123,7 +123,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	if addMissing {
 		for loc, set := range current {
 			if loc == "" {
-				// Do not add missing spools to the <empty> location
+				// Do not add missing spools to the <empty> Location
 				continue
 			}
 			if _, seen := orders[loc]; seen {
@@ -183,6 +183,6 @@ func locLabel(loc string) string {
 
 func init() { //nolint:gochecknoinits
 	cleanCmd.Flags().Bool("write", false, "apply changes (by default runs as a dry run)")
-	cleanCmd.Flags().Bool("add-missing", false, "also add missing spool IDs to each location based on current data")
+	cleanCmd.Flags().Bool("add-missing", false, "also add missing spool IDs to each Location based on current data")
 	rootCmd.AddCommand(cleanCmd)
 }

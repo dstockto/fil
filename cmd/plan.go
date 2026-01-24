@@ -361,7 +361,7 @@ var planMoveCmd = &cobra.Command{
 
 		dest := filepath.Join(Cfg.PlansDir, filepath.Base(path))
 		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("file %s already exists in central location", dest)
+			return fmt.Errorf("file %s already exists in central Location", dest)
 		}
 
 		err := os.Rename(path, dest)
@@ -462,11 +462,11 @@ var planNewCmd = &cobra.Command{
 
 		fmt.Printf("Created new plan: %s\n", filename)
 
-		// Check if we should move it to central location
+		// Check if we should move it to central Location
 		moveToCentral, _ := cmd.Flags().GetBool("move")
 		if moveToCentral {
 			if Cfg == nil || Cfg.PlansDir == "" {
-				fmt.Println("Warning: plans_dir not configured, cannot move to central location.")
+				fmt.Println("Warning: plans_dir not configured, cannot move to central Location.")
 				return nil
 			}
 
@@ -477,7 +477,7 @@ var planNewCmd = &cobra.Command{
 
 			dest := filepath.Join(Cfg.PlansDir, filename)
 			if _, err := os.Stat(dest); err == nil {
-				return fmt.Errorf("file %s already exists in central location", dest)
+				return fmt.Errorf("file %s already exists in central Location", dest)
 			}
 
 			err = os.Rename(filename, dest)
@@ -819,7 +819,7 @@ var planNextCmd = &cobra.Command{
 		loadedSpools := make(map[string]models.FindSpool)
 		for _, s := range allSpools {
 			if s.Location != "" {
-				// Use unique key since multiple spools can be in same location
+				// Use unique key since multiple spools can be in same Location
 				key := s.Location + "_" + fmt.Sprint(s.Id)
 				loadedSpools[key] = s
 			}
@@ -842,7 +842,7 @@ var planNextCmd = &cobra.Command{
 						// Check if already loaded in any of this printer's locations
 						foundInPrinter := false
 						for _, loc := range printerLocations {
-							// Check if the filament is loaded in this location
+							// Check if the filament is loaded in this Location
 							for _, s := range loadedSpools {
 								if s.Location == loc && s.Filament.Id == req.FilamentID {
 									foundInPrinter = true
@@ -949,7 +949,7 @@ var planNextCmd = &cobra.Command{
 		}
 
 		// Pre-collect all locations that are assigned to ANY printer
-		allPrinterLocations := make(map[string]string) // location -> printer name
+		allPrinterLocations := make(map[string]string) // Location -> printer name
 		for pName, locs := range Cfg.Printers {
 			for _, l := range locs {
 				allPrinterLocations[l] = pName
@@ -960,7 +960,7 @@ var planNextCmd = &cobra.Command{
 			// Is it already loaded?
 			loadedLoc := ""
 			for _, loc := range printerLocations {
-				// We need to check all spools in this location
+				// We need to check all spools in this Location
 				for _, s := range loadedSpools {
 					if s.Location == loc && s.Filament.Id == req.FilamentID {
 						loadedLoc = loc
@@ -986,7 +986,7 @@ var planNextCmd = &cobra.Command{
 			}
 
 			// Priority:
-			// 1. Not in any printer location
+			// 1. Not in any printer Location
 			// 2. Partially used
 			// 3. Oldest (lowest ID)
 			var bestSpool *models.FindSpool
@@ -1062,8 +1062,8 @@ var planNextCmd = &cobra.Command{
 			}
 
 			if targetLoc == "" {
-				// All locations are full. We need to find the best location to unload from.
-				// We want a location that has a spool NOT needed for the current project.
+				// All locations are full. We need to find the best Location to unload from.
+				// We want a Location that has a spool NOT needed for the current project.
 				// And among those, the LRU spool.
 				var bestUnloadLoc string
 				var bestUnloadSpool models.FindSpool
@@ -1136,7 +1136,7 @@ var planNextCmd = &cobra.Command{
 				targetLoc = bestUnloadLoc
 			}
 
-			// If target location is full, we need to unload something
+			// If target Location is full, we need to unload something
 			var spoolToUnload *models.FindSpool
 			loadedInTarget := []models.FindSpool{}
 			for _, s := range loadedSpools {
@@ -1151,7 +1151,7 @@ var planNextCmd = &cobra.Command{
 			}
 
 			if len(loadedInTarget) >= capacity {
-				// Choose which one in this location to unload.
+				// Choose which one in this Location to unload.
 				// Same logic: prioritize non-needed, then LRU.
 				var candidate models.FindSpool
 				foundNonNeeded := false
@@ -1191,17 +1191,42 @@ var planNextCmd = &cobra.Command{
 
 				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, spoolToUnload.Filament.Name, targetLoc)
 				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
-				var newLoc string
-				fmt.Scanln(&newLoc)
-				if newLoc != "" {
-					apiClient.MoveSpool(spoolToUnload.Id, newLoc)
-					// Remove from loadedSpools map (this is tricky because loadedSpools is Location -> Spool)
-					// Wait, my previous work changed loadedSpools to be map[string]models.FindSpool but multiple spools can be in same location.
-					// The loadedSpools map currently only stores ONE spool per location because keys are unique.
-					// I need to fix this!
+				var input string
+				fmt.Scanln(&input)
+				if input != "" {
+					dspec, err := ParseDestSpec(input)
+					if err != nil {
+						fmt.Printf("  Error parsing location: %v. Moving to %s instead.\n", err, input)
+						apiClient.MoveSpool(spoolToUnload.Id, input)
+					} else {
+						newLoc := dspec.Location
+						apiClient.MoveSpool(spoolToUnload.Id, newLoc)
+
+						// Also update locations_spoolorders if possible
+						orders, err := LoadLocationOrders(apiClient)
+						if err == nil {
+							orders = RemoveFromAllOrders(orders, spoolToUnload.Id)
+							list := orders[newLoc]
+							if dspec.hasPos {
+								p := dspec.pos
+								if p < 1 {
+									p = 1
+								}
+								if p > len(list)+1 {
+									p = len(list) + 1
+								}
+								idx := p - 1
+								list = InsertAt(list, idx, spoolToUnload.Id)
+							} else {
+								list = append(list, spoolToUnload.Id)
+							}
+							orders[newLoc] = list
+							apiClient.PostSettingObject("locations_spoolorders", orders)
+						}
+					}
 				} else {
 					// Even if not moving to a new shelf, it's no longer in the printer
-					// We should probably explicitly clear the location if it's being unloaded from a printer
+					// We should probably explicitly clear the Location if it's being unloaded from a printer
 					// but the user might just want to move it.
 				}
 				// Remove from our local tracking of what's loaded
@@ -1214,6 +1239,17 @@ var planNextCmd = &cobra.Command{
 
 			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, bestSpool.Filament.Name, targetLoc, bestSpool.Location)
 			apiClient.MoveSpool(bestSpool.Id, targetLoc)
+
+			// Update locations_spoolorders for LOAD
+			orders, err := LoadLocationOrders(apiClient)
+			if err == nil {
+				orders = RemoveFromAllOrders(orders, bestSpool.Id)
+				list := orders[targetLoc]
+				list = append(list, bestSpool.Id)
+				orders[targetLoc] = list
+				apiClient.PostSettingObject("locations_spoolorders", orders)
+			}
+
 			// Update our local tracking
 			bestSpool.Location = targetLoc
 			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
@@ -1222,6 +1258,16 @@ var planNextCmd = &cobra.Command{
 		fmt.Println("\nSwaps complete. Happy printing!")
 		return nil
 	},
+}
+
+func truncateFront(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[len(s)-maxLen:]
+	}
+	return "..." + s[len(s)-maxLen+3:]
 }
 
 var planCheckCmd = &cobra.Command{
@@ -1341,7 +1387,7 @@ var planCheckCmd = &cobra.Command{
 				}
 				allMet = false
 			}
-			fmt.Printf("%-30s %10.1fg %10.1fg %10s\n", n.name, n.amount, onHand, status)
+			fmt.Printf("%-30s %10.1fg %10.1fg %10s\n", truncateFront(n.name, 30), n.amount, onHand, status)
 		}
 
 		if allMet {

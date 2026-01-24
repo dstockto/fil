@@ -68,8 +68,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 		errs   error
 	)
 
-	location, locerr := cmd.Flags().GetString("location")
-	fmt.Printf("Filtering by location: %s\n", location)
+	location, locerr := cmd.Flags().GetString("Location")
+	fmt.Printf("Filtering by Location: %s\n", location)
 	for i := 0; i < len(args); i += 2 {
 		spoolSelector := args[i]
 		// Try for an ID first
@@ -82,8 +82,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 			query := make(map[string]string)
 
 			if locerr == nil && location != "" {
-				location = mapToAlias(location)
-				query["location"] = location
+				location = MapToAlias(location)
+				query["Location"] = location
 			}
 
 			spools, finderr := apiClient.FindSpoolsByName(args[i], nil, query)
@@ -223,7 +223,7 @@ func init() {
 	rootCmd.AddCommand(useCmd)
 
 	useCmd.Flags().BoolP("dry-run", "d", false, "show what would be used, but don't actually use anything")
-	useCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	useCmd.Flags().StringP("Location", "l", "", "filter by Location, default is all")
 	useCmd.Flags().BoolP("non-interactive", "n", false, "do not prompt; if multiple spools match, behave as current non-interactive error behavior")
 	useCmd.Flags().Bool("simple-select", false, "use a basic numbered selector instead of interactive menu (fallback for limited terminals)")
 }
