@@ -21,5 +21,6 @@ type Project struct {
 }
 
 type PlanFile struct {
-	Projects []Project `yaml:"projects"`
+	OriginalLocation string    `yaml:"original_location,omitempty"`
+	Projects         []Project `yaml:"projects"`
 }
