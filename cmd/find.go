@@ -111,10 +111,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if location, err := cmd.Flags().GetString("Location"); err == nil && location != "" {
+	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
 		location = MapToAlias(location)
-		query["Location"] = location
-		fmt.Printf("Filtering by Location: %s\n", location)
+		query["location"] = location
+		fmt.Printf("Filtering by location: %s\n", location)
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -258,7 +258,7 @@ func init() {
 	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
 	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
 	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
-	findCmd.Flags().StringP("Location", "l", "", "filter by Location, default is all")
+	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
 	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
 	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
 	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
