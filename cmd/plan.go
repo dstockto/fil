@@ -10,6 +10,7 @@ import (
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/fatih/color"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -1138,6 +1139,7 @@ var planNextCmd = &cobra.Command{
 
 			// If target Location is full, we need to unload something
 			var spoolToUnload *models.FindSpool
+			var unloadIdx = -1
 			loadedInTarget := []models.FindSpool{}
 			for _, s := range loadedSpools {
 				if s.Location == targetLoc {
@@ -1189,6 +1191,12 @@ var planNextCmd = &cobra.Command{
 				}
 				spoolToUnload = &candidate
 
+				// Find the index of the spool being unloaded in its current location
+				orders, _ := LoadLocationOrders(apiClient)
+				if list, ok := orders[targetLoc]; ok {
+					unloadIdx = indexOf(list, spoolToUnload.Id)
+				}
+
 				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, spoolToUnload.Filament.Name, targetLoc)
 				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
 				var input string
@@ -1238,6 +1246,10 @@ var planNextCmd = &cobra.Command{
 			}
 
 			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, bestSpool.Filament.Name, targetLoc, bestSpool.Location)
+			fmt.Printf("Press Enter once the swap is complete...")
+			var confirm string
+			fmt.Scanln(&confirm)
+
 			apiClient.MoveSpool(bestSpool.Id, targetLoc)
 
 			// Update locations_spoolorders for LOAD
@@ -1245,7 +1257,11 @@ var planNextCmd = &cobra.Command{
 			if err == nil {
 				orders = RemoveFromAllOrders(orders, bestSpool.Id)
 				list := orders[targetLoc]
-				list = append(list, bestSpool.Id)
+				if unloadIdx != -1 {
+					list = InsertAt(list, unloadIdx, bestSpool.Id)
+				} else {
+					list = append(list, bestSpool.Id)
+				}
 				orders[targetLoc] = list
 				apiClient.PostSettingObject("locations_spoolorders", orders)
 			}
@@ -1299,10 +1315,12 @@ var planCheckCmd = &cobra.Command{
 
 		// Aggregate needs by FilamentID (if resolved) or Name+Material (if unresolved)
 		type totalNeed struct {
-			id       int
-			name     string
-			material string
-			amount   float64
+			id              int
+			name            string
+			material        string
+			colorHex        string
+			multiColorHexes string
+			amount          float64
 		}
 		needs := make(map[string]*totalNeed)
 
@@ -1337,6 +1355,7 @@ var planCheckCmd = &cobra.Command{
 								id:       req.FilamentID,
 								name:     req.Name,
 								material: req.Material,
+								colorHex: req.Color,
 							}
 						} else if req.FilamentID != 0 && needs[key].name != req.Name {
 							// If the same ID is used with different names, we should probably let the user know
@@ -1362,14 +1381,25 @@ var planCheckCmd = &cobra.Command{
 
 		// Inventory by Filament ID
 		inventory := make(map[int]float64)
+		filamentColors := make(map[int]struct {
+			colorHex        string
+			multiColorHexes string
+		})
 		for _, s := range allSpools {
 			if !s.Archived {
 				inventory[s.Filament.Id] += s.RemainingWeight
+				filamentColors[s.Filament.Id] = struct {
+					colorHex        string
+					multiColorHexes string
+				}{
+					colorHex:        s.Filament.ColorHex,
+					multiColorHexes: s.Filament.MultiColorHexes,
+				}
 			}
 		}
 
-		fmt.Printf("%-30s %10s %10s %10s\n", "Filament", "Needed", "On Hand", "Status")
-		fmt.Println(strings.Repeat("-", 65))
+		fmt.Printf("%-5s %-30s %10s %10s %10s\n", "", "Filament", "Needed", "On Hand", "Status")
+		fmt.Println(strings.Repeat("-", 71))
 
 		allMet := true
 		for _, n := range needs {
@@ -1377,6 +1407,10 @@ var planCheckCmd = &cobra.Command{
 			status := "OK"
 			if n.id != 0 {
 				onHand = inventory[n.id]
+				if color, ok := filamentColors[n.id]; ok {
+					n.colorHex = color.colorHex
+					n.multiColorHexes = color.multiColorHexes
+				}
 			} else {
 				status = "UNRESOLVED"
 			}
@@ -1387,7 +1421,27 @@ var planCheckCmd = &cobra.Command{
 				}
 				allMet = false
 			}
-			fmt.Printf("%-30s %10.1fg %10.1fg %10s\n", truncateFront(n.name, 30), n.amount, onHand, status)
+
+			displayStatus := status
+			switch status {
+			case "OK":
+				displayStatus = color.GreenString("OK")
+			case "UNRESOLVED":
+				displayStatus = color.YellowString("UNRESOLVED")
+			case "LOW":
+				displayStatus = color.RedString("LOW")
+			}
+
+			// Manually pad displayStatus to maintain right alignment
+			// The original width was 10, so we need to add 10 - len(status) spaces before the colorized string
+			padding := strings.Repeat(" ", 10-len(status))
+			displayStatus = padding + displayStatus
+
+			colorBlock := models.GetColorBlock(n.colorHex, n.multiColorHexes)
+			if colorBlock == "" {
+				colorBlock = "    "
+			}
+			fmt.Printf("%s %-30s %10.1fg %10.1fg %s\n", colorBlock, truncateFront(n.name, 30), n.amount, onHand, displayStatus)
 		}
 
 		if allMet {

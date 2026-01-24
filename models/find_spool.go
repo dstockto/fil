@@ -58,39 +58,11 @@ func (s FindSpool) String() string {
 		archived = color.RGB(200, 0, 0).Sprintf(" (archived)")
 	}
 
-	colorBlock := ""
-
-	// Only show color swatches when color output is enabled; otherwise omit them entirely
-	if !color.NoColor {
-		if s.Filament.ColorHex != "" {
-			r, g, b := convertFromHex(s.Filament.ColorHex)
-			customColor := color.RGB(r, g, b)
-
-			semiTransparent := len(s.Filament.ColorHex) > 6
-
-			blockChars := "████"
-			if semiTransparent {
-				blockChars = "▓▓▓▓"
-			}
-
-			if semiTransparent {
-				customColor.AddBgRGB(255, 255, 255)
-				colorBlock = customColor.Sprintf("%s", blockChars) + " "
-			} else {
-				colorBlock = customColor.Sprintf("%s", blockChars) + " "
-			}
-		}
-
-		if s.Filament.MultiColorHexes != "" {
-			// multicolor is represented by comma-separated hex values
-			colors := strings.SplitN(s.Filament.MultiColorHexes, ",", 2)
-			r1, g1, b1 := convertFromHex(colors[0])
-			r2, g2, b2 := convertFromHex(colors[1])
-			colorBlock1 := color.RGB(r1, g1, b1).Sprintf("██")
-			colorBlock2 := color.RGB(r2, g2, b2).Sprintf("██")
-			colorBlock = colorBlock1 + colorBlock2 + " "
-		}
+	colorBlock := GetColorBlock(s.Filament.ColorHex, s.Filament.MultiColorHexes)
+	if colorBlock != "" {
+		colorBlock += " "
 	}
+
 	// Default to not showing the diameter if it's 1.75
 	diameter := ""
 	if s.Filament.Diameter != 1.75 {
@@ -143,6 +115,43 @@ func (s FindSpool) String() string {
 		lastUsedDuration,
 		archived,
 	)
+}
+
+func GetColorBlock(colorHex, multiColorHexes string) string {
+	colorBlock := ""
+
+	// Only show color swatches when color output is enabled; otherwise omit them entirely
+	if !color.NoColor {
+		if colorHex != "" {
+			r, g, b := convertFromHex(colorHex)
+			customColor := color.RGB(r, g, b)
+
+			semiTransparent := len(colorHex) > 6
+
+			blockChars := "████"
+			if semiTransparent {
+				blockChars = "▓▓▓▓"
+			}
+
+			if semiTransparent {
+				customColor.AddBgRGB(255, 255, 255)
+				colorBlock = customColor.Sprintf("%s", blockChars)
+			} else {
+				colorBlock = customColor.Sprintf("%s", blockChars)
+			}
+		}
+
+		if multiColorHexes != "" {
+			// multicolor is represented by comma-separated hex values
+			colors := strings.SplitN(multiColorHexes, ",", 2)
+			r1, g1, b1 := convertFromHex(colors[0])
+			r2, g2, b2 := convertFromHex(colors[1])
+			colorBlock1 := color.RGB(r1, g1, b1).Sprintf("██")
+			colorBlock2 := color.RGB(r2, g2, b2).Sprintf("██")
+			colorBlock = colorBlock1 + colorBlock2
+		}
+	}
+	return colorBlock
 }
 
 func convertFromHex(hex string) (int, int, int) {
