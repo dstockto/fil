@@ -157,9 +157,13 @@ var planResolveCmd = &cobra.Command{
 					items = append(items, p.Path)
 				}
 				prompt := promptui.Select{
-					Label:  "Select plan file to resolve",
-					Items:  items,
-					Stdout: NoBellStdout,
+					Label:             "Select plan file to resolve",
+					Items:             items,
+					Stdout:            NoBellStdout,
+					StartInSearchMode: true,
+					Searcher: func(input string, index int) bool {
+						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+					},
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -316,8 +320,118 @@ func init() {
 	planCmd.AddCommand(planNewCmd)
 	planCmd.AddCommand(planMoveCmd)
 	planCmd.AddCommand(planMoveBackCmd)
+	planCmd.AddCommand(planReprintCmd)
 
 	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
+}
+
+var planReprintCmd = &cobra.Command{
+	Use:   "reprint",
+	Short: "Reprint an archived project",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if Cfg == nil || Cfg.ArchiveDir == "" || Cfg.PlansDir == "" {
+			return fmt.Errorf("archive_dir and plans_dir must be configured in config.json")
+		}
+
+		// Ensure archive dir exists
+		if _, err := os.Stat(Cfg.ArchiveDir); os.IsNotExist(err) {
+			return fmt.Errorf("archive directory %s does not exist", Cfg.ArchiveDir)
+		}
+
+		// Find yaml files in archive directory
+		files, _ := filepath.Glob(filepath.Join(Cfg.ArchiveDir, "*.yaml"))
+		files2, _ := filepath.Glob(filepath.Join(Cfg.ArchiveDir, "*.yml"))
+		files = append(files, files2...)
+
+		if len(files) == 0 {
+			return fmt.Errorf("no archived plans found in %s", Cfg.ArchiveDir)
+		}
+
+		var selectedPath string
+		if len(files) == 1 {
+			selectedPath = files[0]
+		} else {
+			prompt := promptui.Select{
+				Label:             "Select archived plan to reprint",
+				Items:             files,
+				Stdout:            NoBellStdout,
+				StartInSearchMode: true,
+				Searcher: func(input string, index int) bool {
+					file := files[index]
+					name := strings.ToLower(filepath.Base(file))
+					input = strings.ToLower(input)
+
+					return strings.Contains(name, input)
+				},
+			}
+			_, result, err := prompt.Run()
+			if err != nil {
+				return err
+			}
+			selectedPath = result
+		}
+
+		// Read the plan
+		data, err := os.ReadFile(selectedPath)
+		if err != nil {
+			return fmt.Errorf("failed to read archived plan: %w", err)
+		}
+
+		var plan models.PlanFile
+		if err := yaml.Unmarshal(data, &plan); err != nil {
+			return fmt.Errorf("failed to unmarshal plan: %w", err)
+		}
+
+		// Reset all plates and projects to todo
+		for i := range plan.Projects {
+			plan.Projects[i].Status = "todo"
+			for j := range plan.Projects[i].Plates {
+				plan.Projects[i].Plates[j].Status = "todo"
+			}
+		}
+
+		// Determine new filename
+		ext := filepath.Ext(selectedPath)
+		base := strings.TrimSuffix(filepath.Base(selectedPath), ext)
+
+		// Remove timestamp suffix if present (Format: 20060102150405, length 14)
+		// Usually appended as -YYYYMMDDHHMMSS
+		if len(base) >= 15 && base[len(base)-15] == '-' {
+			timestampPart := base[len(base)-14:]
+			// Check if it's all digits
+			isDigits := true
+			for _, r := range timestampPart {
+				if r < '0' || r > '9' {
+					isDigits = false
+					break
+				}
+			}
+			if isDigits {
+				base = base[:len(base)-15]
+			}
+		}
+
+		newFilename := base + ext
+		destPath := filepath.Join(Cfg.PlansDir, newFilename)
+
+		// Check if destination already exists
+		if _, err := os.Stat(destPath); err == nil {
+			return fmt.Errorf("destination file %s already exists", destPath)
+		}
+
+		// Save the reset plan to the new location
+		updatedData, err := yaml.Marshal(plan)
+		if err != nil {
+			return fmt.Errorf("failed to marshal plan: %w", err)
+		}
+
+		if err := os.WriteFile(destPath, updatedData, 0644); err != nil {
+			return fmt.Errorf("failed to write plan file: %w", err)
+		}
+
+		fmt.Printf("Successfully reprinted plan to %s\n", destPath)
+		return nil
+	},
 }
 
 var planMoveBackCmd = &cobra.Command{
@@ -342,9 +456,13 @@ var planMoveBackCmd = &cobra.Command{
 			path = files[0]
 		} else {
 			prompt := promptui.Select{
-				Label:  "Select plan file to move back",
-				Items:  files,
-				Stdout: NoBellStdout,
+				Label:             "Select plan file to move back",
+				Items:             files,
+				Stdout:            NoBellStdout,
+				StartInSearchMode: true,
+				Searcher: func(input string, index int) bool {
+					return strings.Contains(strings.ToLower(files[index]), strings.ToLower(input))
+				},
 			}
 			_, result, err := prompt.Run()
 			if err != nil {
@@ -424,9 +542,13 @@ var planMoveCmd = &cobra.Command{
 				path = files[0]
 			} else {
 				prompt := promptui.Select{
-					Label:  "Select plan file to move",
-					Items:  files,
-					Stdout: NoBellStdout,
+					Label:             "Select plan file to move",
+					Items:             files,
+					Stdout:            NoBellStdout,
+					StartInSearchMode: true,
+					Searcher: func(input string, index int) bool {
+						return strings.Contains(strings.ToLower(files[index]), strings.ToLower(input))
+					},
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -698,9 +820,13 @@ var planCompleteCmd = &cobra.Command{
 					items = append(items, p.Path)
 				}
 				prompt := promptui.Select{
-					Label:  "Select plan file",
-					Items:  items,
-					Stdout: NoBellStdout,
+					Label:             "Select plan file",
+					Items:             items,
+					Stdout:            NoBellStdout,
+					StartInSearchMode: true,
+					Searcher: func(input string, index int) bool {
+						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+					},
 				}
 				_, result, err := prompt.Run()
 				if err != nil {
@@ -745,10 +871,14 @@ var planCompleteCmd = &cobra.Command{
 		}
 
 		prompt := promptui.Select{
-			Label:  "What did you complete?",
-			Items:  options,
-			Size:   10,
-			Stdout: NoBellStdout,
+			Label:             "What did you complete?",
+			Items:             options,
+			Size:              10,
+			Stdout:            NoBellStdout,
+			StartInSearchMode: true,
+			Searcher: func(input string, index int) bool {
+				return strings.Contains(strings.ToLower(options[index]), strings.ToLower(input))
+			},
 		}
 		idx, _, err := prompt.Run()
 		if err != nil {
