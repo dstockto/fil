@@ -220,6 +220,16 @@ func mergeInto(dst, src *Config) {
 		}
 	}
 
+	if src.LocationCapacity != nil {
+		if dst.LocationCapacity == nil {
+			dst.LocationCapacity = map[string]LocationCapacity{}
+		}
+
+		for k, v := range src.LocationCapacity {
+			dst.LocationCapacity[k] = v
+		}
+	}
+
 	if src.Printers != nil {
 		if dst.Printers == nil {
 			dst.Printers = map[string][]string{}

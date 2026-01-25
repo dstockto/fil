@@ -1296,6 +1296,7 @@ var planNextCmd = &cobra.Command{
 
 			// Find an empty slot or one to swap out
 			targetLoc := ""
+			minLoad := 999
 			for _, loc := range printerLocations {
 				loadedInLoc := 0
 				for _, s := range loadedSpools {
@@ -1308,8 +1309,10 @@ var planNextCmd = &cobra.Command{
 					capacity = capInfo.Capacity
 				}
 				if loadedInLoc < capacity {
-					targetLoc = loc
-					break
+					if loadedInLoc < minLoad {
+						minLoad = loadedInLoc
+						targetLoc = loc
+					}
 				}
 			}
 
