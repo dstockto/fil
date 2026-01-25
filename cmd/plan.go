@@ -17,9 +17,10 @@ import (
 )
 
 var planCmd = &cobra.Command{
-	Use:   "plan",
-	Short: "Manage printing projects and plans",
-	Long:  `Manage 3D printing projects and plans involving multiple plates and filaments.`,
+	Use:     "plan",
+	Aliases: []string{"p"},
+	Short:   "Manage printing projects and plans",
+	Long:    `Manage 3D printing projects and plans involving multiple plates and filaments.`,
 }
 
 var planListCmd = &cobra.Command{
@@ -140,8 +141,9 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 }
 
 var planResolveCmd = &cobra.Command{
-	Use:   "resolve [file]",
-	Short: "Interactively link filament names to IDs in a plan file",
+	Use:     "resolve [file]",
+	Aliases: []string{"r", "link"},
+	Short:   "Interactively link filament names to IDs in a plan file",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api endpoint not configured")
@@ -336,8 +338,9 @@ func init() {
 }
 
 var planReprintCmd = &cobra.Command{
-	Use:   "reprint",
-	Short: "Reprint an archived project",
+	Use:     "reprint",
+	Aliases: []string{"rp"},
+	Short:   "Reprint an archived project",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ArchiveDir == "" || Cfg.PlansDir == "" {
 			return fmt.Errorf("archive_dir and plans_dir must be configured in config.json")
@@ -445,8 +448,9 @@ var planReprintCmd = &cobra.Command{
 }
 
 var planMoveBackCmd = &cobra.Command{
-	Use:   "move-back",
-	Short: "Move a plan file back to its original location",
+	Use:     "move-back",
+	Aliases: []string{"mb"},
+	Short:   "Move a plan file back to its original location",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.PlansDir == "" {
 			return fmt.Errorf("plans_dir not configured in config.json")
@@ -529,8 +533,9 @@ var planMoveBackCmd = &cobra.Command{
 }
 
 var planMoveCmd = &cobra.Command{
-	Use:   "move [file]",
-	Short: "Move a plan file to the central plans directory",
+	Use:     "move [file]",
+	Aliases: []string{"mv", "m"},
+	Short:   "Move a plan file to the central plans directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.PlansDir == "" {
 			return fmt.Errorf("plans_dir not configured in config.json")
@@ -613,8 +618,9 @@ var planMoveCmd = &cobra.Command{
 }
 
 var planNewCmd = &cobra.Command{
-	Use:   "new [filename]",
-	Short: "Create a new template plan file in the current directory",
+	Use:     "new [filename]",
+	Aliases: []string{"n"},
+	Short:   "Create a new template plan file in the current directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -746,8 +752,9 @@ var planNewCmd = &cobra.Command{
 }
 
 var planArchiveCmd = &cobra.Command{
-	Use:   "archive [file]",
-	Short: "Move completed plan files to the archive directory",
+	Use:     "archive [file]",
+	Aliases: []string{"a"},
+	Short:   "Move completed plan files to the archive directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ArchiveDir == "" {
 			return fmt.Errorf("archive_dir not configured in config.json")
@@ -806,8 +813,9 @@ var planArchiveCmd = &cobra.Command{
 }
 
 var planCompleteCmd = &cobra.Command{
-	Use:   "complete [file]",
-	Short: "Mark a plate or project as completed",
+	Use:     "complete [file]",
+	Aliases: []string{"done", "c"},
+	Short:   "Mark a plate or project as completed",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api endpoint not configured")
@@ -1024,8 +1032,9 @@ var planCompleteCmd = &cobra.Command{
 }
 
 var planNextCmd = &cobra.Command{
-	Use:   "next [file]",
-	Short: "Suggest the next plate to print and manage swaps",
+	Use:     "next [file]",
+	Aliases: []string{"n"},
+	Short:   "Suggest the next plate to print and manage swaps",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api endpoint not configured")
