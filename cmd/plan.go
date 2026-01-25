@@ -69,6 +69,9 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 	// Always search CWD
 	if cwd, err := os.Getwd(); err == nil {
 		dirs = append(dirs, cwd)
+	} else {
+		// Log warning but continue if CWD is inaccessible
+		fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
 	}
 
 	// Add global plans dir if configured
@@ -615,7 +618,7 @@ var planNewCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get current working directory (it may have been deleted): %w", err)
 		}
 		projectName := filepath.Base(cwd)
 

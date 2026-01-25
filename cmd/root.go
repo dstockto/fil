@@ -5,9 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -117,9 +115,12 @@ func exists(path string) bool {
 		return false
 	}
 
-	_, err := os.Stat(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
 
-	return err == nil || !errors.Is(err, fs.ErrNotExist)
+	return !info.IsDir()
 }
 
 //nolint:gochecknoinits
@@ -175,7 +176,7 @@ func discoverConfigPaths() []string {
 		}
 	}
 	// 3) CWD
-	if cwd, _ := os.Getwd(); cwd != "" {
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
 		p := filepath.Join(cwd, "config.json")
 		if exists(p) {
 			out = append(out, p)
