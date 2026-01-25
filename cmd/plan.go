@@ -82,7 +82,14 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 	}
 
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		// Evaluate symlinks for the root directory so WalkDir can enter it
+		// if it is a symlink (like /tmp on macOS)
+		evalDir, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			dir = evalDir
+		}
+
+		err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil // skip errors
 			}
