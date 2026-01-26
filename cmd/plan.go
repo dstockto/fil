@@ -24,8 +24,9 @@ var planCmd = &cobra.Command{
 }
 
 var planListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all discovered plans and their status",
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List all discovered plans and their status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		plans, err := discoverPlans()
 		if err != nil {
