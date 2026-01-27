@@ -149,7 +149,7 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 		dirs = append(dirs, cwd)
 	} else {
 		// Log warning but continue if CWD is inaccessible
-		fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
 	}
 
 	// Add global plans dir if configured
@@ -202,7 +202,7 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 			}
 			var plan models.PlanFile
 			if err := yaml.Unmarshal(data, &plan); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
 				return nil
 			}
 			if len(plan.Projects) > 0 {
@@ -653,7 +653,7 @@ var planMoveCmd = &cobra.Command{
 
 		// Ensure plans dir exists
 		if _, err := os.Stat(Cfg.PlansDir); os.IsNotExist(err) {
-			os.MkdirAll(Cfg.PlansDir, 0755)
+			_ = os.MkdirAll(Cfg.PlansDir, 0755)
 		}
 
 		// Load the plan to update OriginalLocation
@@ -795,7 +795,7 @@ var planNewCmd = &cobra.Command{
 
 			// Ensure plans dir exists
 			if _, err := os.Stat(Cfg.PlansDir); os.IsNotExist(err) {
-				os.MkdirAll(Cfg.PlansDir, 0755)
+				_ = os.MkdirAll(Cfg.PlansDir, 0755)
 			}
 
 			// Load the plan to update OriginalLocation
@@ -840,7 +840,7 @@ var planArchiveCmd = &cobra.Command{
 
 		// Ensure archive dir exists
 		if _, err := os.Stat(Cfg.ArchiveDir); os.IsNotExist(err) {
-			os.MkdirAll(Cfg.ArchiveDir, 0755)
+			_ = os.MkdirAll(Cfg.ArchiveDir, 0755)
 		}
 
 		var paths []string
@@ -859,7 +859,7 @@ var planArchiveCmd = &cobra.Command{
 				continue
 			}
 			var plan models.PlanFile
-			yaml.Unmarshal(data, &plan)
+			_ = yaml.Unmarshal(data, &plan)
 
 			allDone := true
 			for _, proj := range plan.Projects {
@@ -1627,16 +1627,6 @@ var planNextCmd = &cobra.Command{
 	},
 }
 
-func truncateFront(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[len(s)-maxLen:]
-	}
-	return "..." + s[len(s)-maxLen+3:]
-}
-
 var planCheckCmd = &cobra.Command{
 	Use:   "check [file]",
 	Short: "Check if enough filament is available for a plan",
@@ -1792,7 +1782,7 @@ var planCheckCmd = &cobra.Command{
 			if colorBlock == "" {
 				colorBlock = "    "
 			}
-			fmt.Printf("%s %-30s %10.1fg %10.1fg %s\n", colorBlock, truncateFront(n.name, 30), n.amount, onHand, displayStatus)
+			fmt.Printf("%s %-30s %10.1fg %10.1fg %s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus)
 		}
 
 		if allMet {

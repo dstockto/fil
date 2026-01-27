@@ -6,7 +6,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 
 	"github.com/dstockto/fil/api"
@@ -26,6 +25,15 @@ var useCmd = &cobra.Command{
 type SpoolUsage struct {
 	SpoolId int
 	Amount  float64
+}
+
+func buildUseQuery(_ *cobra.Command, location string) (map[string]string, error) {
+	query := make(map[string]string)
+	if location != "" {
+		location = MapToAlias(location)
+		query["location"] = location
+	}
+	return query, nil
 }
 
 func runUse(cmd *cobra.Command, args []string) error {
@@ -68,7 +76,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		errs   error
 	)
 
-	location, locerr := cmd.Flags().GetString("location")
+	location, _ := cmd.Flags().GetString("location")
 	fmt.Printf("Filtering by Location: %s\n", location)
 	for i := 0; i < len(args); i += 2 {
 		spoolSelector := args[i]
@@ -79,12 +87,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		}
 
 		if spoolId == -1 {
-			query := make(map[string]string)
-
-			if locerr == nil && location != "" {
-				location = MapToAlias(location)
-				query["location"] = location
-			}
+			query, _ := buildUseQuery(cmd, location)
 
 			spools, finderr := apiClient.FindSpoolsByName(args[i], nil, query)
 			if finderr != nil {
@@ -132,7 +135,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		}
 
 		// round to 1 decimal place
-		amount = math.RoundToEven(amount*10) / 10
+		amount = RoundAmount(amount)
 
 		// add to the list of usages
 		usages = append(usages, SpoolUsage{

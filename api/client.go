@@ -15,6 +15,19 @@ import (
 
 var ErrSpoolNotFound = errors.New("no spool found")
 
+type SpoolmanAPI interface {
+	FindSpoolsByName(name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error)
+	GetFilamentById(id int) (*models.FindSpool, error)
+	FindSpoolsById(id int) (*models.FindSpool, error)
+	UseFilament(spoolId int, amount float64) error
+	MoveSpool(spoolId int, to string) error
+	PatchSpool(spoolId int, updates map[string]any) error
+	ArchiveSpool(spoolId int) error
+	GetSettings() (map[string]SettingEntry, error)
+	PatchSettings(fields map[string]any) error
+	PostSettingObject(key string, obj any) error
+}
+
 type Client struct {
 	base       string // base API endpoint
 	httpClient http.Client

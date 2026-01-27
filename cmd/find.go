@@ -26,43 +26,12 @@ var findCmd = &cobra.Command{
 	Aliases: []string{"f"},
 }
 
-func runFind(cmd *cobra.Command, args []string) error {
-	if Cfg == nil || Cfg.ApiBase == "" {
-		return errors.New("apiClient endpoint not configured")
-	}
-
-	if len(args) == 0 {
-		args = append(args, "*")
-	}
-
-	apiClient := api.NewClient(Cfg.ApiBase)
-
-	var (
-		spools  []models.FindSpool
-		filters []api.SpoolFilter
-	)
-
-	// Preload settings-based Location orders to sort results accordingly.
-	// The settings key 'locations_spoolorders' stores, per Location, the ordered list of spool IDs.
-	orders, err := LoadLocationOrders(apiClient)
-	if err != nil {
-		// Non-fatal: if settings cannot be loaded, continue without settings-based ordering.
-		orders = map[string][]int{}
-	}
-	// Build quick lookup of ranks per Location for O(1) index lookups.
-	ranks := make(map[string]map[int]int, len(orders))
-	for loc, ids := range orders {
-		m := make(map[int]int, len(ids))
-		for i, id := range ids {
-			m[id] = i
-		}
-		ranks[loc] = m
-	}
-
+func buildFindQuery(cmd *cobra.Command) (map[string]string, []api.SpoolFilter, error) {
+	var filters []api.SpoolFilter
 	// API doesn't support diameter, so we have to filter manually
 	diameter, err := cmd.Flags().GetString("diameter")
 	if err != nil {
-		return fmt.Errorf("failed to get diameter flag: %w", err)
+		return nil, nil, fmt.Errorf("failed to get diameter flag: %w", err)
 	}
 
 	switch diameter {
@@ -114,7 +83,50 @@ func runFind(cmd *cobra.Command, args []string) error {
 	if location, err := cmd.Flags().GetString("location"); err == nil && location != "" {
 		location = MapToAlias(location)
 		query["location"] = location
-		fmt.Printf("Filtering by location: %s\n", location)
+	}
+	return query, filters, nil
+}
+
+func runFind(cmd *cobra.Command, args []string) error {
+	if Cfg == nil || Cfg.ApiBase == "" {
+		return errors.New("apiClient endpoint not configured")
+	}
+
+	if len(args) == 0 {
+		args = append(args, "*")
+	}
+
+	apiClient := api.NewClient(Cfg.ApiBase)
+
+	var (
+		spools  []models.FindSpool
+		filters []api.SpoolFilter
+	)
+
+	// Preload settings-based Location orders to sort results accordingly.
+	// The settings key 'locations_spoolorders' stores, per Location, the ordered list of spool IDs.
+	orders, err := LoadLocationOrders(apiClient)
+	if err != nil {
+		// Non-fatal: if settings cannot be loaded, continue without settings-based ordering.
+		orders = map[string][]int{}
+	}
+	// Build quick lookup of ranks per Location for O(1) index lookups.
+	ranks := make(map[string]map[int]int, len(orders))
+	for loc, ids := range orders {
+		m := make(map[int]int, len(ids))
+		for i, id := range ids {
+			m[id] = i
+		}
+		ranks[loc] = m
+	}
+
+	query, filters, err := buildFindQuery(cmd)
+	if err != nil {
+		return err
+	}
+
+	if location, _ := cmd.Flags().GetString("location"); location != "" {
+		fmt.Printf("Filtering by location: %s\n", query["location"])
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -247,39 +259,18 @@ func runFind(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(findCmd)
-
-	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
-	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
-	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
-	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
-	findCmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
-	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
-	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
-	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
-	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
-	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
-	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
-	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
-}
-
-// onlyStandardFilament returns true if the spool is 1.75 mm filament.
 func onlyStandardFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 1.75
 }
 
-// noFilter returns true for all spools.
 func noFilter(_ models.FindSpool) bool {
 	return true
 }
 
-// ultimakerFilament returns true if the spool is Ultimaker filament (2.85mm).
 func ultimakerFilament(spool models.FindSpool) bool {
 	return spool.Filament.Diameter == 2.85
 }
 
-// onlyArchived returns true if the spool is archived.
 func archivedOnly(spool models.FindSpool) bool {
 	return spool.Archived
 }
@@ -298,7 +289,6 @@ func getCommentFilter(comment string) api.SpoolFilter {
 	}
 }
 
-// aggregateFilter returns a function that returns true if all given filters return true.
 func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
 	return func(s models.FindSpool) bool {
 		for _, f := range filters {
@@ -309,4 +299,21 @@ func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
 
 		return true
 	}
+}
+
+func init() {
+	rootCmd.AddCommand(findCmd)
+
+	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
+	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
+	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
+	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
+	findCmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
+	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
+	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
+	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
+	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
+	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
+	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
 }

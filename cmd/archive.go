@@ -25,6 +25,14 @@ var archiveCmd = &cobra.Command{
 	SilenceUsage: true,
 }
 
+func buildArchiveQuery(location string) map[string]string {
+	query := make(map[string]string)
+	if location != "" {
+		query["location"] = MapToAlias(location)
+	}
+	return query
+}
+
 func runArchive(cmd *cobra.Command, args []string) error {
 	if Cfg == nil || Cfg.ApiBase == "" {
 		return errors.New("apiClient endpoint not configured")
@@ -37,12 +45,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	location, err := cmd.Flags().GetString("location")
-	if err != nil {
-		return err
-	}
-
-	location = MapToAlias(location)
+	location, _ := cmd.Flags().GetString("location")
 
 	if dryRun {
 		color.HiRed("Dry run mode enabled. Nothing will be changed.")
@@ -69,10 +72,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		query := make(map[string]string)
-		if location != "" {
-			query["location"] = location
-		}
+		query := buildArchiveQuery(location)
 
 		foundSpools, err := apiClient.FindSpoolsByName(a, nil, query)
 		if err != nil {

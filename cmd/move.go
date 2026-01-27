@@ -4,11 +4,9 @@ Copyright © 2025 David Stockton <dave@davidstockton.com>
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
@@ -34,18 +32,20 @@ type move struct {
 	err     error
 }
 
-type DestSpec struct {
-	Location string
-	pos      int  // 1-based desired position
-	hasPos   bool // whether a position was provided
-}
-
 func (m move) String() string {
 	if m.err != nil {
 		return fmt.Sprintf("not moving %d: %s", m.spoolId, m.err)
 	}
 
 	return fmt.Sprintf("Moving #%d from %s to %s", m.spoolId, m.from, m.to)
+}
+
+func buildMoveQuery(from string) map[string]string {
+	query := make(map[string]string)
+	if from != "" {
+		query["location"] = MapToAlias(from)
+	}
+	return query
 }
 
 func runMove(cmd *cobra.Command, args []string) error {
@@ -114,10 +114,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 		if id, iderr := strconv.Atoi(spoolSelector); iderr == nil {
 			spoolId = id
 		} else {
-			query := make(map[string]string)
-			if allFrom != "" {
-				query["location"] = allFrom
-			}
+			query := buildMoveQuery(allFrom)
 			spools, lookupErr := apiClient.FindSpoolsByName(spoolSelector, nil, query)
 			if lookupErr != nil {
 				errs = errors.Join(errs, fmt.Errorf("error looking up spool '%s': %w", spoolSelector, lookupErr))
@@ -306,120 +303,6 @@ func runMove(cmd *cobra.Command, args []string) error {
 
 	cmd.SilenceUsage = true
 	return errs
-}
-
-// MapToAlias maps a Location alias to a Location name. If it's not found in the map, it returns the original string.
-func MapToAlias(to string) string {
-	aliasMap := Cfg.LocationAliases
-	if aliasMap == nil {
-		return to
-	}
-
-	if val, ok := aliasMap[strings.ToUpper(to)]; ok {
-		return val
-	}
-
-	return to
-}
-
-// ParseDestSpec parses a destination token that may include a slot, e.g.,
-// "A:2", "AMS A@3", or "Shelf 6B" (no slot). Aliases apply only to the
-// Location part (before the separator). Positions are 1-based.
-func ParseDestSpec(input string) (DestSpec, error) {
-	in := strings.TrimSpace(input)
-	if in == "" {
-		return DestSpec{Location: ""}, nil
-	}
-	if strings.EqualFold(in, "<empty>") {
-		return DestSpec{Location: ""}, nil
-	}
-	// Find last occurrence of either ':' or '@'
-	idx := strings.LastIndexAny(in, "@:")
-	if idx <= 0 || idx == len(in)-1 { // no separator or nothing after it
-		return DestSpec{Location: MapToAlias(in)}, nil
-	}
-
-	locPart := strings.TrimSpace(in[:idx])
-	posPart := strings.TrimSpace(in[idx+1:])
-	if strings.EqualFold(locPart, "<empty>") {
-		locPart = ""
-	}
-
-	// If the pos part isn't a valid int, treat as pure Location
-	p, err := strconv.Atoi(posPart)
-	if err != nil {
-		return DestSpec{Location: MapToAlias(in)}, nil
-	}
-
-	return DestSpec{Location: MapToAlias(locPart), pos: p, hasPos: true}, nil
-}
-
-// LoadLocationOrders reads the settings entry 'locations_spoolorders' and
-// returns it as a map[Location][]spoolID. If not set or empty, returns an
-// empty map.
-func LoadLocationOrders(apiClient *api.Client) (map[string][]int, error) {
-	settings, err := apiClient.GetSettings()
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch settings: %w", err)
-	}
-	entry, ok := settings["locations_spoolorders"]
-	if !ok {
-		return map[string][]int{}, nil
-	}
-
-	var rawString string
-	if err := json.Unmarshal(entry.Value, &rawString); err != nil {
-		return nil, fmt.Errorf("failed to decode settings value wrapper: %w", err)
-	}
-	if rawString == "" {
-		return map[string][]int{}, nil
-	}
-	var orders map[string][]int
-	if err := json.Unmarshal([]byte(rawString), &orders); err != nil {
-		return nil, fmt.Errorf("failed to parse locations_spoolorders JSON: %w", err)
-	}
-	if orders == nil {
-		orders = map[string][]int{}
-	}
-	return orders, nil
-}
-
-// RemoveFromAllOrders removes id from every Location list to avoid duplicates.
-func RemoveFromAllOrders(orders map[string][]int, id int) map[string][]int {
-	for loc, ids := range orders {
-		kept := make([]int, 0, len(ids))
-		for _, v := range ids {
-			if v != id {
-				kept = append(kept, v)
-			}
-		}
-		orders[loc] = kept
-	}
-	return orders
-}
-
-// InsertAt inserts val at index i (0-based) into slice s, shifting elements to the right.
-func InsertAt(s []int, i int, val int) []int {
-	if i < 0 {
-		i = 0
-	}
-	if i > len(s) {
-		i = len(s)
-	}
-	s = append(s, 0)
-	copy(s[i+1:], s[i:])
-	s[i] = val
-	return s
-}
-
-// indexOf returns the 0-based index of val in s, or -1 if not found.
-func indexOf(s []int, val int) int {
-	for i, v := range s {
-		if v == val {
-			return i
-		}
-	}
-	return -1
 }
 
 func init() {
