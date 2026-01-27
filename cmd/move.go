@@ -116,7 +116,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 		} else {
 			query := make(map[string]string)
 			if allFrom != "" {
-				query["Location"] = allFrom
+				query["location"] = allFrom
 			}
 			spools, lookupErr := apiClient.FindSpoolsByName(spoolSelector, nil, query)
 			if lookupErr != nil {

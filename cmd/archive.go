@@ -37,7 +37,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	location, err := cmd.Flags().GetString("Location")
+	location, err := cmd.Flags().GetString("location")
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 
 		query := make(map[string]string)
 		if location != "" {
-			query["Location"] = location
+			query["location"] = location
 		}
 
 		foundSpools, err := apiClient.FindSpoolsByName(a, nil, query)
@@ -140,7 +140,7 @@ func init() {
 	rootCmd.AddCommand(archiveCmd)
 
 	archiveCmd.Flags().BoolP("dry-run", "d", false, "show what would be archived, but don't actually archive anything")
-	archiveCmd.Flags().StringP("Location", "l", "", "filter by Location, default is all")
+	archiveCmd.Flags().StringP("location", "l", "", "filter by Location, default is all")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
