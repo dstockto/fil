@@ -398,6 +398,24 @@ var planResolveCmd = &cobra.Command{
 	},
 }
 
+func UseFilamentSafely(apiClient *api.Client, spool *models.FindSpool, amount float64) error {
+	if amount > spool.RemainingWeight {
+		overage := amount - spool.RemainingWeight
+		fmt.Printf("Warning: Spool #%d (%s) only has %.1fg remaining, but usage is %.1fg.\n", spool.Id, spool.Filament.Name, spool.RemainingWeight, amount)
+		fmt.Printf("Adjusting Spool #%d initial weight by adding %.1fg to prevent negative remaining weight.\n", spool.Id, overage)
+
+		updates := map[string]any{
+			"initial_weight": spool.InitialWeight + overage,
+		}
+		err := apiClient.PatchSpool(spool.Id, updates)
+		if err != nil {
+			return fmt.Errorf("failed to adjust initial weight for spool #%d: %w", spool.Id, err)
+		}
+	}
+
+	return apiClient.UseFilament(spool.Id, amount)
+}
+
 func init() {
 	rootCmd.AddCommand(planCmd)
 	planCmd.AddCommand(planListCmd)
@@ -1039,64 +1057,119 @@ var planCompleteCmd = &cobra.Command{
 					fmt.Sscanf(input, "%f", &used)
 				}
 
-				// Find which spool to deduct from
-				var matchedSpool *models.FindSpool
+				for used > 0 {
+					// Find which spool to deduct from
+					var matchedSpool *models.FindSpool
 
-				// 1. Try to find a matching spool in the printer
-				if len(printerLocations) > 0 {
-					allSpools, _ := apiClient.FindSpoolsByName("*", nil, nil)
-					var candidates []models.FindSpool
-					for _, s := range allSpools {
-						inPrinter := false
-						for _, loc := range printerLocations {
-							if s.Location == loc {
-								inPrinter = true
-								break
+					// 1. Try to find matching spools in the printer
+					if len(printerLocations) > 0 {
+						allSpools, _ := apiClient.FindSpoolsByName("*", nil, nil)
+						var candidates []models.FindSpool
+						for _, s := range allSpools {
+							inPrinter := false
+							for _, loc := range printerLocations {
+								if s.Location == loc {
+									inPrinter = true
+									break
+								}
+							}
+							if !inPrinter {
+								continue
+							}
+
+							// Check if it matches the requirement (either by ID or by name)
+							if req.FilamentID != 0 && s.Filament.Id == req.FilamentID {
+								candidates = append(candidates, s)
+							} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
+								candidates = append(candidates, s)
 							}
 						}
-						if !inPrinter {
-							continue
+
+						// filter out candidates with no remaining weight if we have more than 1
+						if len(candidates) > 1 {
+							var withWeight []models.FindSpool
+							for _, c := range candidates {
+								if c.RemainingWeight > 0 {
+									withWeight = append(withWeight, c)
+								}
+							}
+							if len(withWeight) > 0 {
+								candidates = withWeight
+							}
 						}
 
-						// Check if it matches the requirement (either by ID or by name)
-						if req.FilamentID != 0 && s.Filament.Id == req.FilamentID {
-							candidates = append(candidates, s)
-						} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
-							candidates = append(candidates, s)
+						if len(candidates) == 1 {
+							matchedSpool = &candidates[0]
+							fmt.Printf("Using spool #%d (%s) from %s (%.1fg remaining)\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location, matchedSpool.RemainingWeight)
+						} else if len(candidates) > 1 {
+							var items []string
+							for _, c := range candidates {
+								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg remaining", c.Id, c.Filament.Name, c.Location, c.RemainingWeight))
+							}
+							promptSpool := promptui.Select{
+								Label:  fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
+								Items:  append(items, "Other/Manual"),
+								Stdout: NoBellStdout,
+							}
+							idx, _, err := promptSpool.Run()
+							if err == nil && idx < len(candidates) {
+								matchedSpool = &candidates[idx]
+							}
 						}
 					}
 
-					if len(candidates) == 1 {
-						matchedSpool = &candidates[0]
-						fmt.Printf("Using spool #%d (%s) from %s\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location)
-					} else if len(candidates) > 1 {
-						var items []string
-						for _, c := range candidates {
-							items = append(items, fmt.Sprintf("#%d: %s (%s)", c.Id, c.Filament.Name, c.Location))
+					if matchedSpool != nil {
+						amountToDeduct := used
+						if used > matchedSpool.RemainingWeight && matchedSpool.RemainingWeight > 0 {
+							fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", matchedSpool.Id, matchedSpool.RemainingWeight)
+							var confirm string
+							fmt.Scanln(&confirm)
+							if confirm == "" || strings.ToLower(confirm) == "y" {
+								amountToDeduct = matchedSpool.RemainingWeight
+							}
 						}
-						promptSpool := promptui.Select{
-							Label:  fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
-							Items:  append(items, "Other/Manual"),
-							Stdout: NoBellStdout,
-						}
-						idx, _, err := promptSpool.Run()
-						if err == nil && idx < len(candidates) {
-							matchedSpool = &candidates[idx]
-						}
-					}
-				}
 
-				if matchedSpool != nil {
-					apiClient.UseFilament(matchedSpool.Id, used)
-				} else {
-					// Fallback: ask for Spool ID
-					fmt.Printf("Enter Spool ID to deduct from (or leave blank to skip): ")
-					var spoolIdStr string
-					fmt.Scanln(&spoolIdStr)
-					if spoolIdStr != "" {
-						var sid int
-						fmt.Sscanf(spoolIdStr, "%d", &sid)
-						apiClient.UseFilament(sid, used)
+						err := UseFilamentSafely(apiClient, matchedSpool, amountToDeduct)
+						if err == nil {
+							used -= amountToDeduct
+						} else {
+							fmt.Printf("Error updating filament usage: %v\n", err)
+							break
+						}
+					} else {
+						// Fallback: ask for Spool ID
+						fmt.Printf("Enter Spool ID to deduct from (%.1fg remaining to account for, or leave blank to skip): ", used)
+						var spoolIdStr string
+						fmt.Scanln(&spoolIdStr)
+						if spoolIdStr != "" {
+							var sid int
+							fmt.Sscanf(spoolIdStr, "%d", &sid)
+							spool, err := apiClient.FindSpoolsById(sid)
+							if err == nil {
+								amountToDeduct := used
+								if used > spool.RemainingWeight && spool.RemainingWeight > 0 {
+									fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", spool.Id, spool.RemainingWeight)
+									var confirm string
+									fmt.Scanln(&confirm)
+									if confirm == "" || strings.ToLower(confirm) == "y" {
+										amountToDeduct = spool.RemainingWeight
+									}
+								}
+								err := UseFilamentSafely(apiClient, spool, amountToDeduct)
+								if err == nil {
+									used -= amountToDeduct
+								} else {
+									fmt.Printf("Error updating filament usage: %v\n", err)
+									break
+								}
+							} else {
+								fmt.Printf("Error finding spool #%d: %v. Using %.1fg anyway (may result in negative weight if not found in spoolman correctly)\n", sid, err, used)
+								apiClient.UseFilament(sid, used)
+								used = 0
+							}
+						} else {
+							break
+						}
 					}
 				}
 			}
@@ -1305,6 +1378,7 @@ var planNextCmd = &cobra.Command{
 			}
 		}
 
+		swapsPerformed := false
 		for _, req := range choice.plate.Needs {
 			// Is it already loaded?
 			loadedLoc := ""
@@ -1321,76 +1395,118 @@ var planNextCmd = &cobra.Command{
 				}
 			}
 
-			if loadedLoc != "" {
-				fmt.Printf("✓ %s is already loaded in %s\n", req.Name, loadedLoc)
-				continue
-			}
-
-			// Find best spool to load
-			var candidates []models.FindSpool
-			for _, s := range allSpools {
-				if !s.Archived && s.Filament.Id == req.FilamentID {
-					candidates = append(candidates, s)
-				}
-			}
-
-			// Priority:
-			// 1. Not in any printer Location
-			// 2. Partially used
-			// 3. Oldest (lowest ID)
 			var bestSpool *models.FindSpool
-			for i := range candidates {
-				s := &candidates[i]
+			if loadedLoc != "" {
+				// Check if enough is remaining
+				var loadedSpool models.FindSpool
+				for _, s := range loadedSpools {
+					if s.Location == loadedLoc && s.Filament.Id == req.FilamentID {
+						loadedSpool = s
+						break
+					}
+				}
+
+				if loadedSpool.RemainingWeight < req.Amount {
+					fmt.Printf("! WARNING: Loaded spool #%d (%s) only has %.1fg remaining, but this plate requires %.1fg\n", loadedSpool.Id, req.Name, loadedSpool.RemainingWeight, req.Amount)
+
+					// Suggest next spool to load
+					var nextBest *models.FindSpool
+					for _, s := range allSpools {
+						if !s.Archived && s.Filament.Id == req.FilamentID && s.Id != loadedSpool.Id {
+							if nextBest == nil || s.RemainingWeight > nextBest.RemainingWeight {
+								nextBest = &s
+							}
+						}
+					}
+					if nextBest != nil {
+						fmt.Printf("  Suggestion: Load spool #%d (%.1fg remaining) into another slot for automatic swap.\n", nextBest.Id, nextBest.RemainingWeight)
+						prompt := promptui.Prompt{
+							Label:     "Do you want to load this spool now?",
+							IsConfirm: true,
+							Stdout:    NoBellStdout,
+						}
+						_, err := prompt.Run()
+						if err == nil {
+							// Proceed to find a slot and load it
+							bestSpool = nextBest
+						}
+					}
+				} else {
+					fmt.Printf("✓ %s is already loaded in %s (%.1fg remaining)\n", req.Name, loadedLoc, loadedSpool.RemainingWeight)
+				}
+
 				if bestSpool == nil {
-					bestSpool = s
 					continue
-				}
-
-				_, curInPrinter := allPrinterLocations[bestSpool.Location]
-				_, newInPrinter := allPrinterLocations[s.Location]
-
-				// If current best is in a printer but this one isn't, this one is better
-				if curInPrinter && !newInPrinter {
-					bestSpool = s
-					continue
-				}
-				// If this one is in a printer but current best isn't, current best is still better
-				if !curInPrinter && newInPrinter {
-					continue
-				}
-
-				// If both same in terms of "in printer", use existing priority
-				// If current best is unused but this one is used
-				if bestSpool.UsedWeight == 0 && s.UsedWeight > 0 {
-					bestSpool = s
-					continue
-				}
-				// If both same state, pick lowest ID
-				if (bestSpool.UsedWeight > 0) == (s.UsedWeight > 0) && s.Id < bestSpool.Id {
-					bestSpool = s
 				}
 			}
 
 			if bestSpool == nil {
-				fmt.Printf("! Error: Could not find any spool for %s\n", req.Name)
-				continue
-			}
-
-			// If the best (or only) spool is in another printer, warn the user
-			if otherPName, inOtherPrinter := allPrinterLocations[bestSpool.Location]; inOtherPrinter {
-				fmt.Printf("! WARNING: Spool #%d (%s) is already in %s (Printer: %s)\n", bestSpool.Id, bestSpool.Filament.Name, bestSpool.Location, otherPName)
-				prompt := promptui.Prompt{
-					Label:     "Do you want to move it to this printer anyway?",
-					IsConfirm: true,
-					Stdout:    NoBellStdout,
+				// Find best spool to load
+				var candidates []models.FindSpool
+				for _, s := range allSpools {
+					if !s.Archived && s.Filament.Id == req.FilamentID {
+						candidates = append(candidates, s)
+					}
 				}
-				_, err := prompt.Run()
-				if err != nil {
-					fmt.Println("Skipping this swap.")
+
+				// Priority:
+				// 1. Not in any printer Location
+				// 2. Partially used
+				// 3. Oldest (lowest ID)
+				for i := range candidates {
+					s := &candidates[i]
+					if bestSpool == nil {
+						bestSpool = s
+						continue
+					}
+
+					_, curInPrinter := allPrinterLocations[bestSpool.Location]
+					_, newInPrinter := allPrinterLocations[s.Location]
+
+					// If current best is in a printer but this one isn't, this one is better
+					if curInPrinter && !newInPrinter {
+						bestSpool = s
+						continue
+					}
+					// If this one is in a printer but current best isn't, current best is still better
+					if !curInPrinter && newInPrinter {
+						continue
+					}
+
+					// If both same in terms of "in printer", use existing priority
+					// If current best is unused but this one is used
+					if bestSpool.UsedWeight == 0 && s.UsedWeight > 0 {
+						bestSpool = s
+						continue
+					}
+					// If both same state, pick lowest ID
+					if (bestSpool.UsedWeight > 0) == (s.UsedWeight > 0) && s.Id < bestSpool.Id {
+						bestSpool = s
+					}
+				}
+
+				if bestSpool == nil {
+					fmt.Printf("! Error: Could not find any spool for %s\n", req.Name)
 					continue
 				}
+
+				// If the best (or only) spool is in another printer, warn the user
+				if otherPName, inOtherPrinter := allPrinterLocations[bestSpool.Location]; inOtherPrinter {
+					fmt.Printf("! WARNING: Spool #%d (%s) is already in %s (Printer: %s)\n", bestSpool.Id, bestSpool.Filament.Name, bestSpool.Location, otherPName)
+					prompt := promptui.Prompt{
+						Label:     "Do you want to move it to this printer anyway?",
+						IsConfirm: true,
+						Stdout:    NoBellStdout,
+					}
+					_, err := prompt.Run()
+					if err != nil {
+						fmt.Println("Skipping this swap.")
+						continue
+					}
+				}
 			}
 
+			swapsPerformed = true
 			// Find an empty slot or one to swap out
 			targetLoc := ""
 			minLoad := 999
@@ -1622,7 +1738,11 @@ var planNextCmd = &cobra.Command{
 			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
 		}
 
-		fmt.Println("\nSwaps complete. Happy printing!")
+		if swapsPerformed {
+			fmt.Println("\nSwaps complete. Happy printing!")
+		} else {
+			fmt.Println("\nEverything ready. Happy printing!")
+		}
 		return nil
 	},
 }
