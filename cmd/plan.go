@@ -463,6 +463,86 @@ func UseFilamentSafely(apiClient *api.Client, spool *models.FindSpool, amount fl
 	return apiClient.UseFilament(spool.Id, amount)
 }
 
+// GetNeededFilamentIDs returns a set of Filament IDs that are needed by current plans
+// but are not currently loaded on a printer.
+func GetNeededFilamentIDs(apiClient *api.Client) (map[int]bool, error) {
+	plans, err := discoverPlans()
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+	for _, p := range plans {
+		paths = append(paths, p.Path)
+	}
+
+	if len(paths) == 0 {
+		return make(map[int]bool), nil
+	}
+
+	neededIDs := make(map[int]bool)
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var plan models.PlanFile
+		if err := yaml.Unmarshal(data, &plan); err != nil {
+			continue
+		}
+
+		for _, proj := range plan.Projects {
+			if proj.Status == "completed" {
+				continue
+			}
+			for _, plate := range proj.Plates {
+				if plate.Status == "completed" {
+					continue
+				}
+				for _, req := range plate.Needs {
+					if req.FilamentID != 0 {
+						neededIDs[req.FilamentID] = true
+					}
+				}
+			}
+		}
+	}
+
+	if len(neededIDs) == 0 {
+		return make(map[int]bool), nil
+	}
+
+	// Get all spools from Spoolman to check what is loaded
+	allSpools, err := apiClient.FindSpoolsByName("*", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	printerLocs := make(map[string]bool)
+	for _, locs := range Cfg.Printers {
+		for _, loc := range locs {
+			printerLocs[loc] = true
+		}
+	}
+
+	loadedIDs := make(map[int]bool)
+	for _, s := range allSpools {
+		if !s.Archived && printerLocs[s.Location] {
+			loadedIDs[s.Filament.Id] = true
+		}
+	}
+
+	// Result is neededIDs minus loadedIDs
+	result := make(map[int]bool)
+	for id := range neededIDs {
+		if !loadedIDs[id] {
+			result[id] = true
+		}
+	}
+
+	return result, nil
+}
+
 func init() {
 	rootCmd.AddCommand(planCmd)
 	planCmd.AddCommand(planListCmd)

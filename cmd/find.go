@@ -84,6 +84,18 @@ func buildFindQuery(cmd *cobra.Command) (map[string]string, []api.SpoolFilter, e
 		location = MapToAlias(location)
 		query["location"] = location
 	}
+
+	if needed, err := cmd.Flags().GetBool("needed"); err == nil && needed {
+		apiClient := api.NewClient(Cfg.ApiBase)
+		neededIDs, err := GetNeededFilamentIDs(apiClient)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get needed filament IDs: %w", err)
+		}
+		filters = append(filters, func(s models.FindSpool) bool {
+			return neededIDs[s.Filament.Id]
+		})
+	}
+
 	return query, filters, nil
 }
 
@@ -127,6 +139,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 	if location, _ := cmd.Flags().GetString("location"); location != "" {
 		fmt.Printf("Filtering by location: %s\n", query["location"])
+	}
+
+	if needed, _ := cmd.Flags().GetBool("needed"); needed {
+		fmt.Println("Filtering by spools needed by projects")
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -315,4 +331,5 @@ func init() {
 	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
 	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
 	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
+	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
 }
