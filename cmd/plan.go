@@ -1030,9 +1030,14 @@ var planCompleteCmd = &cobra.Command{
 					printerName = printerNames[0]
 				} else {
 					promptPrinter := promptui.Select{
-						Label:  "Which printer was used?",
-						Items:  append([]string{"None/Other"}, printerNames...),
-						Stdout: NoBellStdout,
+						Label:             "Which printer was used?",
+						Items:             append([]string{"None/Other"}, printerNames...),
+						Stdout:            NoBellStdout,
+						StartInSearchMode: true,
+						Searcher: func(input string, index int) bool {
+							items := append([]string{"None/Other"}, printerNames...)
+							return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+						},
 					}
 					_, result, err := promptPrinter.Run()
 					if err == nil && result != "None/Other" {
@@ -1107,9 +1112,14 @@ var planCompleteCmd = &cobra.Command{
 								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg remaining", c.Id, c.Filament.Name, c.Location, c.RemainingWeight))
 							}
 							promptSpool := promptui.Select{
-								Label:  fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
-								Items:  append(items, "Other/Manual"),
-								Stdout: NoBellStdout,
+								Label:             fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
+								Items:             append(items, "Other/Manual"),
+								Stdout:            NoBellStdout,
+								StartInSearchMode: true,
+								Searcher: func(input string, index int) bool {
+									all := append(items, "Other/Manual")
+									return strings.Contains(strings.ToLower(all[index]), strings.ToLower(input))
+								},
 							}
 							idx, _, err := promptSpool.Run()
 							if err == nil && idx < len(candidates) {
@@ -1201,9 +1211,13 @@ var planNextCmd = &cobra.Command{
 			printerNames = append(printerNames, name)
 		}
 		promptPrinter := promptui.Select{
-			Label:  "Which printer are you using?",
-			Items:  printerNames,
-			Stdout: NoBellStdout,
+			Label:             "Which printer are you using?",
+			Items:             printerNames,
+			Stdout:            NoBellStdout,
+			StartInSearchMode: true,
+			Searcher: func(input string, index int) bool {
+				return strings.Contains(strings.ToLower(printerNames[index]), strings.ToLower(input))
+			},
 		}
 		_, printerName, err := promptPrinter.Run()
 		if err != nil {
@@ -1334,10 +1348,14 @@ var planNextCmd = &cobra.Command{
 		}
 
 		promptPlate := promptui.Select{
-			Label:  "Select plate to print",
-			Items:  items,
-			Size:   10,
-			Stdout: NoBellStdout,
+			Label:             "Select plate to print",
+			Items:             items,
+			Size:              10,
+			Stdout:            NoBellStdout,
+			StartInSearchMode: true,
+			Searcher: func(input string, index int) bool {
+				return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+			},
 		}
 		selectedIdx, _, err := promptPlate.Run()
 		if err != nil {
