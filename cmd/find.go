@@ -228,8 +228,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 		for _, s := range spools {
 			fmt.Printf(" - %s\n", s)
 			if showPurchase {
-				fmt.Printf(" - %s\n%s\n", s, amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
-				//fmt.Printf("%s\n", amazonLink(s.Filament.Name, s.Filament.Vendor.Name))
+				fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
 			}
 			totalRemaining += s.RemainingWeight
 			totalUsed += s.UsedWeight
