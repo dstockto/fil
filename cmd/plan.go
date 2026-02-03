@@ -98,7 +98,10 @@ var planListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List all discovered plans and their status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		plans, err := discoverPlans()
+		paused, _ := cmd.Flags().GetBool("paused")
+		all, _ := cmd.Flags().GetBool("all")
+
+		plans, err := discoverPlansWithFilter(all, paused)
 		if err != nil {
 			return err
 		}
@@ -213,6 +216,20 @@ func FormatPlanPath(path string) string {
 		absPath = path
 	}
 
+	// Check if it's in the pause directory
+	if Cfg != nil && Cfg.PauseDir != "" {
+		absPauseDir, err := filepath.Abs(Cfg.PauseDir)
+		if err == nil {
+			if strings.HasPrefix(absPath, absPauseDir) {
+				rel, err := filepath.Rel(absPauseDir, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return "<paused>/" + rel
+				}
+				return "<paused>"
+			}
+		}
+	}
+
 	// Check if it's in the current directory
 	cwd, err := os.Getwd()
 	if err == nil {
@@ -257,27 +274,43 @@ func FormatPlanPath(path string) string {
 }
 
 func discoverPlans() ([]DiscoveredPlan, error) {
+	return discoverPlansWithFilter(false, false)
+}
+
+func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, error) {
 	var plans []DiscoveredPlan
 	fileMap := make(map[string]bool)
 
 	// Directories to search
 	var dirs []string
 
-	// Always search CWD
-	if cwd, err := os.Getwd(); err == nil {
-		dirs = append(dirs, cwd)
-	} else {
-		// Log warning but continue if CWD is inaccessible
-		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
+	// Always search CWD if not looking for only paused plans
+	if !pausedOnly {
+		if cwd, err := os.Getwd(); err == nil {
+			dirs = append(dirs, cwd)
+		} else {
+			// Log warning but continue if CWD is inaccessible
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
+		}
+
+		// Add global plans dir if configured
+		if Cfg != nil && Cfg.PlansDir != "" {
+			absPlansDir, err := filepath.Abs(Cfg.PlansDir)
+			if err == nil {
+				dirs = append(dirs, absPlansDir)
+			} else {
+				dirs = append(dirs, Cfg.PlansDir)
+			}
+		}
 	}
 
-	// Add global plans dir if configured
-	if Cfg != nil && Cfg.PlansDir != "" {
-		absPlansDir, err := filepath.Abs(Cfg.PlansDir)
+	// Add pause dir if requested
+	if (includePaused || pausedOnly) && Cfg != nil && Cfg.PauseDir != "" {
+		absPauseDir, err := filepath.Abs(Cfg.PauseDir)
 		if err == nil {
-			dirs = append(dirs, absPlansDir)
+			dirs = append(dirs, absPauseDir)
 		} else {
-			dirs = append(dirs, Cfg.PlansDir)
+			dirs = append(dirs, Cfg.PauseDir)
 		}
 	}
 
@@ -622,12 +655,16 @@ func init() {
 	planCmd.AddCommand(planEditCmd)
 	planCmd.AddCommand(planCompleteCmd)
 	planCmd.AddCommand(planArchiveCmd)
+	planCmd.AddCommand(planPauseCmd)
+	planCmd.AddCommand(planResumeCmd)
 	planCmd.AddCommand(planNewCmd)
 	planCmd.AddCommand(planMoveCmd)
 	planCmd.AddCommand(planMoveBackCmd)
 	planCmd.AddCommand(planReprintCmd)
 	planCmd.AddCommand(planDeleteCmd)
 
+	planListCmd.Flags().BoolP("paused", "p", false, "Show only paused plans")
+	planListCmd.Flags().BoolP("all", "a", false, "Show all plans, including paused ones")
 	planReprintCmd.Flags().IntP("number", "n", 1, "Number of reprints")
 	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
 }
@@ -1062,6 +1099,118 @@ var planNewCmd = &cobra.Command{
 			fmt.Printf("Moved %s to %s\n", FormatPlanPath(filename), FormatPlanPath(dest))
 		}
 
+		return nil
+	},
+}
+
+var planPauseCmd = &cobra.Command{
+	Use:     "pause [file]",
+	Aliases: []string{"p"},
+	Short:   "Move a plan file to the pause directory",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if Cfg == nil || Cfg.PauseDir == "" {
+			return fmt.Errorf("pause_dir not configured in config.json")
+		}
+
+		// Ensure pause dir exists
+		if _, err := os.Stat(Cfg.PauseDir); os.IsNotExist(err) {
+			_ = os.MkdirAll(Cfg.PauseDir, 0755)
+		}
+
+		var path string
+		if len(args) > 0 {
+			path = args[0]
+		} else {
+			plans, _ := discoverPlans()
+			if len(plans) == 0 {
+				return fmt.Errorf("no plans found")
+			}
+			if len(plans) == 1 {
+				path = plans[0].Path
+			} else {
+				var items []string
+				for _, p := range plans {
+					items = append(items, p.DisplayName)
+				}
+				prompt := promptui.Select{
+					Label:             "Select plan file to pause",
+					Items:             items,
+					Stdout:            NoBellStdout,
+					StartInSearchMode: true,
+					Searcher: func(input string, index int) bool {
+						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+					},
+				}
+				selectedIdx, _, err := prompt.Run()
+				if err != nil {
+					return err
+				}
+				path = plans[selectedIdx].Path
+			}
+		}
+
+		dest := filepath.Join(Cfg.PauseDir, filepath.Base(path))
+		err := os.Rename(path, dest)
+		if err != nil {
+			return fmt.Errorf("failed to move file: %w", err)
+		}
+
+		fmt.Printf("Moved %s to %s\n", FormatPlanPath(path), FormatPlanPath(dest))
+		return nil
+	},
+}
+
+var planResumeCmd = &cobra.Command{
+	Use:     "resume [file]",
+	Aliases: []string{"res"},
+	Short:   "Move a plan file from the pause directory back to the active plans directory",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if Cfg == nil || Cfg.PauseDir == "" || Cfg.PlansDir == "" {
+			return fmt.Errorf("pause_dir and plans_dir must be configured in config.json")
+		}
+
+		var path string
+		if len(args) > 0 {
+			path = args[0]
+		} else {
+			plans, err := discoverPlansWithFilter(false, true)
+			if err != nil {
+				return err
+			}
+			if len(plans) == 0 {
+				return fmt.Errorf("no paused plans found")
+			}
+			if len(plans) == 1 {
+				path = plans[0].Path
+			} else {
+				var items []string
+				for _, p := range plans {
+					items = append(items, p.DisplayName)
+				}
+				prompt := promptui.Select{
+					Label:             "Select plan file to resume",
+					Items:             items,
+					Stdout:            NoBellStdout,
+					StartInSearchMode: true,
+					Searcher: func(input string, index int) bool {
+						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+					},
+				}
+				selectedIdx, _, err := prompt.Run()
+				if err != nil {
+					return err
+				}
+				path = plans[selectedIdx].Path
+			}
+		}
+
+		dest := filepath.Join(Cfg.PlansDir, filepath.Base(path))
+		err := os.Rename(path, dest)
+		if err != nil {
+			return fmt.Errorf("failed to move file: %w", err)
+		}
+
+		fmt.Printf("Moved %s to %s\n", FormatPlanPath(path), FormatPlanPath(dest))
 		return nil
 	},
 }

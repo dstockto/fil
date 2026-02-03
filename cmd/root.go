@@ -36,6 +36,7 @@ type Config struct {
 	Printers         map[string][]string         `json:"printers"`
 	PlansDir         string                      `json:"plans_dir"`
 	ArchiveDir       string                      `json:"archive_dir"`
+	PauseDir         string                      `json:"pause_dir"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands.
@@ -253,5 +254,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.ArchiveDir != "" {
 		dst.ArchiveDir = src.ArchiveDir
+	}
+
+	if src.PauseDir != "" {
+		dst.PauseDir = src.PauseDir
 	}
 }
