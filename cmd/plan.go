@@ -423,6 +423,7 @@ func init() {
 	planCmd.AddCommand(planMoveBackCmd)
 	planCmd.AddCommand(planReprintCmd)
 
+	planReprintCmd.Flags().IntP("number", "n", 1, "Number of reprints")
 	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
 }
 
@@ -484,11 +485,23 @@ var planReprintCmd = &cobra.Command{
 			return fmt.Errorf("failed to unmarshal plan: %w", err)
 		}
 
+		num, _ := cmd.Flags().GetInt("number")
+		if num < 1 {
+			num = 1
+		}
+
 		// Reset all plates and projects to todo
 		for i := range plan.Projects {
 			plan.Projects[i].Status = "todo"
 			for j := range plan.Projects[i].Plates {
 				plan.Projects[i].Plates[j].Status = "todo"
+			}
+
+			if num > 1 {
+				originalPlates := plan.Projects[i].Plates
+				for n := 1; n < num; n++ {
+					plan.Projects[i].Plates = append(plan.Projects[i].Plates, originalPlates...)
+				}
 			}
 		}
 
@@ -516,9 +529,14 @@ var planReprintCmd = &cobra.Command{
 		newFilename := base + ext
 		destPath := filepath.Join(Cfg.PlansDir, newFilename)
 
-		// Check if destination already exists
-		if _, err := os.Stat(destPath); err == nil {
-			return fmt.Errorf("destination file %s already exists", destPath)
+		// Check if destination already exists and find a unique name
+		counter := 1
+		for {
+			if _, err := os.Stat(destPath); os.IsNotExist(err) {
+				break
+			}
+			destPath = filepath.Join(Cfg.PlansDir, fmt.Sprintf("%s-%d%s", base, counter, ext))
+			counter++
 		}
 
 		// Save the reset plan to the new location
