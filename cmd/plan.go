@@ -39,7 +39,7 @@ var planListCmd = &cobra.Command{
 		}
 
 		for _, p := range plans {
-			fmt.Printf("Plan: %s\n", p.Path)
+			fmt.Printf("Plan: %s\n", p.DisplayName)
 			for _, proj := range p.Plan.Projects {
 				todo := 0
 				total := len(proj.Plates)
@@ -77,7 +77,7 @@ var planEditCmd = &cobra.Command{
 			} else {
 				var items []string
 				for _, p := range plans {
-					items = append(items, p.Path)
+					items = append(items, p.DisplayName)
 				}
 				prompt := promptui.Select{
 					Label:             "Select plan file to edit",
@@ -88,11 +88,11 @@ var planEditCmd = &cobra.Command{
 						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
 					},
 				}
-				_, result, err := prompt.Run()
+				selectedIdx, _, err := prompt.Run()
 				if err != nil {
 					return err
 				}
-				path = result
+				path = plans[selectedIdx].Path
 			}
 		}
 
@@ -132,8 +132,58 @@ var planEditCmd = &cobra.Command{
 }
 
 type DiscoveredPlan struct {
-	Path string
-	Plan models.PlanFile
+	Path        string
+	DisplayName string
+	Plan        models.PlanFile
+}
+
+func FormatPlanPath(path string) string {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+
+	// Check if it's in the current directory
+	cwd, err := os.Getwd()
+	if err == nil {
+		absCwd, err := filepath.Abs(cwd)
+		if err == nil {
+			if strings.HasPrefix(absPath, absCwd) {
+				rel, err := filepath.Rel(absCwd, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return "./" + rel
+				}
+			}
+		}
+	}
+
+	// Check if it's in the global plans directory
+	if Cfg != nil && Cfg.PlansDir != "" {
+		absPlansDir, err := filepath.Abs(Cfg.PlansDir)
+		if err == nil {
+			if strings.HasPrefix(absPath, absPlansDir) {
+				rel, err := filepath.Rel(absPlansDir, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return "<plans>/" + rel
+				}
+			}
+		}
+	}
+
+	// Check if it's in the archive directory
+	if Cfg != nil && Cfg.ArchiveDir != "" {
+		absArchiveDir, err := filepath.Abs(Cfg.ArchiveDir)
+		if err == nil {
+			if strings.HasPrefix(absPath, absArchiveDir) {
+				rel, err := filepath.Rel(absArchiveDir, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					return "<archive>/" + rel
+				}
+			}
+		}
+	}
+
+	return absPath
 }
 
 func discoverPlans() ([]DiscoveredPlan, error) {
@@ -203,7 +253,11 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 				continue
 			}
 			if len(plan.Projects) > 0 {
-				plans = append(plans, DiscoveredPlan{Path: absPath, Plan: plan})
+				plans = append(plans, DiscoveredPlan{
+					Path:        absPath,
+					DisplayName: FormatPlanPath(absPath),
+					Plan:        plan,
+				})
 			}
 		}
 	}
@@ -236,7 +290,7 @@ var planResolveCmd = &cobra.Command{
 			} else {
 				var items []string
 				for _, p := range plans {
-					items = append(items, p.Path)
+					items = append(items, p.DisplayName)
 				}
 				prompt := promptui.Select{
 					Label:             "Select plan file to resolve",
@@ -247,11 +301,11 @@ var planResolveCmd = &cobra.Command{
 						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
 					},
 				}
-				_, result, err := prompt.Run()
+				selectedIdx, _, err := prompt.Run()
 				if err != nil {
 					return err
 				}
-				path = result
+				path = plans[selectedIdx].Path
 			}
 		}
 
@@ -438,7 +492,7 @@ var planReprintCmd = &cobra.Command{
 
 		// Ensure archive dir exists
 		if _, err := os.Stat(Cfg.ArchiveDir); os.IsNotExist(err) {
-			return fmt.Errorf("archive directory %s does not exist", Cfg.ArchiveDir)
+			return fmt.Errorf("archive directory %s does not exist", FormatPlanPath(Cfg.ArchiveDir))
 		}
 
 		// Find yaml files in archive directory
@@ -447,31 +501,34 @@ var planReprintCmd = &cobra.Command{
 		files = append(files, files2...)
 
 		if len(files) == 0 {
-			return fmt.Errorf("no archived plans found in %s", Cfg.ArchiveDir)
+			return fmt.Errorf("no archived plans found in %s", FormatPlanPath(Cfg.ArchiveDir))
 		}
 
 		var selectedPath string
 		if len(files) == 1 {
 			selectedPath = files[0]
 		} else {
+			var displayNames []string
+			for _, f := range files {
+				displayNames = append(displayNames, FormatPlanPath(f))
+			}
 			prompt := promptui.Select{
 				Label:             "Select archived plan to reprint",
-				Items:             files,
+				Items:             displayNames,
 				Stdout:            NoBellStdout,
 				StartInSearchMode: true,
 				Searcher: func(input string, index int) bool {
-					file := files[index]
-					name := strings.ToLower(filepath.Base(file))
+					name := strings.ToLower(displayNames[index])
 					input = strings.ToLower(input)
 
 					return strings.Contains(name, input)
 				},
 			}
-			_, result, err := prompt.Run()
+			idx, _, err := prompt.Run()
 			if err != nil {
 				return err
 			}
-			selectedPath = result
+			selectedPath = files[idx]
 		}
 
 		// Read the plan
@@ -549,7 +606,7 @@ var planReprintCmd = &cobra.Command{
 			return fmt.Errorf("failed to write plan file: %w", err)
 		}
 
-		fmt.Printf("Successfully reprinted plan to %s\n", destPath)
+		fmt.Printf("Successfully reprinted plan to %s\n", FormatPlanPath(destPath))
 		return nil
 	},
 }
@@ -812,7 +869,7 @@ var planNewCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Created new plan: %s\n", filename)
+		fmt.Printf("Created new plan: %s\n", FormatPlanPath(filename))
 
 		// Check if we should move it to central Location
 		moveToCentral, _ := cmd.Flags().GetBool("move")
@@ -851,7 +908,7 @@ var planNewCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to move file: %w", err)
 			}
-			fmt.Printf("Moved %s to %s\n", filename, dest)
+			fmt.Printf("Moved %s to %s\n", FormatPlanPath(filename), FormatPlanPath(dest))
 		}
 
 		return nil
@@ -905,13 +962,13 @@ var planArchiveCmd = &cobra.Command{
 				newFilename := fmt.Sprintf("%s-%s%s", base, timestamp, ext)
 
 				dest := filepath.Join(Cfg.ArchiveDir, newFilename)
-				fmt.Printf("Archiving %s to %s\n", path, dest)
+				fmt.Printf("Archiving %s to %s\n", FormatPlanPath(path), FormatPlanPath(dest))
 				err := os.Rename(path, dest)
 				if err != nil {
 					fmt.Printf("  Error moving file: %v\n", err)
 				}
 			} else {
-				fmt.Printf("Skipping %s (not all projects are completed)\n", path)
+				fmt.Printf("Skipping %s (not all projects are completed)\n", FormatPlanPath(path))
 			}
 		}
 
@@ -942,7 +999,7 @@ var planCompleteCmd = &cobra.Command{
 			} else {
 				var items []string
 				for _, p := range plans {
-					items = append(items, p.Path)
+					items = append(items, p.DisplayName)
 				}
 				prompt := promptui.Select{
 					Label:             "Select plan file",
@@ -953,11 +1010,11 @@ var planCompleteCmd = &cobra.Command{
 						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
 					},
 				}
-				_, result, err := prompt.Run()
+				selectedIdx, _, err := prompt.Run()
 				if err != nil {
 					return err
 				}
-				path = result
+				path = plans[selectedIdx].Path
 			}
 		}
 
@@ -1817,12 +1874,12 @@ var planCheckCmd = &cobra.Command{
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				fmt.Printf("Error: Failed to read plan file %s: %v\n", path, err)
+				fmt.Printf("Error: Failed to read plan file %s: %v\n", FormatPlanPath(path), err)
 				continue
 			}
 			var plan models.PlanFile
 			if err := yaml.Unmarshal(data, &plan); err != nil {
-				fmt.Printf("Error: Failed to parse plan file %s: %v\n", path, err)
+				fmt.Printf("Error: Failed to parse plan file %s: %v\n", FormatPlanPath(path), err)
 				continue
 			}
 
@@ -1838,7 +1895,7 @@ var planCheckCmd = &cobra.Command{
 						key := fmt.Sprintf("id:%d", req.FilamentID)
 						if req.FilamentID == 0 {
 							key = fmt.Sprintf("name:%s:%s", req.Name, req.Material)
-							fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, path, req.Name)
+							fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, FormatPlanPath(path), req.Name)
 						}
 						if _, ok := needs[key]; !ok {
 							needs[key] = &totalNeed{
