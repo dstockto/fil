@@ -1957,8 +1957,8 @@ var planCheckCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf("%-5s %-30s %10s %10s %10s %10s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
-		fmt.Println(strings.Repeat("-", 82))
+		fmt.Printf("%-5s %-30s %10s %10s %10s %6s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
+		fmt.Println(strings.Repeat("-", 78))
 
 		allMet := true
 		for _, n := range needs {
@@ -2007,7 +2007,7 @@ var planCheckCmd = &cobra.Command{
 			if colorBlock == "" {
 				colorBlock = "    "
 			}
-			fmt.Printf("%s %-30s %10.1fg %10.1fg %s %10s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus, loaded)
+			fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus, loaded)
 		}
 
 		if allMet {
