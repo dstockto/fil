@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,28 +162,26 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 	}
 
 	for _, dir := range dirs {
-		// Evaluate symlinks for the root directory so WalkDir can enter it
-		// if it is a symlink (like /tmp on macOS)
+		// Evaluate symlinks for the root directory
 		evalDir, err := filepath.EvalSymlinks(dir)
 		if err == nil {
 			dir = evalDir
 		}
 
-		err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil // skip errors
-			}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue // skip errors for a single directory
+		}
+
+		for _, d := range entries {
 			if d.IsDir() {
-				// Don't recurse into hidden directories like .git
-				if strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
-					return filepath.SkipDir
-				}
-				return nil
+				continue
 			}
 
+			path := filepath.Join(dir, d.Name())
 			ext := strings.ToLower(filepath.Ext(path))
 			if ext != ".yaml" && ext != ".yml" {
-				return nil
+				continue
 			}
 
 			absPath, err := filepath.Abs(path)
@@ -192,26 +189,22 @@ func discoverPlans() ([]DiscoveredPlan, error) {
 				absPath = path
 			}
 			if fileMap[absPath] {
-				return nil
+				continue
 			}
 			fileMap[absPath] = true
 
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return nil
+				continue
 			}
 			var plan models.PlanFile
 			if err := yaml.Unmarshal(data, &plan); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
-				return nil
+				continue
 			}
 			if len(plan.Projects) > 0 {
 				plans = append(plans, DiscoveredPlan{Path: absPath, Plan: plan})
 			}
-			return nil
-		})
-		if err != nil {
-			// ignore walk errors for a single directory root
 		}
 	}
 	return plans, nil
@@ -1860,13 +1853,25 @@ var planCheckCmd = &cobra.Command{
 
 		// Inventory by Filament ID
 		inventory := make(map[int]float64)
+		isLoaded := make(map[int]bool)
 		filamentColors := make(map[int]struct {
 			colorHex        string
 			multiColorHexes string
 		})
+
+		printerLocs := make(map[string]bool)
+		for _, locs := range Cfg.Printers {
+			for _, loc := range locs {
+				printerLocs[loc] = true
+			}
+		}
+
 		for _, s := range allSpools {
 			if !s.Archived {
 				inventory[s.Filament.Id] += s.RemainingWeight
+				if printerLocs[s.Location] {
+					isLoaded[s.Filament.Id] = true
+				}
 				filamentColors[s.Filament.Id] = struct {
 					colorHex        string
 					multiColorHexes string
@@ -1877,18 +1882,25 @@ var planCheckCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf("%-5s %-30s %10s %10s %10s\n", "", "Filament", "Needed", "On Hand", "Status")
-		fmt.Println(strings.Repeat("-", 71))
+		fmt.Printf("%-5s %-30s %10s %10s %10s %10s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
+		fmt.Println(strings.Repeat("-", 82))
 
 		allMet := true
 		for _, n := range needs {
 			onHand := 0.0
 			status := "OK"
+			loaded := ""
 			if n.id != 0 {
 				onHand = inventory[n.id]
 				if color, ok := filamentColors[n.id]; ok {
 					n.colorHex = color.colorHex
 					n.multiColorHexes = color.multiColorHexes
+				}
+				if isLoaded[n.id] {
+					loaded = "✅"
+					if color.NoColor {
+						loaded = "YES"
+					}
 				}
 			} else {
 				status = "UNRESOLVED"
@@ -1920,7 +1932,7 @@ var planCheckCmd = &cobra.Command{
 			if colorBlock == "" {
 				colorBlock = "    "
 			}
-			fmt.Printf("%s %-30s %10.1fg %10.1fg %s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus)
+			fmt.Printf("%s %-30s %10.1fg %10.1fg %s %10s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus, loaded)
 		}
 
 		if allMet {
