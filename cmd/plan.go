@@ -2179,6 +2179,14 @@ var planCheckCmd = &cobra.Command{
 		}
 		needs := make(map[string]*totalNeed)
 
+		type zeroAmountWarning struct {
+			projectName string
+			plateName   string
+			filament    string
+			planPath    string
+		}
+		var zeroWarnings []zeroAmountWarning
+
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -2200,10 +2208,18 @@ var planCheckCmd = &cobra.Command{
 						continue
 					}
 					for _, req := range plate.Needs {
+						if req.Amount == 0 {
+							zeroWarnings = append(zeroWarnings, zeroAmountWarning{
+								projectName: proj.Name,
+								plateName:   plate.Name,
+								filament:    req.Name,
+								planPath:    FormatPlanPath(path),
+							})
+						}
 						key := fmt.Sprintf("id:%d", req.FilamentID)
 						if req.FilamentID == 0 {
 							key = fmt.Sprintf("name:%s:%s", req.Name, req.Material)
-							fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, FormatPlanPath(path), req.Name)
+							// fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, FormatPlanPath(path), req.Name)
 						}
 						if _, ok := needs[key]; !ok {
 							needs[key] = &totalNeed{
@@ -2367,6 +2383,27 @@ var planCheckCmd = &cobra.Command{
 			fmt.Println("\nAll requirements met.")
 		} else {
 			fmt.Println("\nSome filaments are missing or low.")
+		}
+
+		if len(zeroWarnings) > 0 {
+			fmt.Println()
+			warningLabel := color.YellowString("Warning:")
+			warningsByProject := make(map[string][]zeroAmountWarning)
+			var projectNames []string
+			for _, w := range zeroWarnings {
+				if _, ok := warningsByProject[w.projectName]; !ok {
+					projectNames = append(projectNames, w.projectName)
+				}
+				warningsByProject[w.projectName] = append(warningsByProject[w.projectName], w)
+			}
+
+			for _, projName := range projectNames {
+				ws := warningsByProject[projName]
+				fmt.Printf("%s Project '%s' has filaments with 0 amount that may not be set up:\n", warningLabel, projName)
+				for _, w := range ws {
+					fmt.Printf("  - %s (Plate: %s, Plan: %s)\n", w.filament, w.plateName, w.planPath)
+				}
+			}
 		}
 
 		return nil
