@@ -145,6 +145,20 @@ func RoundAmount(amount float64) float64 {
 	return math.RoundToEven(amount*10) / 10
 }
 
+// ToProjectName converts a filename or string to a project name by replacing dashes
+// and underscores with spaces and capitalizing each word.
+func ToProjectName(s string) string {
+	s = strings.ReplaceAll(s, "-", " ")
+	s = strings.ReplaceAll(s, "_", " ")
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+		}
+	}
+	return strings.Join(words, " ")
+}
+
 // TruncateFront truncates a string from the front if it exceeds maxLen.
 func TruncateFront(s string, maxLen int) string {
 	if len(s) <= maxLen {

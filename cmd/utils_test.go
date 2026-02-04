@@ -155,6 +155,32 @@ func TestRoundAmount(t *testing.T) {
 	}
 }
 
+func TestToProjectName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"new-head-jim-halpert", "New Head Jim Halpert"},
+		{"new_head_jim_halpert", "New Head Jim Halpert"},
+		{"new head jim halpert", "New Head Jim Halpert"},
+		{"New-Head-Jim-Halpert", "New Head Jim Halpert"},
+		{"NEW_HEAD_JIM_HALPERT", "New Head Jim Halpert"},
+		{"file.yaml", "File.yaml"}, // It's expected to handle what's passed to it
+		{"", ""},
+		{"   ", ""},
+		{"a-b_c  d", "A B C D"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			actual := ToProjectName(tt.input)
+			if actual != tt.expected {
+				t.Errorf("ToProjectName(%q) = %q, want %q", tt.input, actual, tt.expected)
+			}
+		})
+	}
+}
+
 func TestTruncateFront(t *testing.T) {
 	tests := []struct {
 		s        string

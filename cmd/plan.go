@@ -987,8 +987,10 @@ var planNewCmd = &cobra.Command{
 			if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
 				filename += ".yaml"
 			}
+			projectName = ToProjectName(strings.TrimSuffix(strings.TrimSuffix(filename, ".yaml"), ".yml"))
 		} else {
 			filename = projectName + ".yaml"
+			projectName = ToProjectName(projectName)
 		}
 
 		var plates []models.Plate
