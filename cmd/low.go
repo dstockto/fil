@@ -44,48 +44,10 @@ func runLow(cmd *cobra.Command, args []string) error {
 	//  1) "NamePart" → match by filament name only
 	//  2) "VendorPart::NamePart" → match when both vendor and name contain the given parts
 	resolveThreshold := func(vendor string, filamentName string) float64 {
-		thr := maxRemaining
-
-		if Cfg != nil && Cfg.LowThresholds != nil {
-			lvendor := strings.ToLower(strings.TrimSpace(vendor))
-			lname := strings.ToLower(strings.TrimSpace(filamentName))
-
-			for k, v := range Cfg.LowThresholds {
-				if k == "" {
-					continue
-				}
-
-				if v <= 0 {
-					continue
-				}
-
-				lk := strings.ToLower(strings.TrimSpace(k))
-				if strings.Contains(lk, "::") {
-					parts := strings.SplitN(lk, "::", 2)
-					vendPart := strings.TrimSpace(parts[0])
-
-					namePart := strings.TrimSpace(parts[1])
-					if vendPart == "" || namePart == "" {
-						continue
-					}
-
-					if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
-						thr = v
-
-						break
-					}
-
-					continue
-				}
-				// name-only fallback
-				if strings.Contains(lname, lk) {
-					thr = v
-
-					break
-				}
-			}
+		thr := ResolveLowThreshold(vendor, filamentName)
+		if thr == 0.0 {
+			return maxRemaining
 		}
-
 		return thr
 	}
 

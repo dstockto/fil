@@ -169,3 +169,42 @@ func TruncateFront(s string, maxLen int) string {
 	}
 	return "..." + s[len(s)-maxLen+3:]
 }
+
+// ResolveLowThreshold resolves the custom threshold for a filament.
+func ResolveLowThreshold(vendor string, filamentName string) float64 {
+	// Default to 0 if not configured.
+	thr := 0.0
+
+	if Cfg != nil && Cfg.LowThresholds != nil {
+		lvendor := strings.ToLower(strings.TrimSpace(vendor))
+		lname := strings.ToLower(strings.TrimSpace(filamentName))
+
+		for k, v := range Cfg.LowThresholds {
+			if k == "" || v <= 0 {
+				continue
+			}
+
+			lk := strings.ToLower(strings.TrimSpace(k))
+			if strings.Contains(lk, "::") {
+				parts := strings.SplitN(lk, "::", 2)
+				vendPart := strings.TrimSpace(parts[0])
+				namePart := strings.TrimSpace(parts[1])
+				if vendPart == "" || namePart == "" {
+					continue
+				}
+
+				if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
+					return v
+				}
+				continue
+			}
+
+			// name-only fallback
+			if strings.Contains(lname, lk) {
+				return v
+			}
+		}
+	}
+
+	return thr
+}

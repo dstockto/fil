@@ -2259,6 +2259,10 @@ var planCheckCmd = &cobra.Command{
 			colorHex        string
 			multiColorHexes string
 		})
+		filamentInfo := make(map[int]struct {
+			name   string
+			vendor string
+		})
 
 		printerLocs := make(map[string]bool)
 		for _, locs := range Cfg.Printers {
@@ -2279,6 +2283,13 @@ var planCheckCmd = &cobra.Command{
 				}{
 					colorHex:        s.Filament.ColorHex,
 					multiColorHexes: s.Filament.MultiColorHexes,
+				}
+				filamentInfo[s.Filament.Id] = struct {
+					name   string
+					vendor string
+				}{
+					name:   s.Filament.Name,
+					vendor: s.Filament.Vendor.Name,
 				}
 			}
 		}
@@ -2312,6 +2323,13 @@ var planCheckCmd = &cobra.Command{
 					status = "LOW"
 				}
 				allMet = false
+			} else if n.id != 0 {
+				// Check if projected amount is below threshold
+				info := filamentInfo[n.id]
+				threshold := ResolveLowThreshold(info.vendor, info.name)
+				if onHand-n.amount < threshold {
+					status = "WARN"
+				}
 			}
 
 			displayStatus := status
@@ -2322,11 +2340,14 @@ var planCheckCmd = &cobra.Command{
 				displayStatus = color.YellowString("UNRESOLVED")
 			case "LOW":
 				displayStatus = color.RedString("LOW")
+			case "WARN":
+				displayStatus = color.YellowString("WARN")
 			}
 
 			// Manually pad displayStatus to maintain right alignment
 			// The original width was 10, so we need to add 10 - len(status) spaces before the colorized string
-			padding := strings.Repeat(" ", 10-len(status))
+			paddingLen := 10 - len(status)
+			padding := strings.Repeat(" ", paddingLen)
 			displayStatus = padding + displayStatus
 
 			colorBlock := models.GetColorBlock(n.colorHex, n.multiColorHexes)

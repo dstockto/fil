@@ -202,3 +202,34 @@ func TestTruncateFront(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveLowThreshold(t *testing.T) {
+	oldCfg := Cfg
+	defer func() { Cfg = oldCfg }()
+
+	Cfg = &Config{
+		LowThresholds: map[string]float64{
+			"PLA":           100.0,
+			"Poly::PLA":     200.0,
+			"Generic::PETG": 150.0,
+		},
+	}
+
+	tests := []struct {
+		vendor string
+		name   string
+		expect float64
+	}{
+		{"Generic", "PLA", 100.0},             // matches "PLA"
+		{"PolyMaker", "PolyTerra PLA", 200.0}, // matches "Poly::PLA"
+		{"Generic", "PETG", 150.0},            // matches "Generic::PETG"
+		{"Unknown", "ABS", 0.0},               // no match
+	}
+
+	for _, test := range tests {
+		got := ResolveLowThreshold(test.vendor, test.name)
+		if got != test.expect {
+			t.Errorf("ResolveLowThreshold(%q, %q) = %f; expect %f", test.vendor, test.name, got, test.expect)
+		}
+	}
+}
