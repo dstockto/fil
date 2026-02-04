@@ -667,6 +667,7 @@ func init() {
 	planListCmd.Flags().BoolP("all", "a", false, "Show all plans, including paused ones")
 	planReprintCmd.Flags().IntP("number", "n", 1, "Number of reprints")
 	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
+	planCheckCmd.Flags().BoolP("verbose", "v", false, "Show which projects use each filament")
 }
 
 var planReprintCmd = &cobra.Command{
@@ -2161,6 +2162,10 @@ var planCheckCmd = &cobra.Command{
 		}
 
 		// Aggregate needs by FilamentID (if resolved) or Name+Material (if unresolved)
+		type projectUsage struct {
+			projectName string
+			amount      float64
+		}
 		type totalNeed struct {
 			id              int
 			name            string
@@ -2168,6 +2173,7 @@ var planCheckCmd = &cobra.Command{
 			colorHex        string
 			multiColorHexes string
 			amount          float64
+			projects        []projectUsage
 		}
 		needs := make(map[string]*totalNeed)
 
@@ -2210,6 +2216,22 @@ var planCheckCmd = &cobra.Command{
 							fmt.Printf("Note: Filament ID %d is used for both '%s' and '%s'. Aggregating needs.\n", req.FilamentID, needs[key].name, req.Name)
 						}
 						needs[key].amount += req.Amount
+
+						// Track project usage
+						found := false
+						for i, p := range needs[key].projects {
+							if p.projectName == proj.Name {
+								needs[key].projects[i].amount += req.Amount
+								found = true
+								break
+							}
+						}
+						if !found {
+							needs[key].projects = append(needs[key].projects, projectUsage{
+								projectName: proj.Name,
+								amount:      req.Amount,
+							})
+						}
 					}
 				}
 			}
@@ -2219,6 +2241,8 @@ var planCheckCmd = &cobra.Command{
 			fmt.Println("No pending needs found.")
 			return nil
 		}
+
+		verbose, _ := cmd.Flags().GetBool("verbose")
 
 		// Get all spools from Spoolman
 		allSpools, err := apiClient.FindSpoolsByName("*", nil, nil)
@@ -2308,6 +2332,12 @@ var planCheckCmd = &cobra.Command{
 				colorBlock = "    "
 			}
 			fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus, loaded)
+
+			if verbose {
+				for _, p := range n.projects {
+					fmt.Printf("    - %s (%.1fg)\n", p.projectName, p.amount)
+				}
+			}
 		}
 
 		if allMet {
