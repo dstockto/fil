@@ -194,11 +194,12 @@ func runUse(cmd *cobra.Command, args []string) error {
 				0,
 				255,
 			).Printf(
-				" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg remaining.\n",
+				" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg -> %.1fg remaining.\n",
 				u.SpoolId,
 				spool.Filament.Name,
 				spool.Filament.Vendor.Name,
 				u.Amount,
+				spool.RemainingWeight,
 				remaining,
 			)
 		} else {
@@ -207,11 +208,12 @@ func runUse(cmd *cobra.Command, args []string) error {
 				255,
 				0,
 			).Printf(
-				" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg remaining.\n",
+				" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg -> %.1fg remaining.\n",
 				u.SpoolId,
 				spool.Filament.Name,
 				spool.Filament.Vendor.Name,
 				u.Amount,
+				spool.RemainingWeight,
 				remaining,
 			)
 		}

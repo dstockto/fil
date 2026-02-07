@@ -1476,11 +1476,11 @@ var planCompleteCmd = &cobra.Command{
 
 						if len(candidates) == 1 {
 							matchedSpool = &candidates[0]
-							fmt.Printf("Using spool #%d (%s) from %s (%.1fg remaining)\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location, matchedSpool.RemainingWeight)
+							fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location, matchedSpool.RemainingWeight, matchedSpool.RemainingWeight-used)
 						} else if len(candidates) > 1 {
 							var items []string
 							for _, c := range candidates {
-								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg remaining", c.Id, c.Filament.Name, c.Location, c.RemainingWeight))
+								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg -> %.1fg remaining", c.Id, c.Filament.Name, c.Location, c.RemainingWeight, c.RemainingWeight-used))
 							}
 							promptSpool := promptui.Select{
 								Label:             fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
