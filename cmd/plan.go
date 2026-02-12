@@ -355,6 +355,7 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 				_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
 				continue
 			}
+			plan.DefaultStatus()
 			if len(plan.Projects) > 0 {
 				plans = append(plans, DiscoveredPlan{
 					Path:        absPath,
@@ -420,6 +421,7 @@ var planResolveCmd = &cobra.Command{
 		if err := yaml.Unmarshal(data, &plan); err != nil {
 			return err
 		}
+		plan.DefaultStatus()
 
 		modified := false
 		for i := range plan.Projects {
@@ -593,6 +595,7 @@ func GetNeededFilamentIDs(apiClient *api.Client) (map[int]bool, error) {
 		if err := yaml.Unmarshal(data, &plan); err != nil {
 			continue
 		}
+		plan.DefaultStatus()
 
 		for _, proj := range plan.Projects {
 			if proj.Status == "completed" {
@@ -730,6 +733,7 @@ var planReprintCmd = &cobra.Command{
 		if err := yaml.Unmarshal(data, &plan); err != nil {
 			return fmt.Errorf("failed to unmarshal plan: %w", err)
 		}
+		plan.DefaultStatus()
 
 		num, _ := cmd.Flags().GetInt("number")
 		if num < 1 {
@@ -848,6 +852,7 @@ var planMoveBackCmd = &cobra.Command{
 		if err := yaml.Unmarshal(data, &plan); err != nil {
 			return fmt.Errorf("failed to unmarshal plan: %w", err)
 		}
+		plan.DefaultStatus()
 
 		if plan.OriginalLocation == "" {
 			return fmt.Errorf("plan file does not have an original location recorded")
@@ -941,6 +946,7 @@ var planMoveCmd = &cobra.Command{
 		if err := yaml.Unmarshal(data, &plan); err != nil {
 			return fmt.Errorf("failed to unmarshal plan: %w", err)
 		}
+		plan.DefaultStatus()
 
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -1249,6 +1255,7 @@ var planArchiveCmd = &cobra.Command{
 			}
 			var plan models.PlanFile
 			_ = yaml.Unmarshal(data, &plan)
+			plan.DefaultStatus()
 
 			allDone := true
 			for _, proj := range plan.Projects {
@@ -1327,6 +1334,7 @@ var planCompleteCmd = &cobra.Command{
 		}
 		var plan models.PlanFile
 		yaml.Unmarshal(data, &plan)
+		plan.DefaultStatus()
 
 		// Select Project and Plate
 		var options []string
@@ -2198,6 +2206,7 @@ var planCheckCmd = &cobra.Command{
 				fmt.Printf("Error: Failed to parse plan file %s: %v\n", FormatPlanPath(path), err)
 				continue
 			}
+			plan.DefaultStatus()
 
 			for _, proj := range plan.Projects {
 				if proj.Status == "completed" {
