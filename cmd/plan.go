@@ -93,42 +93,6 @@ var planDeleteCmd = &cobra.Command{
 	},
 }
 
-var planListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List all discovered plans and their status",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		paused, _ := cmd.Flags().GetBool("paused")
-		all, _ := cmd.Flags().GetBool("all")
-
-		plans, err := discoverPlansWithFilter(all, paused)
-		if err != nil {
-			return err
-		}
-
-		if len(plans) == 0 {
-			fmt.Println("No plans found.")
-			return nil
-		}
-
-		for _, p := range plans {
-			fmt.Printf("Plan: %s\n", p.DisplayName)
-			for _, proj := range p.Plan.Projects {
-				todo := 0
-				total := len(proj.Plates)
-				for _, plate := range proj.Plates {
-					if plate.Status != "completed" {
-						todo++
-					}
-				}
-				fmt.Printf("  Project: %s [%s] (%d/%d plates remaining)\n", proj.Name, proj.Status, todo, total)
-			}
-			fmt.Println()
-		}
-		return nil
-	},
-}
-
 var planEditCmd = &cobra.Command{
 	Use:     "edit",
 	Aliases: []string{"ed", "e"},
@@ -651,7 +615,6 @@ func GetNeededFilamentIDs(apiClient *api.Client) (map[int]bool, error) {
 
 func init() {
 	rootCmd.AddCommand(planCmd)
-	planCmd.AddCommand(planListCmd)
 	planCmd.AddCommand(planResolveCmd)
 	planCmd.AddCommand(planCheckCmd)
 	planCmd.AddCommand(planNextCmd)
@@ -666,8 +629,6 @@ func init() {
 	planCmd.AddCommand(planReprintCmd)
 	planCmd.AddCommand(planDeleteCmd)
 
-	planListCmd.Flags().BoolP("paused", "p", false, "Show only paused plans")
-	planListCmd.Flags().BoolP("all", "a", false, "Show all plans, including paused ones")
 	planReprintCmd.Flags().IntP("number", "n", 1, "Number of reprints")
 	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
 	planCheckCmd.Flags().BoolP("verbose", "v", false, "Show which projects use each filament")
