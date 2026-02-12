@@ -179,6 +179,30 @@ func ResolveLowThreshold(vendor string, filamentName string) float64 {
 		lvendor := strings.ToLower(strings.TrimSpace(vendor))
 		lname := strings.ToLower(strings.TrimSpace(filamentName))
 
+		// First pass: check vendor::name patterns (more specific)
+		for k, v := range Cfg.LowThresholds {
+			if k == "" || v <= 0 {
+				continue
+			}
+
+			lk := strings.ToLower(strings.TrimSpace(k))
+			if !strings.Contains(lk, "::") {
+				continue
+			}
+
+			parts := strings.SplitN(lk, "::", 2)
+			vendPart := strings.TrimSpace(parts[0])
+			namePart := strings.TrimSpace(parts[1])
+			if vendPart == "" || namePart == "" {
+				continue
+			}
+
+			if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
+				return v
+			}
+		}
+
+		// Second pass: name-only fallback
 		for k, v := range Cfg.LowThresholds {
 			if k == "" || v <= 0 {
 				continue
@@ -186,20 +210,9 @@ func ResolveLowThreshold(vendor string, filamentName string) float64 {
 
 			lk := strings.ToLower(strings.TrimSpace(k))
 			if strings.Contains(lk, "::") {
-				parts := strings.SplitN(lk, "::", 2)
-				vendPart := strings.TrimSpace(parts[0])
-				namePart := strings.TrimSpace(parts[1])
-				if vendPart == "" || namePart == "" {
-					continue
-				}
-
-				if strings.Contains(lvendor, vendPart) && strings.Contains(lname, namePart) {
-					return v
-				}
 				continue
 			}
 
-			// name-only fallback
 			if strings.Contains(lname, lk) {
 				return v
 			}
