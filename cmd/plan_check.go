@@ -138,6 +138,7 @@ var planCheckCmd = &cobra.Command{
 		}
 
 		verbose, _ := cmd.Flags().GetBool("verbose")
+		byProject, _ := cmd.Flags().GetBool("by-project")
 
 		// Get all spools from Spoolman
 		allSpools, err := apiClient.FindSpoolsByName("*", nil, nil)
@@ -187,71 +188,114 @@ var planCheckCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf("%-5s %-30s %10s %10s %10s %6s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
-		fmt.Println(strings.Repeat("-", 78))
+		// Pre-compute display info for each filament need
+		type filamentDisplay struct {
+			colorBlock    string
+			displayStatus string
+			onHand        float64
+			loaded        string
+			status        string
+		}
+		displayInfo := make(map[string]*filamentDisplay)
 
 		allMet := true
-		for _, n := range needs {
-			onHand := 0.0
-			status := "OK"
-			loaded := ""
+		for key, n := range needs {
+			d := &filamentDisplay{}
 			if n.id != 0 {
-				onHand = inventory[n.id]
+				d.onHand = inventory[n.id]
 				if c, ok := filamentColors[n.id]; ok {
 					n.colorHex = c.colorHex
 					n.multiColorHexes = c.multiColorHexes
 				}
 				if isLoaded[n.id] {
-					loaded = "✅"
+					d.loaded = "✅"
 					if color.NoColor {
-						loaded = "YES"
+						d.loaded = "YES"
 					}
 				}
+				d.status = "OK"
 			} else {
-				status = "UNRESOLVED"
+				d.status = "UNRESOLVED"
 			}
 
-			if onHand < n.amount {
-				if status == "OK" {
-					status = "LOW"
+			if d.onHand < n.amount {
+				if d.status == "OK" {
+					d.status = "LOW"
 				}
 				allMet = false
 			} else if n.id != 0 {
 				// Check if projected amount is below threshold
 				info := filamentInfo[n.id]
 				threshold := ResolveLowThreshold(info.vendor, info.name)
-				if onHand-n.amount < threshold {
-					status = "WARN"
+				if d.onHand-n.amount < threshold {
+					d.status = "WARN"
 				}
 			}
 
-			displayStatus := status
-			switch status {
+			switch d.status {
 			case "OK":
-				displayStatus = color.GreenString("OK")
+				d.displayStatus = color.GreenString("OK")
 			case "UNRESOLVED":
-				displayStatus = color.YellowString("UNRESOLVED")
+				d.displayStatus = color.YellowString("UNRESOLVED")
 			case "LOW":
-				displayStatus = color.RedString("LOW")
+				d.displayStatus = color.RedString("LOW")
 			case "WARN":
-				displayStatus = color.YellowString("WARN")
+				d.displayStatus = color.YellowString("WARN")
 			}
 
 			// Manually pad displayStatus to maintain right alignment
-			// The original width was 10, so we need to add 10 - len(status) spaces before the colorized string
-			paddingLen := 10 - len(status)
-			padding := strings.Repeat(" ", paddingLen)
-			displayStatus = padding + displayStatus
+			paddingLen := 10 - len(d.status)
+			d.displayStatus = strings.Repeat(" ", paddingLen) + d.displayStatus
 
-			colorBlock := models.GetColorBlock(n.colorHex, n.multiColorHexes)
-			if colorBlock == "" {
-				colorBlock = "    "
+			d.colorBlock = models.GetColorBlock(n.colorHex, n.multiColorHexes)
+			if d.colorBlock == "" {
+				d.colorBlock = "    "
 			}
-			fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", colorBlock, TruncateFront(n.name, 30), n.amount, onHand, displayStatus, loaded)
+			displayInfo[key] = d
+		}
 
-			if verbose {
+		fmt.Printf("%-5s %-30s %10s %10s %10s %6s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
+		fmt.Println(strings.Repeat("-", 78))
+
+		if !byProject {
+			for key, n := range needs {
+				d := displayInfo[key]
+				fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(n.name, 30), n.amount, d.onHand, d.displayStatus, d.loaded)
+
+				if verbose {
+					for _, p := range n.projects {
+						fmt.Printf("    - %s (%.1fg)\n", p.projectName, p.amount)
+					}
+				}
+			}
+		} else {
+			// Build project -> filament needs index
+			type projectFilamentEntry struct {
+				key    string
+				need   *totalNeed
+				amount float64
+			}
+			projectNeeds := make(map[string][]projectFilamentEntry)
+			var projectOrder []string
+
+			for key, n := range needs {
 				for _, p := range n.projects {
-					fmt.Printf("    - %s (%.1fg)\n", p.projectName, p.amount)
+					if _, ok := projectNeeds[p.projectName]; !ok {
+						projectOrder = append(projectOrder, p.projectName)
+					}
+					projectNeeds[p.projectName] = append(projectNeeds[p.projectName], projectFilamentEntry{
+						key:    key,
+						need:   n,
+						amount: p.amount,
+					})
+				}
+			}
+
+			for _, projName := range projectOrder {
+				fmt.Printf("\nProject: %s\n", projName)
+				for _, entry := range projectNeeds[projName] {
+					d := displayInfo[entry.key]
+					fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(entry.need.name, 30), entry.amount, d.onHand, d.displayStatus, d.loaded)
 				}
 			}
 		}
@@ -290,4 +334,5 @@ var planCheckCmd = &cobra.Command{
 func init() {
 	planCmd.AddCommand(planCheckCmd)
 	planCheckCmd.Flags().BoolP("verbose", "v", false, "Show which projects use each filament")
+	planCheckCmd.Flags().Bool("by-project", false, "Group output by project instead of by filament")
 }
