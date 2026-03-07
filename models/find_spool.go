@@ -144,11 +144,13 @@ func GetColorBlock(colorHex, multiColorHexes string) string {
 		if multiColorHexes != "" {
 			// multicolor is represented by comma-separated hex values
 			colors := strings.SplitN(multiColorHexes, ",", 2)
-			r1, g1, b1 := convertFromHex(colors[0])
-			r2, g2, b2 := convertFromHex(colors[1])
-			colorBlock1 := color.RGB(r1, g1, b1).Sprintf("██")
-			colorBlock2 := color.RGB(r2, g2, b2).Sprintf("██")
-			colorBlock = colorBlock1 + colorBlock2
+			if len(colors) == 2 {
+				r1, g1, b1 := convertFromHex(colors[0])
+				r2, g2, b2 := convertFromHex(colors[1])
+				colorBlock1 := color.RGB(r1, g1, b1).Sprintf("██")
+				colorBlock2 := color.RGB(r2, g2, b2).Sprintf("██")
+				colorBlock = colorBlock1 + colorBlock2
+			}
 		}
 	}
 	return colorBlock
@@ -156,6 +158,10 @@ func GetColorBlock(colorHex, multiColorHexes string) string {
 
 func convertFromHex(hex string) (int, int, int) {
 	// convert the hex color like 45FFE0 to rgb integers
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) < 6 {
+		return 0, 0, 0
+	}
 	r, _ := strconv.ParseInt(hex[0:2], 16, 16)
 	g, _ := strconv.ParseInt(hex[2:4], 16, 16)
 	b, _ := strconv.ParseInt(hex[4:6], 16, 16)

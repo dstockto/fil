@@ -21,6 +21,10 @@ func TestConvertFromHex(t *testing.T) {
 		{"00FF00", 0, 255, 0},
 		{"0000FF", 0, 0, 255},
 		{"123456", 18, 52, 86},
+		{"#FF0000", 255, 0, 0},
+		{"", 0, 0, 0},
+		{"FFF", 0, 0, 0},
+		{"zzzzzz", 0, 0, 0},
 	}
 
 	for _, tt := range tests {
