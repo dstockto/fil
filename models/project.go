@@ -36,8 +36,7 @@ func (p *Project) DefaultStatus() {
 }
 
 type PlanFile struct {
-	OriginalLocation string    `yaml:"original_location,omitempty"`
-	Projects         []Project `yaml:"projects"`
+	Projects []Project `yaml:"projects"`
 }
 
 func (p *PlanFile) DefaultStatus() {

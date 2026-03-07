@@ -115,21 +115,6 @@ var planNewCmd = &cobra.Command{
 				_ = os.MkdirAll(Cfg.PlansDir, 0755)
 			}
 
-			// Load the plan to update OriginalLocation
-			absPath, err := filepath.Abs(filename)
-			if err != nil {
-				return fmt.Errorf("failed to get absolute path: %w", err)
-			}
-			plan.OriginalLocation = absPath
-
-			updatedData, err := yaml.Marshal(plan)
-			if err != nil {
-				return fmt.Errorf("failed to marshal plan: %w", err)
-			}
-			if err := os.WriteFile(filename, updatedData, 0644); err != nil {
-				return fmt.Errorf("failed to update plan file with original location: %w", err)
-			}
-
 			dest := filepath.Join(Cfg.PlansDir, filename)
 			if _, err := os.Stat(dest); err == nil {
 				return fmt.Errorf("file %s already exists in central Location", dest)

@@ -6,10 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dstockto/fil/models"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var planMoveCmd = &cobra.Command{
@@ -58,39 +56,12 @@ var planMoveCmd = &cobra.Command{
 			_ = os.MkdirAll(Cfg.PlansDir, 0755)
 		}
 
-		// Load the plan to update OriginalLocation
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read plan file: %w", err)
-		}
-
-		var plan models.PlanFile
-		if err := yaml.Unmarshal(data, &plan); err != nil {
-			return fmt.Errorf("failed to unmarshal plan: %w", err)
-		}
-		plan.DefaultStatus()
-
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path: %w", err)
-		}
-		plan.OriginalLocation = absPath
-
-		updatedData, err := yaml.Marshal(plan)
-		if err != nil {
-			return fmt.Errorf("failed to marshal plan: %w", err)
-		}
-		if err := os.WriteFile(path, updatedData, 0644); err != nil {
-			return fmt.Errorf("failed to update plan file with original location: %w", err)
-		}
-
 		dest := filepath.Join(Cfg.PlansDir, filepath.Base(path))
 		if _, err := os.Stat(dest); err == nil {
 			return fmt.Errorf("file %s already exists in central Location", dest)
 		}
 
-		err = os.Rename(path, dest)
-		if err != nil {
+		if err := os.Rename(path, dest); err != nil {
 			return fmt.Errorf("failed to move file: %w", err)
 		}
 		fmt.Printf("Moved %s to %s\n", path, dest)
