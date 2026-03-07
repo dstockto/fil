@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/fatih/color"
 )
@@ -94,22 +95,26 @@ func (s FindSpool) String() string {
 		colorHex = " #" + s.Filament.ColorHex
 	}
 
-	location := s.Location
+	location := sanitize(s.Location)
 	if location == "" {
 		location = "N/A"
 	}
 
-	location = color.New(color.Bold).Sprintf(location)
+	location = color.New(color.Bold).Sprintf("%s", location)
+
+	vendorName := sanitize(s.Filament.Vendor.Name)
+	filamentName := sanitize(s.Filament.Name)
+	material := sanitize(s.Filament.Material)
 
 	return fmt.Sprintf(
 		format,
 		colorBlock,
 		location,
 		s.Id,
-		s.Filament.Vendor.Name,
-		s.Filament.Name,
+		vendorName,
+		filamentName,
 		diameter,
-		s.Filament.Material,
+		material,
 		colorHex,
 		s.RemainingWeight,
 		lastUsedDuration,
@@ -154,6 +159,16 @@ func GetColorBlock(colorHex, multiColorHexes string) string {
 		}
 	}
 	return colorBlock
+}
+
+// sanitize strips control characters and ANSI escape sequences from untrusted strings.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\x1b' || (unicode.IsControl(r) && r != ' ') {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func convertFromHex(hex string) (int, int, int) {
