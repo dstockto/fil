@@ -79,14 +79,14 @@ docker compose up -d
 
 The `ghcr.io/donkie/spoolman:latest` image supports `linux/arm64` natively.
 
-Verify it's running: open `http://raspberrypi4.local:7912` in a browser.
+Verify it's running: open `https://raspberrypi4.local` in a browser.
 
 ## Step 5: Update fil config
 
 Update the Spoolman URL in your fil config to point to the Pi instead of localhost:
 
 ```
-spoolman_url: http://raspberrypi4.local:7912
+spoolman_url: https://raspberrypi4.local
 ```
 
 Check which config file(s) fil is using and update accordingly.
@@ -108,11 +108,87 @@ cd ~/Projects/spoolman-docker
 docker compose down
 ```
 
+## HTTPS with Caddy (post-migration)
+
+Caddy acts as a reverse proxy with auto-generated TLS certs so fil talks to Spoolman over HTTPS.
+
+### 1. Create a Caddyfile on the Pi
+
+```bash
+cat > ~/spoolman-docker/spoolman-docker/Caddyfile << 'EOF'
+raspberrypi4.local {
+    tls internal
+    reverse_proxy spoolman:8000
+}
+EOF
+```
+
+### 2. Update docker-compose.yaml
+
+Remove the `ports` mapping from spoolman (keep `expose`), and add the Caddy service:
+
+```yaml
+services:
+  spoolman:
+    image: ghcr.io/donkie/spoolman:latest
+    expose:
+      - "8000"
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./data
+        target: /home/app/.local/share/spoolman
+    environment:
+      - TZ=America/Denver
+      - SPOOLMAN_METRICS_ENABLED=true
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - spoolman
+volumes:
+  caddy_data:
+```
+
+### 3. Restart
+
+```bash
+cd ~/spoolman-docker/spoolman-docker
+docker compose down
+docker compose up -d
+```
+
+### 4. Trust the Caddy CA cert on your Mac
+
+```bash
+# On the Pi
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+
+# On your Mac
+scp pi@raspberrypi4.local:~/spoolman-docker/spoolman-docker/caddy-root.crt /tmp/caddy-root.crt
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain /tmp/caddy-root.crt
+```
+
+### 5. Update fil config
+
+```json
+{
+  "api_base": "https://raspberrypi4.local"
+}
+```
+
+Verify with `fil find`.
+
 ## Notes
 
 - Database is SQLite, single file (`data/spoolman.db`, ~143KB) — easy to move
 - Spoolman keeps its own backups in `data/backups/`
-- The docker-compose.yaml is ready to use as-is on the Pi (no changes needed)
-- Port mapping is `7912:8000` (host:container)
+- Spoolman is not directly exposed; Caddy proxies HTTPS on port 443
 - Timezone is set to `America/Denver`
 - Prometheus metrics are enabled
