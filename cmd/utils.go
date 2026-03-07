@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -75,8 +76,8 @@ func ParseDestSpec(input string) (DestSpec, error) {
 // LoadLocationOrders reads the settings entry 'locations_spoolorders' and
 // returns it as a map[Location][]spoolID. If not set or empty, returns an
 // empty map.
-func LoadLocationOrders(apiClient *api.Client) (map[string][]int, error) {
-	settings, err := apiClient.GetSettings()
+func LoadLocationOrders(ctx context.Context, apiClient *api.Client) (map[string][]int, error) {
+	settings, err := apiClient.GetSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch settings: %w", err)
 	}

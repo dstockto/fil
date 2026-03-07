@@ -21,6 +21,7 @@ var planResolveCmd = &cobra.Command{
 			return fmt.Errorf("api endpoint not configured")
 		}
 		apiClient := api.NewClient(Cfg.ApiBase)
+		ctx := cmd.Context()
 
 		var path string
 		if len(args) > 0 {
@@ -78,7 +79,7 @@ var planResolveCmd = &cobra.Command{
 						if need.Material != "" {
 							query["material"] = need.Material
 						}
-						spools, err := apiClient.FindSpoolsByName(need.Name, nil, query)
+						spools, err := apiClient.FindSpoolsByName(ctx, need.Name, nil, query)
 						if err != nil {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 							fmt.Printf("  Error searching Spoolman: %v\n", err)
@@ -88,7 +89,7 @@ var planResolveCmd = &cobra.Command{
 						if len(spools) == 0 {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
 							fmt.Printf("  No matches found for '%s' '%s'. Choosing from full list...\n", need.Name, need.Material)
-							spools, err = apiClient.FindSpoolsByName("*", nil, query)
+							spools, err = apiClient.FindSpoolsByName(ctx, "*", nil, query)
 							if err != nil {
 								fmt.Printf("  Error fetching all filaments: %v\n", err)
 								continue
@@ -170,7 +171,7 @@ var planResolveCmd = &cobra.Command{
 						// Reverse sync
 						// We need a way to get filament info by ID.
 						// Spoolman API has /api/v1/filament/{id}
-						filament, err := apiClient.GetFilamentById(need.FilamentID)
+						filament, err := apiClient.GetFilamentById(ctx, need.FilamentID)
 						if err == nil && filament != nil {
 							need.Name = filament.Filament.Name
 							need.Material = filament.Filament.Material

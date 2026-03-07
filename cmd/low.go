@@ -32,6 +32,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
+	ctx := cmd.Context()
 
 	// threshold (grams only)
 	maxRemaining, err := cmd.Flags().GetFloat64("max-remaining")
@@ -137,7 +138,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 
 			var spoolsToShow []models.FindSpool
 
-			if spool, err := apiClient.FindSpoolsById(id); err == nil && spool != nil && aggFilter(*spool) {
+			if spool, err := apiClient.FindSpoolsById(ctx, id); err == nil && spool != nil && aggFilter(*spool) {
 				// Skip ignored filaments
 				if !isIgnored(spool.Filament.Vendor.Name, spool.Filament.Name) {
 					// For a single spool, evaluate grams threshold with possible override
@@ -170,7 +171,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 		}
 
 		// Name/path lookups: fetch, then group by vendor+name+diameter, evaluate totals
-		found, err := apiClient.FindSpoolsByName(a, aggFilter, query)
+		found, err := apiClient.FindSpoolsByName(ctx, a, aggFilter, query)
 		if err != nil {
 			return fmt.Errorf("error finding spools: %w", err)
 		}

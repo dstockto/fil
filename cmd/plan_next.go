@@ -21,6 +21,7 @@ var planNextCmd = &cobra.Command{
 			return fmt.Errorf("api endpoint not configured")
 		}
 		apiClient := api.NewClient(Cfg.ApiBase)
+		ctx := cmd.Context()
 
 		// 1. Select Printer
 		if len(Cfg.Printers) == 0 {
@@ -71,7 +72,7 @@ var planNextCmd = &cobra.Command{
 		var options []plateOption
 
 		// Get current inventory & loaded spools
-		allSpools, _ := apiClient.FindSpoolsByName("*", nil, nil)
+		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
 		loadedSpools := make(map[string]models.FindSpool)
 		for _, s := range allSpools {
 			if s.Location != "" {
@@ -497,7 +498,7 @@ var planNextCmd = &cobra.Command{
 				spoolToUnload = &candidate
 
 				// Find the index of the spool being unloaded in its current location
-				orders, _ := LoadLocationOrders(apiClient)
+				orders, _ := LoadLocationOrders(ctx, apiClient)
 				if list, ok := orders[targetLoc]; ok {
 					unloadIdx = indexOf(list, spoolToUnload.Id)
 				}
@@ -510,13 +511,13 @@ var planNextCmd = &cobra.Command{
 					dspec, err := ParseDestSpec(input)
 					if err != nil {
 						fmt.Printf("  Error parsing location: %v. Moving to %s instead.\n", err, input)
-						apiClient.MoveSpool(spoolToUnload.Id, input)
+						apiClient.MoveSpool(ctx,spoolToUnload.Id, input)
 					} else {
 						newLoc := dspec.Location
-						apiClient.MoveSpool(spoolToUnload.Id, newLoc)
+						apiClient.MoveSpool(ctx,spoolToUnload.Id, newLoc)
 
 						// Also update locations_spoolorders if possible
-						orders, err := LoadLocationOrders(apiClient)
+						orders, err := LoadLocationOrders(ctx, apiClient)
 						if err == nil {
 							orders = RemoveFromAllOrders(orders, spoolToUnload.Id)
 							list := orders[newLoc]
@@ -534,7 +535,7 @@ var planNextCmd = &cobra.Command{
 								list = append(list, spoolToUnload.Id)
 							}
 							orders[newLoc] = list
-							apiClient.PostSettingObject("locations_spoolorders", orders)
+							apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
 						}
 					}
 				} else {
@@ -555,10 +556,10 @@ var planNextCmd = &cobra.Command{
 			var confirm string
 			fmt.Scanln(&confirm)
 
-			apiClient.MoveSpool(bestSpool.Id, targetLoc)
+			apiClient.MoveSpool(ctx,bestSpool.Id, targetLoc)
 
 			// Update locations_spoolorders for LOAD
-			orders, err := LoadLocationOrders(apiClient)
+			orders, err := LoadLocationOrders(ctx, apiClient)
 			if err == nil {
 				orders = RemoveFromAllOrders(orders, bestSpool.Id)
 				list := orders[targetLoc]
@@ -568,7 +569,7 @@ var planNextCmd = &cobra.Command{
 					list = append(list, bestSpool.Id)
 				}
 				orders[targetLoc] = list
-				apiClient.PostSettingObject("locations_spoolorders", orders)
+				apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
 			}
 
 			// Update our local tracking

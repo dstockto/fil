@@ -21,6 +21,7 @@ var planCompleteCmd = &cobra.Command{
 			return fmt.Errorf("api endpoint not configured")
 		}
 		apiClient := api.NewClient(Cfg.ApiBase)
+		ctx := cmd.Context()
 
 		var path string
 		if len(args) > 0 {
@@ -173,7 +174,7 @@ var planCompleteCmd = &cobra.Command{
 
 					// 1. Try to find matching spools in the printer
 					if len(printerLocations) > 0 {
-						allSpools, _ := apiClient.FindSpoolsByName("*", nil, nil)
+						allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
 						var candidates []models.FindSpool
 						for _, s := range allSpools {
 							inPrinter := false
@@ -244,7 +245,7 @@ var planCompleteCmd = &cobra.Command{
 							}
 						}
 
-						err := UseFilamentSafely(apiClient, matchedSpool, amountToDeduct)
+						err := UseFilamentSafely(ctx, apiClient, matchedSpool, amountToDeduct)
 						if err == nil {
 							used -= amountToDeduct
 						} else {
@@ -259,7 +260,7 @@ var planCompleteCmd = &cobra.Command{
 						if spoolIdStr != "" {
 							var sid int
 							fmt.Sscanf(spoolIdStr, "%d", &sid)
-							spool, err := apiClient.FindSpoolsById(sid)
+							spool, err := apiClient.FindSpoolsById(ctx, sid)
 							if err == nil {
 								amountToDeduct := used
 								if used > spool.RemainingWeight && spool.RemainingWeight > 0 {
@@ -270,7 +271,7 @@ var planCompleteCmd = &cobra.Command{
 										amountToDeduct = spool.RemainingWeight
 									}
 								}
-								err := UseFilamentSafely(apiClient, spool, amountToDeduct)
+								err := UseFilamentSafely(ctx, apiClient, spool, amountToDeduct)
 								if err == nil {
 									used -= amountToDeduct
 								} else {
@@ -279,7 +280,7 @@ var planCompleteCmd = &cobra.Command{
 								}
 							} else {
 								fmt.Printf("Error finding spool #%d: %v. Using %.1fg anyway (may result in negative weight if not found in spoolman correctly)\n", sid, err, used)
-								apiClient.UseFilament(sid, used)
+								apiClient.UseFilament(ctx, sid, used)
 								used = 0
 							}
 						} else {

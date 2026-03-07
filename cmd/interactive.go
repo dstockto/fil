@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -33,10 +34,10 @@ func isInteractiveAllowed(nonInteractive bool) bool {
 // chosen spool. If the user cancels the prompt (Esc or Ctrl+C), canceled is true.
 // initialTerm is the user's original query. If initialCandidates is non-empty,
 // they will be shown first in the list, followed by other spools in scope.
-func selectSpoolInteractively(apiClient *api.Client, initialTerm string, query map[string]string, initialCandidates []models.FindSpool, forceSimple bool) (models.FindSpool, bool, error) {
+func selectSpoolInteractively(ctx context.Context, apiClient *api.Client, initialTerm string, query map[string]string, initialCandidates []models.FindSpool, forceSimple bool) (models.FindSpool, bool, error) {
 	// Load all spools within scope to support full search, but order so that
 	// initialCandidates (ambiguous matches) appear first.
-	all, err := apiClient.FindSpoolsByName("*", nil, query)
+	all, err := apiClient.FindSpoolsByName(ctx, "*", nil, query)
 	if err != nil {
 		return models.FindSpool{}, false, err
 	}

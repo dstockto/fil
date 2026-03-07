@@ -20,6 +20,7 @@ var planCheckCmd = &cobra.Command{
 			return fmt.Errorf("api endpoint not configured")
 		}
 		apiClient := api.NewClient(Cfg.ApiBase)
+		ctx := cmd.Context()
 
 		var paths []string
 		if len(args) > 0 {
@@ -141,7 +142,7 @@ var planCheckCmd = &cobra.Command{
 		byProject, _ := cmd.Flags().GetBool("by-project")
 
 		// Get all spools from Spoolman
-		allSpools, err := apiClient.FindSpoolsByName("*", nil, nil)
+		allSpools, err := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
 		if err != nil {
 			return err
 		}

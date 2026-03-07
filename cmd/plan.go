@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -183,7 +184,7 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 	return plans, nil
 }
 
-func UseFilamentSafely(apiClient *api.Client, spool *models.FindSpool, amount float64) error {
+func UseFilamentSafely(ctx context.Context, apiClient *api.Client, spool *models.FindSpool, amount float64) error {
 	if amount > spool.RemainingWeight {
 		overage := amount - spool.RemainingWeight
 		fmt.Printf("Warning: Spool #%d (%s) only has %.1fg remaining, but usage is %.1fg.\n", spool.Id, spool.Filament.Name, spool.RemainingWeight, amount)
@@ -192,18 +193,18 @@ func UseFilamentSafely(apiClient *api.Client, spool *models.FindSpool, amount fl
 		updates := map[string]any{
 			"initial_weight": spool.InitialWeight + overage,
 		}
-		err := apiClient.PatchSpool(spool.Id, updates)
+		err := apiClient.PatchSpool(ctx, spool.Id, updates)
 		if err != nil {
 			return fmt.Errorf("failed to adjust initial weight for spool #%d: %w", spool.Id, err)
 		}
 	}
 
-	return apiClient.UseFilament(spool.Id, amount)
+	return apiClient.UseFilament(ctx, spool.Id, amount)
 }
 
 // GetNeededFilamentIDs returns a set of Filament IDs that are needed by current plans
 // but are not currently loaded on a printer.
-func GetNeededFilamentIDs(apiClient *api.Client) (map[int]bool, error) {
+func GetNeededFilamentIDs(ctx context.Context, apiClient *api.Client) (map[int]bool, error) {
 	plans, err := discoverPlans()
 	if err != nil {
 		return nil, err
@@ -252,7 +253,7 @@ func GetNeededFilamentIDs(apiClient *api.Client) (map[int]bool, error) {
 	}
 
 	// Get all spools from Spoolman to check what is loaded
-	allSpools, err := apiClient.FindSpoolsByName("*", nil, nil)
+	allSpools, err := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
 	if err != nil {
 		return nil, err
 	}

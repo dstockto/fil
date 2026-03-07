@@ -39,6 +39,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
+	ctx := cmd.Context()
 
 	dryRun, err := cmd.Flags().GetBool("dry-run")
 	if err != nil {
@@ -59,7 +60,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		selector := a
 
 		if id, err := strconv.Atoi(selector); err == nil {
-			spool, err := apiClient.FindSpoolsById(id)
+			spool, err := apiClient.FindSpoolsById(ctx, id)
 			if err != nil {
 				color.Red("Error finding spool %d: %v\n", id, err)
 				errs = errors.Join(errs, fmt.Errorf("error finding spool %d: %w", id, err))
@@ -74,7 +75,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 
 		query := buildArchiveQuery(location)
 
-		foundSpools, err := apiClient.FindSpoolsByName(a, nil, query)
+		foundSpools, err := apiClient.FindSpoolsByName(ctx, a, nil, query)
 		if err != nil {
 			color.Red("Error finding spool '%s': %v\n", selector, err)
 			errs = errors.Join(errs, err)
@@ -101,7 +102,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load current locations_spoolorders to compute removals for dry-run and updates
-	orders, loadErr := LoadLocationOrders(apiClient)
+	orders, loadErr := LoadLocationOrders(ctx, apiClient)
 	if loadErr != nil {
 		return loadErr
 	}
@@ -119,13 +120,13 @@ func runArchive(cmd *cobra.Command, args []string) error {
 	}
 
 	// Persist settings first so UI order reflects immediately
-	if err := apiClient.PostSettingObject("locations_spoolorders", orders); err != nil {
+	if err := apiClient.PostSettingObject(ctx, "locations_spoolorders", orders); err != nil {
 		return fmt.Errorf("failed to update locations_spoolorders: %w", err)
 	}
 
 	// Then archive each spool (sets archived=true and clears Location)
 	for _, s := range spools {
-		err := apiClient.ArchiveSpool(s.Id)
+		err := apiClient.ArchiveSpool(ctx, s.Id)
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("error archiving spool %d: %w", s.Id, err))
 			continue

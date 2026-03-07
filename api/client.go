@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/dstockto/fil/models"
 )
@@ -16,16 +18,16 @@ import (
 var ErrSpoolNotFound = errors.New("no spool found")
 
 type SpoolmanAPI interface {
-	FindSpoolsByName(name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error)
-	GetFilamentById(id int) (*models.FindSpool, error)
-	FindSpoolsById(id int) (*models.FindSpool, error)
-	UseFilament(spoolId int, amount float64) error
-	MoveSpool(spoolId int, to string) error
-	PatchSpool(spoolId int, updates map[string]any) error
-	ArchiveSpool(spoolId int) error
-	GetSettings() (map[string]SettingEntry, error)
-	PatchSettings(fields map[string]any) error
-	PostSettingObject(key string, obj any) error
+	FindSpoolsByName(ctx context.Context, name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error)
+	GetFilamentById(ctx context.Context, id int) (*models.FindSpool, error)
+	FindSpoolsById(ctx context.Context, id int) (*models.FindSpool, error)
+	UseFilament(ctx context.Context, spoolId int, amount float64) error
+	MoveSpool(ctx context.Context, spoolId int, to string) error
+	PatchSpool(ctx context.Context, spoolId int, updates map[string]any) error
+	ArchiveSpool(ctx context.Context, spoolId int) error
+	GetSettings(ctx context.Context) (map[string]SettingEntry, error)
+	PatchSettings(ctx context.Context, fields map[string]any) error
+	PostSettingObject(ctx context.Context, key string, obj any) error
 }
 
 type Client struct {
@@ -35,14 +37,18 @@ type Client struct {
 
 type SpoolFilter func(models.FindSpool) bool
 
+const defaultTimeout = 30 * time.Second
+
 func NewClient(base string) *Client {
 	return &Client{
-		base:       base,
-		httpClient: http.Client{},
+		base: base,
+		httpClient: http.Client{
+			Timeout: defaultTimeout,
+		},
 	}
 }
 
-func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error) {
+func (c Client) FindSpoolsByName(ctx context.Context, name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/spool"
 	sort := "location:asc,remaining_weight:asc,filament.name:asc,id:desc"
 	trimmedName := strings.TrimSpace(name)
@@ -80,7 +86,12 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[stri
 
 	u.RawQuery = q.Encode()
 
-	resp, err := c.httpClient.Get(u.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -112,19 +123,16 @@ func (c Client) FindSpoolsByName(name string, filter SpoolFilter, query map[stri
 	return out, nil
 }
 
-func (c Client) GetFilamentById(id int) (*models.FindSpool, error) {
+func (c Client) GetFilamentById(ctx context.Context, id int) (*models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/filament/%d"
 	endpoint = fmt.Sprintf(endpoint, id)
 
-	findUrl, err := url.Parse(endpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base url: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(&http.Request{
-		Method: http.MethodGet,
-		URL:    findUrl,
-	})
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -168,19 +176,16 @@ func (c Client) GetFilamentById(id int) (*models.FindSpool, error) {
 	return res, nil
 }
 
-func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
+func (c Client) FindSpoolsById(ctx context.Context, id int) (*models.FindSpool, error) {
 	endpoint := c.base + "/api/v1/spool/%d"
 	endpoint = fmt.Sprintf(endpoint, id)
 
-	findUrl, err := url.Parse(endpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base url: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(&http.Request{
-		Method: http.MethodGet,
-		URL:    findUrl,
-	})
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -213,27 +218,18 @@ func (c Client) FindSpoolsById(id int) (*models.FindSpool, error) {
 	return &out, nil
 }
 
-func (c Client) UseFilament(spoolId int, amount float64) error {
-	endpoint := c.base + "/api/v1/spool/%d/use"
-	body := map[string]any{
+func (c Client) UseFilament(ctx context.Context, spoolId int, amount float64) error {
+	endpoint := fmt.Sprintf(c.base+"/api/v1/spool/%d/use", spoolId)
+
+	jsonBody, err := json.Marshal(map[string]any{
 		"use_weight": amount,
-	}
-	endpoint = fmt.Sprintf(endpoint, spoolId)
-
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid base url: %w", err)
-	}
-
-	jsonBody, err := json.Marshal(body)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal body: %w", err)
 	}
 
-	bytesReader := strings.NewReader(string(jsonBody))
-
 	// send the PUT request
-	req, err := http.NewRequest(http.MethodPut, u.String(), bytesReader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -265,7 +261,7 @@ func (c Client) UseFilament(spoolId int, amount float64) error {
 	return nil
 }
 
-func (c Client) MoveSpool(spoolId int, to string) error {
+func (c Client) MoveSpool(ctx context.Context, spoolId int, to string) error {
 	if to == "<empty>" {
 		to = ""
 	}
@@ -274,26 +270,18 @@ func (c Client) MoveSpool(spoolId int, to string) error {
 		"location": to,
 	}
 
-	return c.PatchSpool(spoolId, body)
+	return c.PatchSpool(ctx, spoolId, body)
 }
 
-func (c Client) PatchSpool(spoolId int, updates map[string]any) error {
-	endpoint := c.base + "/api/v1/spool/%d"
-	endpoint = fmt.Sprintf(endpoint, spoolId)
-
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid base url: %w", err)
-	}
+func (c Client) PatchSpool(ctx context.Context, spoolId int, updates map[string]any) error {
+	endpoint := fmt.Sprintf(c.base+"/api/v1/spool/%d", spoolId)
 
 	jsonBody, err := json.Marshal(updates)
 	if err != nil {
 		return fmt.Errorf("failed to marshal body: %w", err)
 	}
 
-	bodyBuffer := bytes.NewBuffer(jsonBody)
-
-	req, err := http.NewRequest(http.MethodPatch, u.String(), bodyBuffer)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -325,13 +313,13 @@ func (c Client) PatchSpool(spoolId int, updates map[string]any) error {
 	return nil
 }
 
-func (c Client) ArchiveSpool(spoolId int) error {
+func (c Client) ArchiveSpool(ctx context.Context, spoolId int) error {
 	body := map[string]any{
 		"archived": true,
 		"location": "",
 	}
 
-	return c.PatchSpool(spoolId, body)
+	return c.PatchSpool(ctx, spoolId, body)
 }
 
 func (c Client) filterSpools(spools []models.FindSpool, filter SpoolFilter) []models.FindSpool {
@@ -362,15 +350,15 @@ type SettingEntry struct {
 }
 
 // GetSettings fetches all settings from the server at /api/v1/setting/
-func (c Client) GetSettings() (map[string]SettingEntry, error) {
+func (c Client) GetSettings(ctx context.Context) (map[string]SettingEntry, error) {
 	endpoint := c.base + "/api/v1/setting/"
 
-	u, err := url.Parse(endpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base url: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Get(u.String())
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -397,7 +385,7 @@ func (c Client) GetSettings() (map[string]SettingEntry, error) {
 // For complex settings that are represented as JSON strings in the API (e.g., arrays/objects),
 // pass a Go value (map/slice) and this method will marshal it into a JSON string so that the
 // server receives a string containing JSON (to match current behavior of the endpoint).
-func (c Client) PatchSettings(fields map[string]any) error {
+func (c Client) PatchSettings(ctx context.Context, fields map[string]any) error {
 	endpoint := c.base + "/api/v1/setting/"
 
 	// Marshal fields, converting maps/slices to JSON strings where necessary.
@@ -421,7 +409,7 @@ func (c Client) PatchSettings(fields map[string]any) error {
 		return fmt.Errorf("failed to marshal settings patch body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, endpoint, bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -445,7 +433,7 @@ func (c Client) PatchSettings(fields map[string]any) error {
 // For object/array settings, the API expects the "value" field to be a JSON string
 // containing the serialized object, alongside is_set=true and an appropriate type.
 // This helper marshals obj to JSON and wraps it as a string in the request body with type "object".
-func (c Client) PostSettingObject(key string, obj any) error {
+func (c Client) PostSettingObject(ctx context.Context, key string, obj any) error {
 	endpoint := c.base + "/api/v1/setting/" + key
 
 	b, err := json.Marshal(obj)
@@ -465,7 +453,7 @@ func (c Client) PostSettingObject(key string, obj any) error {
 		return fmt.Errorf("failed to marshal setting payload for %s: %w", key, err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -496,7 +484,7 @@ func (c Client) PostSettingObject(key string, obj any) error {
 			return fmt.Errorf("failed to marshal raw string payload for %s: %w", key, mErr)
 		}
 
-		req2, rErr := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(jsonStringBody))
+		req2, rErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonStringBody))
 		if rErr != nil {
 			return fmt.Errorf("failed to create request: %w", rErr)
 		}

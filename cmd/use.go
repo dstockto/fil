@@ -42,6 +42,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
+	ctx := cmd.Context()
 
 	dryRun, err := cmd.Flags().GetBool("dry-run")
 	if err != nil {
@@ -89,7 +90,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		if spoolId == -1 {
 			query, _ := buildUseQuery(cmd, location)
 
-			spools, finderr := apiClient.FindSpoolsByName(args[i], nil, query)
+			spools, finderr := apiClient.FindSpoolsByName(ctx, args[i], nil, query)
 			if finderr != nil {
 				errs = errors.Join(errs, fmt.Errorf("error looking up spool '%s': %w", spoolSelector, finderr))
 
@@ -104,7 +105,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 			if len(spools) != 1 {
 				if allowInteractive {
-					chosen, canceled, selErr := selectSpoolInteractively(apiClient, spoolSelector, query, spools, simpleSelect)
+					chosen, canceled, selErr := selectSpoolInteractively(ctx, apiClient, spoolSelector, query, spools, simpleSelect)
 					if selErr != nil {
 						errs = errors.Join(errs, fmt.Errorf("selection error: %w", selErr))
 						continue
@@ -146,7 +147,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 	for _, u := range usages {
 		// check that the spool exists
-		spool, err := apiClient.FindSpoolsById(u.SpoolId)
+		spool, err := apiClient.FindSpoolsById(ctx, u.SpoolId)
 		if errors.Is(err, api.ErrSpoolNotFound) {
 			notFound := color.RGB(200, 0, 0).Sprintf("Spool %d not found.\n", u.SpoolId)
 			fmt.Println(notFound)
@@ -179,7 +180,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 		if !dryRun {
 			// call the API to mark the spool as used
-			useErr := apiClient.UseFilament(u.SpoolId, u.Amount)
+			useErr := apiClient.UseFilament(ctx, u.SpoolId, u.Amount)
 			if useErr != nil {
 				errs = errors.Join(errs, fmt.Errorf("failed to mark spool %d as used: %w", u.SpoolId, useErr))
 

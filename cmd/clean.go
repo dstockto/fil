@@ -25,6 +25,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
+	ctx := cmd.Context()
 
 	write, err := cmd.Flags().GetBool("write")
 	if err != nil {
@@ -36,7 +37,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 1) Fetch all spools (allow archived) to get their current locations
-	spools, err := apiClient.FindSpoolsByName("*", nil, map[string]string{"allow_archived": "true"})
+	spools, err := apiClient.FindSpoolsByName(ctx, "*", nil, map[string]string{"allow_archived": "true"})
 	if err != nil {
 		return fmt.Errorf("failed to fetch spools: %w", err)
 	}
@@ -51,7 +52,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 2) Fetch settings and parse locations_spoolorders
-	settings, err := apiClient.GetSettings()
+	settings, err := apiClient.GetSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch settings: %w", err)
 	}
@@ -160,7 +161,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 4) Write back cleaned map via POST /api/v1/setting/locations_spoolorders
-	if err := apiClient.PostSettingObject("locations_spoolorders", cleaned); err != nil {
+	if err := apiClient.PostSettingObject(ctx, "locations_spoolorders", cleaned); err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 

@@ -87,7 +87,7 @@ func buildFindQuery(cmd *cobra.Command) (map[string]string, []api.SpoolFilter, e
 
 	if needed, err := cmd.Flags().GetBool("needed"); err == nil && needed {
 		apiClient := api.NewClient(Cfg.ApiBase)
-		neededIDs, err := GetNeededFilamentIDs(apiClient)
+		neededIDs, err := GetNeededFilamentIDs(cmd.Context(), apiClient)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get needed filament IDs: %w", err)
 		}
@@ -115,9 +115,11 @@ func runFind(cmd *cobra.Command, args []string) error {
 		filters []api.SpoolFilter
 	)
 
+	ctx := cmd.Context()
+
 	// Preload settings-based Location orders to sort results accordingly.
 	// The settings key 'locations_spoolorders' stores, per Location, the ordered list of spool IDs.
-	orders, err := LoadLocationOrders(apiClient)
+	orders, err := LoadLocationOrders(ctx, apiClient)
 	if err != nil {
 		// Non-fatal: if settings cannot be loaded, continue without settings-based ordering.
 		orders = map[string][]int{}
@@ -164,7 +166,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 			name = "#" + name
 			foundFmt = "Found %d spool with ID %s:\n"
 
-			spool, err := apiClient.FindSpoolsById(id)
+			spool, err := apiClient.FindSpoolsById(ctx, id)
 			if errors.Is(err, api.ErrSpoolNotFound) {
 				spools = []models.FindSpool{}
 			} else if err != nil {
@@ -173,7 +175,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 				spools = []models.FindSpool{*spool}
 			}
 		} else {
-			spools, err = apiClient.FindSpoolsByName(a, aggFilter, query)
+			spools, err = apiClient.FindSpoolsByName(ctx, a, aggFilter, query)
 			if err != nil {
 				return fmt.Errorf("error finding spools: %w", err)
 			}

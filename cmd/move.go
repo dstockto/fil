@@ -54,6 +54,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase)
+	ctx := cmd.Context()
 
 	dryRun, err := cmd.Flags().GetBool("dry-run")
 	if err != nil {
@@ -115,7 +116,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			spoolId = id
 		} else {
 			query := buildMoveQuery(allFrom)
-			spools, lookupErr := apiClient.FindSpoolsByName(spoolSelector, nil, query)
+			spools, lookupErr := apiClient.FindSpoolsByName(ctx, spoolSelector, nil, query)
 			if lookupErr != nil {
 				errs = errors.Join(errs, fmt.Errorf("error looking up spool '%s': %w", spoolSelector, lookupErr))
 				moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: lookupErr})
@@ -130,7 +131,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			if len(spools) != 1 {
 				if allowInteractive {
 					// let the user pick from a broad list honoring any filters (e.g., Location)
-					chosen, canceled, selErr := selectSpoolInteractively(apiClient, spoolSelector, query, spools, simpleSelect)
+					chosen, canceled, selErr := selectSpoolInteractively(ctx, apiClient, spoolSelector, query, spools, simpleSelect)
 					if selErr != nil {
 						errs = errors.Join(errs, fmt.Errorf("selection error: %w", selErr))
 						moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: selErr})
@@ -160,7 +161,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 		if m.err != nil || m.spoolId <= 0 {
 			continue
 		}
-		spool, findErr := apiClient.FindSpoolsById(m.spoolId)
+		spool, findErr := apiClient.FindSpoolsById(ctx, m.spoolId)
 		if errors.Is(findErr, api.ErrSpoolNotFound) {
 			theErr := fmt.Errorf("spool #%d not found", m.spoolId)
 			errs = errors.Join(errs, theErr)
@@ -178,7 +179,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load current locations_spoolorders
-	orders, loadErr := LoadLocationOrders(apiClient)
+	orders, loadErr := LoadLocationOrders(ctx, apiClient)
 	if loadErr != nil {
 		return loadErr
 	}
@@ -275,7 +276,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Persist settings first so UI order reflects immediately
-	if err := apiClient.PostSettingObject("locations_spoolorders", orders); err != nil {
+	if err := apiClient.PostSettingObject(ctx, "locations_spoolorders", orders); err != nil {
 		return fmt.Errorf("failed to update locations_spoolorders: %w", err)
 	}
 
@@ -285,7 +286,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		to := m.dest.Location
-		if moveErr := apiClient.MoveSpool(m.spoolId, to); moveErr != nil {
+		if moveErr := apiClient.MoveSpool(ctx, m.spoolId, to); moveErr != nil {
 			color.Red("Error moving spool %s: %v\n", m.spool, moveErr)
 			errs = errors.Join(errs, fmt.Errorf("error moving spool %s: %w", m.spool, moveErr))
 			continue
