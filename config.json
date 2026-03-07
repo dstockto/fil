@@ -1,6 +1,6 @@
 {
   "database": "spoolman.db",
-  "api_base": "http://raspberrypi4.local:7912",
+  "api_base": "https://raspberrypi4.local",
   "location_aliases": {
     "A": "AMS A",
     "B": "AMS B",
