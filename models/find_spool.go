@@ -95,16 +95,16 @@ func (s FindSpool) String() string {
 		colorHex = " #" + s.Filament.ColorHex
 	}
 
-	location := sanitize(s.Location)
+	location := Sanitize(s.Location)
 	if location == "" {
 		location = "N/A"
 	}
 
 	location = color.New(color.Bold).Sprintf("%s", location)
 
-	vendorName := sanitize(s.Filament.Vendor.Name)
-	filamentName := sanitize(s.Filament.Name)
-	material := sanitize(s.Filament.Material)
+	vendorName := Sanitize(s.Filament.Vendor.Name)
+	filamentName := Sanitize(s.Filament.Name)
+	material := Sanitize(s.Filament.Material)
 
 	return fmt.Sprintf(
 		format,
@@ -161,8 +161,8 @@ func GetColorBlock(colorHex, multiColorHexes string) string {
 	return colorBlock
 }
 
-// sanitize strips control characters and ANSI escape sequences from untrusted strings.
-func sanitize(s string) string {
+// Sanitize strips control characters and ANSI escape sequences from untrusted strings.
+func Sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\x1b' || (unicode.IsControl(r) && r != ' ') {
 			return -1

@@ -3,6 +3,8 @@ package cmd
 import (
 	"net/url"
 	"strings"
+
+	"github.com/dstockto/fil/models"
 )
 
 func makeAmazonSearch(vendor string, name string) string {
@@ -18,5 +20,5 @@ func termLink(text string, link string) string {
 }
 
 func amazonLink(vendor string, name string) string {
-	return termLink(makeAmazonSearch(vendor, name), makeAmazonSearch(vendor, name))
+	return termLink(models.Sanitize(makeAmazonSearch(vendor, name)), makeAmazonSearch(vendor, name))
 }

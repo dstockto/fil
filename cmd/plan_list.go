@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +35,7 @@ var planListCmd = &cobra.Command{
 						todo++
 					}
 				}
-				fmt.Printf("  Project: %s [%s] (%d/%d plates remaining)\n", proj.Name, proj.Status, todo, total)
+				fmt.Printf("  Project: %s [%s] (%d/%d plates remaining)\n", models.Sanitize(proj.Name), models.Sanitize(proj.Status), todo, total)
 			}
 			fmt.Println()
 		}

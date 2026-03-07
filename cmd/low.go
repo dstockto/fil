@@ -238,7 +238,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 			fmt.Printf(
 				" - %s\n%s\n",
 				s,
-				termLink("Amazon Order "+s.Filament.Name, makeAmazonSearch(s.Filament.Vendor.Name, s.Filament.Name)),
+				termLink("Amazon Order "+models.Sanitize(s.Filament.Name), makeAmazonSearch(s.Filament.Vendor.Name, s.Filament.Name)),
 			)
 		}
 

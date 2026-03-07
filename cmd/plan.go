@@ -187,7 +187,7 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 func UseFilamentSafely(ctx context.Context, apiClient *api.Client, spool *models.FindSpool, amount float64) error {
 	if amount > spool.RemainingWeight {
 		overage := amount - spool.RemainingWeight
-		fmt.Printf("Warning: Spool #%d (%s) only has %.1fg remaining, but usage is %.1fg.\n", spool.Id, spool.Filament.Name, spool.RemainingWeight, amount)
+		fmt.Printf("Warning: Spool #%d (%s) only has %.1fg remaining, but usage is %.1fg.\n", spool.Id, models.Sanitize(spool.Filament.Name), spool.RemainingWeight, amount)
 		fmt.Printf("Adjusting Spool #%d initial weight by adding %.1fg to prevent negative remaining weight.\n", spool.Id, overage)
 
 		updates := map[string]any{

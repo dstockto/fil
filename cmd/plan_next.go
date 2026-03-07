@@ -165,7 +165,7 @@ var planNextCmd = &cobra.Command{
 			if !o.isReady {
 				readyStr = " (INSUFFICIENT FILAMENT)"
 			}
-			items = append(items, fmt.Sprintf("%s%s - %s [Swaps: %d]%s", prefix, o.projectName, o.plate.Name, o.swapCost, readyStr))
+			items = append(items, fmt.Sprintf("%s%s - %s [Swaps: %d]%s", prefix, models.Sanitize(o.projectName), models.Sanitize(o.plate.Name), o.swapCost, readyStr))
 		}
 
 		promptPlate := promptui.Select{
@@ -185,7 +185,7 @@ var planNextCmd = &cobra.Command{
 		choice := options[selectedIdx]
 
 		// 4. Swap Instructions
-		fmt.Printf("\nPreparing to print: %s - %s\n", choice.projectName, choice.plate.Name)
+		fmt.Printf("\nPreparing to print: %s - %s\n", models.Sanitize(choice.projectName), models.Sanitize(choice.plate.Name))
 
 		// Pre-calculate what filaments are needed for the current and future plates in the project
 		neededFilamentIDs := make(map[int]bool)
@@ -246,7 +246,7 @@ var planNextCmd = &cobra.Command{
 				}
 
 				if loadedSpool.RemainingWeight < req.Amount {
-					fmt.Printf("! WARNING: Loaded spool #%d (%s) only has %.1fg remaining, but this plate requires %.1fg\n", loadedSpool.Id, req.Name, loadedSpool.RemainingWeight, req.Amount)
+					fmt.Printf("! WARNING: Loaded spool #%d (%s) only has %.1fg remaining, but this plate requires %.1fg\n", loadedSpool.Id, models.Sanitize(req.Name), loadedSpool.RemainingWeight, req.Amount)
 
 					// Suggest next spool to load
 					var nextBest *models.FindSpool
@@ -271,7 +271,7 @@ var planNextCmd = &cobra.Command{
 						}
 					}
 				} else {
-					fmt.Printf("✓ %s is already loaded in %s (%.1fg remaining)\n", req.Name, loadedLoc, loadedSpool.RemainingWeight)
+					fmt.Printf("✓ %s is already loaded in %s (%.1fg remaining)\n", models.Sanitize(req.Name), models.Sanitize(loadedLoc), loadedSpool.RemainingWeight)
 				}
 
 				if bestSpool == nil {
@@ -325,13 +325,13 @@ var planNextCmd = &cobra.Command{
 				}
 
 				if bestSpool == nil {
-					fmt.Printf("! Error: Could not find any spool for %s\n", req.Name)
+					fmt.Printf("! Error: Could not find any spool for %s\n", models.Sanitize(req.Name))
 					continue
 				}
 
 				// If the best (or only) spool is in another printer, warn the user
 				if otherPName, inOtherPrinter := allPrinterLocations[bestSpool.Location]; inOtherPrinter {
-					fmt.Printf("! WARNING: Spool #%d (%s) is already in %s (Printer: %s)\n", bestSpool.Id, bestSpool.Filament.Name, bestSpool.Location, otherPName)
+					fmt.Printf("! WARNING: Spool #%d (%s) is already in %s (Printer: %s)\n", bestSpool.Id, models.Sanitize(bestSpool.Filament.Name), models.Sanitize(bestSpool.Location), models.Sanitize(otherPName))
 					prompt := promptui.Prompt{
 						Label:     "Do you want to move it to this printer anyway?",
 						IsConfirm: true,
@@ -503,7 +503,7 @@ var planNextCmd = &cobra.Command{
 					unloadIdx = indexOf(list, spoolToUnload.Id)
 				}
 
-				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, spoolToUnload.Filament.Name, targetLoc)
+				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, models.Sanitize(spoolToUnload.Filament.Name), models.Sanitize(targetLoc))
 				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
 				var input string
 				fmt.Scanln(&input)
@@ -551,7 +551,7 @@ var planNextCmd = &cobra.Command{
 				}
 			}
 
-			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, bestSpool.Filament.Name, targetLoc, bestSpool.Location)
+			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, models.Sanitize(bestSpool.Filament.Name), models.Sanitize(targetLoc), models.Sanitize(bestSpool.Location))
 			fmt.Printf("Press Enter once the swap is complete...")
 			var confirm string
 			fmt.Scanln(&confirm)

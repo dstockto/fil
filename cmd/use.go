@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/models"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -160,8 +161,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 			color.Yellow(
 				"Not enough filament on spool #%d [%s - %s] (only %.1fg available).\n",
 				u.SpoolId,
-				spool.Filament.Name,
-				spool.Filament.Vendor.Name,
+				models.Sanitize(spool.Filament.Name),
+				models.Sanitize(spool.Filament.Vendor.Name),
 				spool.RemainingWeight,
 			)
 			errs = errors.Join(
@@ -169,8 +170,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 				fmt.Errorf(
 					"not enough filament on spool #%d [%s - %s] (only %.1fg available)",
 					u.SpoolId,
-					spool.Filament.Name,
-					spool.Filament.Vendor.Name,
+					models.Sanitize(spool.Filament.Name),
+					models.Sanitize(spool.Filament.Vendor.Name),
 					spool.RemainingWeight,
 				),
 			)
@@ -197,8 +198,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 			).Printf(
 				" - Unusing spool #%d [%s - %s] (%.1fg of filament) - %.1fg -> %.1fg remaining.\n",
 				u.SpoolId,
-				spool.Filament.Name,
-				spool.Filament.Vendor.Name,
+				models.Sanitize(spool.Filament.Name),
+				models.Sanitize(spool.Filament.Vendor.Name),
 				u.Amount,
 				spool.RemainingWeight,
 				remaining,
@@ -211,8 +212,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 			).Printf(
 				" - Marking spool #%d [%s - %s] as used (%.1fg of filament) - %.1fg -> %.1fg remaining.\n",
 				u.SpoolId,
-				spool.Filament.Name,
-				spool.Filament.Vendor.Name,
+				models.Sanitize(spool.Filament.Name),
+				models.Sanitize(spool.Filament.Vendor.Name),
 				u.Amount,
 				spool.RemainingWeight,
 				remaining,

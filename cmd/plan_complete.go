@@ -158,9 +158,9 @@ var planCompleteCmd = &cobra.Command{
 			}
 
 			// Interactive usage recording
-			fmt.Printf("Updating filament usage for %s...\n", plan.Projects[choice.projIdx].Plates[choice.plateIdx].Name)
+			fmt.Printf("Updating filament usage for %s...\n", models.Sanitize(plan.Projects[choice.projIdx].Plates[choice.plateIdx].Name))
 			for _, req := range plan.Projects[choice.projIdx].Plates[choice.plateIdx].Needs {
-				fmt.Printf("Filament: %s. Amount used (default %.1fg): ", req.Name, req.Amount)
+				fmt.Printf("Filament: %s. Amount used (default %.1fg): ", models.Sanitize(req.Name), req.Amount)
 				var input string
 				fmt.Scanln(&input)
 				used := req.Amount
@@ -211,11 +211,11 @@ var planCompleteCmd = &cobra.Command{
 
 						if len(candidates) == 1 {
 							matchedSpool = &candidates[0]
-							fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n", matchedSpool.Id, matchedSpool.Filament.Name, matchedSpool.Location, matchedSpool.RemainingWeight, matchedSpool.RemainingWeight-used)
+							fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n", matchedSpool.Id, models.Sanitize(matchedSpool.Filament.Name), models.Sanitize(matchedSpool.Location), matchedSpool.RemainingWeight, matchedSpool.RemainingWeight-used)
 						} else if len(candidates) > 1 {
 							var items []string
 							for _, c := range candidates {
-								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg -> %.1fg remaining", c.Id, c.Filament.Name, c.Location, c.RemainingWeight, c.RemainingWeight-used))
+								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg -> %.1fg remaining", c.Id, models.Sanitize(c.Filament.Name), models.Sanitize(c.Location), c.RemainingWeight, c.RemainingWeight-used))
 							}
 							promptSpool := promptui.Select{
 								Label:             fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),

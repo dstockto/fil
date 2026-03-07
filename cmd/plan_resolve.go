@@ -81,14 +81,14 @@ var planResolveCmd = &cobra.Command{
 						}
 						spools, err := apiClient.FindSpoolsByName(ctx, need.Name, nil, query)
 						if err != nil {
-							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", models.Sanitize(need.Name), models.Sanitize(need.Material), path)
 							fmt.Printf("  Error searching Spoolman: %v\n", err)
 							continue
 						}
 
 						if len(spools) == 0 {
-							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
-							fmt.Printf("  No matches found for '%s' '%s'. Choosing from full list...\n", need.Name, need.Material)
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", models.Sanitize(need.Name), models.Sanitize(need.Material), path)
+							fmt.Printf("  No matches found for '%s' '%s'. Choosing from full list...\n", models.Sanitize(need.Name), models.Sanitize(need.Material))
 							spools, err = apiClient.FindSpoolsByName(ctx, "*", nil, query)
 							if err != nil {
 								fmt.Printf("  Error fetching all filaments: %v\n", err)
@@ -128,11 +128,11 @@ var planResolveCmd = &cobra.Command{
 							// Actually, if it was found by FindSpoolsByName(need.Name), and it's unique, it's safe.
 							selectedId = matchIds[0]
 						} else {
-							fmt.Printf("Resolving filament for: %s %s (%s)\n", need.Name, need.Material, path)
+							fmt.Printf("Resolving filament for: %s %s (%s)\n", models.Sanitize(need.Name), models.Sanitize(need.Material), path)
 							var items []string
 							for _, id := range matchIds {
 								m := matches[id]
-								items = append(items, fmt.Sprintf("%s - %s (%s) [#%d]", m.vendor, m.name, m.mat, id))
+								items = append(items, fmt.Sprintf("%s - %s (%s) [#%d]", models.Sanitize(m.vendor), models.Sanitize(m.name), models.Sanitize(m.mat), id))
 							}
 							prompt := promptui.Select{
 								Label:             "Select matching filament",

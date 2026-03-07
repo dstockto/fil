@@ -109,7 +109,7 @@ var planCheckCmd = &cobra.Command{
 						} else if req.FilamentID != 0 && needs[key].name != req.Name {
 							// If the same ID is used with different names, we should probably let the user know
 							// but we will continue to aggregate them as they are technically the same filament ID
-							fmt.Printf("Note: Filament ID %d is used for both '%s' and '%s'. Aggregating needs.\n", req.FilamentID, needs[key].name, req.Name)
+							fmt.Printf("Note: Filament ID %d is used for both '%s' and '%s'. Aggregating needs.\n", req.FilamentID, models.Sanitize(needs[key].name), models.Sanitize(req.Name))
 						}
 						needs[key].amount += req.Amount
 
@@ -261,11 +261,11 @@ var planCheckCmd = &cobra.Command{
 		if !byProject {
 			for key, n := range needs {
 				d := displayInfo[key]
-				fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(n.name, 30), n.amount, d.onHand, d.displayStatus, d.loaded)
+				fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), n.amount, d.onHand, d.displayStatus, d.loaded)
 
 				if verbose {
 					for _, p := range n.projects {
-						fmt.Printf("    - %s (%.1fg)\n", p.projectName, p.amount)
+						fmt.Printf("    - %s (%.1fg)\n", models.Sanitize(p.projectName), p.amount)
 					}
 				}
 			}
@@ -293,10 +293,10 @@ var planCheckCmd = &cobra.Command{
 			}
 
 			for _, projName := range projectOrder {
-				fmt.Printf("\nProject: %s\n", projName)
+				fmt.Printf("\nProject: %s\n", models.Sanitize(projName))
 				for _, entry := range projectNeeds[projName] {
 					d := displayInfo[entry.key]
-					fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(entry.need.name, 30), entry.amount, d.onHand, d.displayStatus, d.loaded)
+					fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(entry.need.name), 30), entry.amount, d.onHand, d.displayStatus, d.loaded)
 				}
 			}
 		}
@@ -321,9 +321,9 @@ var planCheckCmd = &cobra.Command{
 
 			for _, projName := range projectNames {
 				ws := warningsByProject[projName]
-				fmt.Printf("%s Project '%s' has filaments with 0 amount that may not be set up:\n", warningLabel, projName)
+				fmt.Printf("%s Project '%s' has filaments with 0 amount that may not be set up:\n", warningLabel, models.Sanitize(projName))
 				for _, w := range ws {
-					fmt.Printf("  - %s (Plate: %s, Plan: %s)\n", w.filament, w.plateName, w.planPath)
+					fmt.Printf("  - %s (Plate: %s, Plan: %s)\n", models.Sanitize(w.filament), models.Sanitize(w.plateName), w.planPath)
 				}
 			}
 		}
