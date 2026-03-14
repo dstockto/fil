@@ -18,7 +18,7 @@ var hexColorPattern = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
 
 var newFilamentCmd = &cobra.Command{
 	Use:     "filament",
-	Aliases: []string{"fil"},
+	Aliases: []string{"fil", "f"},
 	Short:   "Create a new filament definition in Spoolman",
 	Long:    `Create a new filament definition by specifying name, vendor, material, color, and physical properties.`,
 	RunE:    runNewFilament,

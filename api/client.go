@@ -31,6 +31,8 @@ type SpoolmanAPI interface {
 	GetVendors(ctx context.Context) ([]models.Vendor, error)
 	CreateVendor(ctx context.Context, name string) (*models.Vendor, error)
 	CreateFilament(ctx context.Context, filament models.CreateFilamentRequest) (*models.FilamentResponse, error)
+	GetFilaments(ctx context.Context) ([]models.FilamentResponse, error)
+	CreateSpool(ctx context.Context, spool models.CreateSpoolRequest) (*models.FindSpool, error)
 }
 
 type Client struct {
@@ -608,6 +610,72 @@ func (c Client) CreateFilament(ctx context.Context, filament models.CreateFilame
 	var result models.FilamentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode filament response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetFilaments fetches all filaments from Spoolman.
+func (c Client) GetFilaments(ctx context.Context) ([]models.FilamentResponse, error) {
+	endpoint := c.base + "/api/v1/filament"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var out []models.FilamentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode filaments response: %w", err)
+	}
+
+	return out, nil
+}
+
+// CreateSpool creates a new spool in Spoolman.
+func (c Client) CreateSpool(ctx context.Context, spool models.CreateSpoolRequest) (*models.FindSpool, error) {
+	endpoint := c.base + "/api/v1/spool"
+
+	jsonBody, err := json.Marshal(spool)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var result models.FindSpool
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode spool response: %w", err)
 	}
 
 	return &result, nil

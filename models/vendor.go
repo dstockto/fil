@@ -34,3 +34,10 @@ type FilamentResponse struct {
 	Diameter float64 `json:"diameter"`
 	Price    float64 `json:"price"`
 }
+
+// CreateSpoolRequest holds the fields needed to create a new spool.
+type CreateSpoolRequest struct {
+	FilamentId int     `json:"filament_id"`
+	Price      float64 `json:"price,omitempty"`
+	Location   string  `json:"location,omitempty"`
+}
