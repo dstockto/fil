@@ -11,8 +11,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var planNewCmd = &cobra.Command{
-	Use:     "new [filename]",
+var newPlanCmd = &cobra.Command{
+	Use:     "plan [filename]",
+	Aliases: []string{"p"},
 	Short:   "Create a new template plan file in the current directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
@@ -132,6 +133,6 @@ var planNewCmd = &cobra.Command{
 }
 
 func init() {
-	planCmd.AddCommand(planNewCmd)
-	planNewCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
+	newCmd.AddCommand(newPlanCmd)
+	newPlanCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
 }
