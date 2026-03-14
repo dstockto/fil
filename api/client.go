@@ -28,6 +28,9 @@ type SpoolmanAPI interface {
 	GetSettings(ctx context.Context) (map[string]SettingEntry, error)
 	PatchSettings(ctx context.Context, fields map[string]any) error
 	PostSettingObject(ctx context.Context, key string, obj any) error
+	GetVendors(ctx context.Context) ([]models.Vendor, error)
+	CreateVendor(ctx context.Context, name string) (*models.Vendor, error)
+	CreateFilament(ctx context.Context, filament models.CreateFilamentRequest) (*models.FilamentResponse, error)
 }
 
 type Client struct {
@@ -506,4 +509,106 @@ func (c Client) PostSettingObject(ctx context.Context, key string, obj any) erro
 
 	// Otherwise, return the original error
 	return fmt.Errorf("api error: status %d: %s", status, errText)
+}
+
+// GetVendors fetches all vendors from Spoolman.
+func (c Client) GetVendors(ctx context.Context) ([]models.Vendor, error) {
+	endpoint := c.base + "/api/v1/vendor"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var out []models.Vendor
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode vendors response: %w", err)
+	}
+
+	return out, nil
+}
+
+// CreateVendor creates a new vendor in Spoolman.
+func (c Client) CreateVendor(ctx context.Context, name string) (*models.Vendor, error) {
+	endpoint := c.base + "/api/v1/vendor"
+
+	jsonBody, err := json.Marshal(map[string]string{"name": name})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var vendor models.Vendor
+	if err := json.NewDecoder(resp.Body).Decode(&vendor); err != nil {
+		return nil, fmt.Errorf("failed to decode vendor response: %w", err)
+	}
+
+	return &vendor, nil
+}
+
+// CreateFilament creates a new filament definition in Spoolman.
+func (c Client) CreateFilament(ctx context.Context, filament models.CreateFilamentRequest) (*models.FilamentResponse, error) {
+	endpoint := c.base + "/api/v1/filament"
+
+	jsonBody, err := json.Marshal(filament)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var result models.FilamentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode filament response: %w", err)
+	}
+
+	return &result, nil
 }
