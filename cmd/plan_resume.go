@@ -1,12 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/dstockto/fil/api"
 	"github.com/spf13/cobra"
 )
 
@@ -15,52 +15,40 @@ var planResumeCmd = &cobra.Command{
 	Aliases: []string{"res"},
 	Short:   "Move a plan file from the pause directory back to the active plans directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || Cfg.PauseDir == "" || Cfg.PlansDir == "" {
-			return fmt.Errorf("pause_dir and plans_dir must be configured in config.json")
+		if Cfg == nil || (Cfg.PlansServer == "" && (Cfg.PauseDir == "" || Cfg.PlansDir == "")) {
+			return fmt.Errorf("pause_dir and plans_dir (or plans_server) must be configured in config.json")
 		}
 
-		var path string
+		var dp *DiscoveredPlan
 		if len(args) > 0 {
-			path = args[0]
+			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
 		} else {
 			plans, err := discoverPlansWithFilter(false, true)
 			if err != nil {
 				return err
 			}
-			if len(plans) == 0 {
-				return fmt.Errorf("no paused plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan file to resume",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
+			dp, err = selectPlan("Select plan file to resume", plans)
+			if err != nil {
+				return err
 			}
 		}
 
-		dest := filepath.Join(Cfg.PlansDir, filepath.Base(path))
-		err := os.Rename(path, dest)
+		if dp.Remote {
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			if err := client.ResumePlan(context.Background(), dp.RemoteName); err != nil {
+				return fmt.Errorf("failed to resume remote plan: %w", err)
+			}
+			fmt.Printf("Resumed %s\n", dp.DisplayName)
+			return nil
+		}
+
+		dest := filepath.Join(Cfg.PlansDir, filepath.Base(dp.Path))
+		err := os.Rename(dp.Path, dest)
 		if err != nil {
 			return fmt.Errorf("failed to move file: %w", err)
 		}
 
-		fmt.Printf("Moved %s to %s\n", FormatPlanPath(path), FormatPlanPath(dest))
+		fmt.Printf("Moved %s to %s\n", dp.DisplayName, FormatPlanPath(dest))
 		return nil
 	},
 }

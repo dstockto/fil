@@ -23,50 +23,33 @@ var planResolveCmd = &cobra.Command{
 		apiClient := api.NewClient(Cfg.ApiBase)
 		ctx := cmd.Context()
 
-		var path string
+		var dp *DiscoveredPlan
 		if len(args) > 0 {
-			path = args[0]
+			dp = &DiscoveredPlan{Path: args[0]}
+			data, err := os.ReadFile(args[0])
+			if err != nil {
+				return err
+			}
+			var plan models.PlanFile
+			if err := yaml.Unmarshal(data, &plan); err != nil {
+				return err
+			}
+			plan.DefaultStatus()
+			dp.Plan = plan
+			dp.DisplayName = FormatPlanPath(args[0])
 		} else {
 			plans, err := discoverPlans()
 			if err != nil {
 				return err
 			}
-			if len(plans) == 0 {
-				return fmt.Errorf("no plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan file to resolve",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
+			dp, err = selectPlan("Select plan file to resolve", plans)
+			if err != nil {
+				return err
 			}
 		}
 
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var plan models.PlanFile
-		if err := yaml.Unmarshal(data, &plan); err != nil {
-			return err
-		}
-		plan.DefaultStatus()
+		plan := dp.Plan
+		path := dp.DisplayName
 
 		modified := false
 		for i := range plan.Projects {
@@ -183,11 +166,7 @@ var planResolveCmd = &cobra.Command{
 		}
 
 		if modified {
-			out, err := yaml.Marshal(plan)
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(path, out, 0644)
+			return savePlan(*dp, plan)
 		}
 
 		fmt.Println("No changes needed.")

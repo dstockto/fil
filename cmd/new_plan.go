@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -103,9 +105,29 @@ var newPlanCmd = &cobra.Command{
 
 		fmt.Printf("Created new plan: %s\n", FormatPlanPath(filename))
 
-		// Check if we should move it to central Location
+		// Check if we should move it to central location
 		moveToCentral, _ := cmd.Flags().GetBool("move")
 		if moveToCentral {
+			// If plans_server is configured, upload to server
+			if Cfg != nil && Cfg.PlansServer != "" {
+				data, readErr := os.ReadFile(filename)
+				if readErr != nil {
+					return fmt.Errorf("failed to read file for upload: %w", readErr)
+				}
+
+				client := api.NewPlanServerClient(Cfg.PlansServer)
+				if uploadErr := client.PutPlan(context.Background(), filename, data); uploadErr != nil {
+					return fmt.Errorf("failed to upload plan to server: %w", uploadErr)
+				}
+
+				if removeErr := os.Remove(filename); removeErr != nil {
+					fmt.Printf("Warning: uploaded to server but failed to remove local file: %v\n", removeErr)
+				}
+
+				fmt.Printf("Moved %s to <server>/%s\n", FormatPlanPath(filename), filename)
+				return nil
+			}
+
 			if Cfg == nil || Cfg.PlansDir == "" {
 				fmt.Println("Warning: plans_dir not configured, cannot move to central Location.")
 				return nil

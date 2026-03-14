@@ -37,6 +37,7 @@ type Config struct {
 	PlansDir         string                      `json:"plans_dir"`
 	ArchiveDir       string                      `json:"archive_dir"`
 	PauseDir         string                      `json:"pause_dir"`
+	PlansServer      string                      `json:"plans_server"`
 }
 
 // Cfg holds the loaded configuration and is available to all commands.
@@ -258,5 +259,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.PauseDir != "" {
 		dst.PauseDir = src.PauseDir
+	}
+
+	if src.PlansServer != "" {
+		dst.PlansServer = src.PlansServer
 	}
 }

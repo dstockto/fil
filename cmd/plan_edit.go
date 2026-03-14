@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/dstockto/fil/api"
 	"github.com/spf13/cobra"
 )
 
@@ -15,38 +17,17 @@ var planEditCmd = &cobra.Command{
 	Aliases: []string{"ed", "e"},
 	Short:   "Edit an active plan file",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var path string
+		var dp *DiscoveredPlan
 		if len(args) > 0 {
-			path = args[0]
+			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
 		} else {
 			plans, err := discoverPlans()
 			if err != nil {
 				return err
 			}
-			if len(plans) == 0 {
-				return fmt.Errorf("no plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan file to edit",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
+			dp, err = selectPlan("Select plan file to edit", plans)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -71,17 +52,57 @@ var planEditCmd = &cobra.Command{
 			return fmt.Errorf("no editor found. Please set $VISUAL or $EDITOR environment variable")
 		}
 
+		editPath := dp.Path
+
+		// For remote plans, download to temp file, edit, then upload
+		if dp.Remote {
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			data, err := client.GetPlan(context.Background(), dp.RemoteName)
+			if err != nil {
+				return fmt.Errorf("failed to download remote plan: %w", err)
+			}
+
+			tmpDir, err := os.MkdirTemp("", "fil-edit-*")
+			if err != nil {
+				return fmt.Errorf("failed to create temp directory: %w", err)
+			}
+			defer func() { _ = os.RemoveAll(tmpDir) }()
+
+			editPath = filepath.Join(tmpDir, dp.RemoteName)
+			if err := os.WriteFile(editPath, data, 0644); err != nil {
+				return fmt.Errorf("failed to write temp file: %w", err)
+			}
+		}
+
 		// Handle editor with arguments (e.g. "code --wait")
 		parts := strings.Fields(editor)
 		editorCmd := parts[0]
-		editorArgs := append(parts[1:], path)
+		editorArgs := append(parts[1:], editPath)
 
 		c := exec.Command(editorCmd, editorArgs...)
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 
-		return c.Run()
+		if err := c.Run(); err != nil {
+			return err
+		}
+
+		// For remote plans, upload the edited file back
+		if dp.Remote {
+			data, err := os.ReadFile(editPath)
+			if err != nil {
+				return fmt.Errorf("failed to read edited file: %w", err)
+			}
+
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			if err := client.PutPlan(context.Background(), dp.RemoteName, data); err != nil {
+				return fmt.Errorf("failed to upload edited plan: %w", err)
+			}
+			fmt.Printf("Updated remote plan %s\n", dp.DisplayName)
+		}
+
+		return nil
 	},
 }
 

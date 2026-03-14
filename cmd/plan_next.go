@@ -52,7 +52,7 @@ var planNextCmd = &cobra.Command{
 			data, err := os.ReadFile(args[0])
 			if err == nil {
 				var p models.PlanFile
-				yaml.Unmarshal(data, &p)
+				_ = yaml.Unmarshal(data, &p)
 				discovered = append(discovered, DiscoveredPlan{Path: args[0], Plan: p})
 			}
 		} else {
@@ -506,15 +506,15 @@ var planNextCmd = &cobra.Command{
 				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, models.Sanitize(spoolToUnload.Filament.Name), models.Sanitize(targetLoc))
 				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
 				var input string
-				fmt.Scanln(&input)
+				_, _ = fmt.Scanln(&input)
 				if input != "" {
 					dspec, err := ParseDestSpec(input)
 					if err != nil {
 						fmt.Printf("  Error parsing location: %v. Moving to %s instead.\n", err, input)
-						apiClient.MoveSpool(ctx,spoolToUnload.Id, input)
+						_ = apiClient.MoveSpool(ctx, spoolToUnload.Id, input)
 					} else {
 						newLoc := dspec.Location
-						apiClient.MoveSpool(ctx,spoolToUnload.Id, newLoc)
+						_ = apiClient.MoveSpool(ctx, spoolToUnload.Id, newLoc)
 
 						// Also update locations_spoolorders if possible
 						orders, err := LoadLocationOrders(ctx, apiClient)
@@ -535,13 +535,9 @@ var planNextCmd = &cobra.Command{
 								list = append(list, spoolToUnload.Id)
 							}
 							orders[newLoc] = list
-							apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
+							_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
 						}
 					}
-				} else {
-					// Even if not moving to a new shelf, it's no longer in the printer
-					// We should probably explicitly clear the Location if it's being unloaded from a printer
-					// but the user might just want to move it.
 				}
 				// Remove from our local tracking of what's loaded
 				for loc, s := range loadedSpools {
@@ -554,9 +550,9 @@ var planNextCmd = &cobra.Command{
 			fmt.Printf("→ LOAD #%d (%s) into %s (currently at %s)\n", bestSpool.Id, models.Sanitize(bestSpool.Filament.Name), models.Sanitize(targetLoc), models.Sanitize(bestSpool.Location))
 			fmt.Printf("Press Enter once the swap is complete...")
 			var confirm string
-			fmt.Scanln(&confirm)
+			_, _ = fmt.Scanln(&confirm)
 
-			apiClient.MoveSpool(ctx,bestSpool.Id, targetLoc)
+			_ = apiClient.MoveSpool(ctx, bestSpool.Id, targetLoc)
 
 			// Update locations_spoolorders for LOAD
 			orders, err := LoadLocationOrders(ctx, apiClient)
@@ -569,7 +565,7 @@ var planNextCmd = &cobra.Command{
 					list = append(list, bestSpool.Id)
 				}
 				orders[targetLoc] = list
-				apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
+				_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
 			}
 
 			// Update our local tracking

@@ -1,5 +1,94 @@
 Fil is a command line tool for managing filament in a 3D printer using spoolman.
 
+# Building and Installing
+
+## Local build (same architecture)
+
+```bash
+go build -o fil ./
+```
+
+## Cross-compiling for Raspberry Pi
+
+Since fil uses pure Go SQLite (`modernc.org/sqlite`) with no CGO, cross-compilation works out of the box. No cross-compiler toolchain is needed.
+
+**Raspberry Pi 4/3 (64-bit OS):**
+```bash
+GOOS=linux GOARCH=arm64 go build -o fil-linux-arm64 ./
+```
+
+**Raspberry Pi 4/3 (32-bit OS) or older models:**
+```bash
+GOOS=linux GOARCH=arm GOARM=7 go build -o fil-linux-arm ./
+```
+
+> Not sure which? SSH into your Pi and run `uname -m`. If it says `aarch64`, use `arm64`. If it says `armv7l`, use `arm` with `GOARM=7`.
+
+## Installing on the Raspberry Pi
+
+Copy the binary to your Pi and make it executable:
+
+```bash
+scp fil-linux-arm64 pi@raspberrypi.local:~/fil
+ssh pi@raspberrypi.local 'chmod +x ~/fil && sudo mv ~/fil /usr/local/bin/fil'
+```
+
+Create a config file (e.g. `/home/pi/.config/fil/config.json`):
+
+```json
+{
+  "api_base": "http://localhost:7912",
+  "plans_dir": "/home/pi/plans",
+  "pause_dir": "/home/pi/plans/paused",
+  "archive_dir": "/home/pi/plans/archive"
+}
+```
+
+Adjust `api_base` to match your Spoolman instance.
+
+## Running `fil serve` as a systemd service
+
+To keep the plan server running on your Pi (and start it automatically on boot), create a systemd unit:
+
+```bash
+sudo tee /etc/systemd/system/fil-serve.service > /dev/null <<'EOF'
+[Unit]
+Description=Fil Plan Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/local/bin/fil serve --port 7654 --config /home/pi/.config/fil/config.json
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable fil-serve
+sudo systemctl start fil-serve
+```
+
+Check that it's running:
+
+```bash
+sudo systemctl status fil-serve
+curl http://localhost:7654/api/v1/plans
+```
+
+View logs with:
+
+```bash
+journalctl -u fil-serve -f
+```
+
 # Commands:
 
 ---
@@ -302,6 +391,78 @@ Project Management - Manage complex 3D printing projects involving multiple plat
 `fil plan complete [file]` - Mark a plate or project as completed and optionally record filament usage in Spoolman.
 
 `fil plan archive [file]` - Move completed plan files to the `archive_dir` configured in `config.json`.
+
+---
+
+## Centralized Plan Server
+
+If you run `fil` from multiple machines (e.g. a desktop and a laptop) but Spoolman lives on a Raspberry Pi, plans created on one machine are invisible from another. The `fil serve` command runs a lightweight HTTP server that centralizes plan storage so `fil plan` commands work from any machine.
+
+### Running the server
+
+Start the server on the machine where you want plans stored (typically alongside Spoolman):
+
+```bash
+fil serve --config /path/to/config.json
+```
+
+The config must have `plans_dir` set. `pause_dir` and `archive_dir` are optional but recommended. The server creates these directories if they don't exist.
+
+Flags:
+- `--port` (default `7654`): Port to listen on.
+- `--bind` (default `0.0.0.0`): Address to bind to.
+
+Example:
+```bash
+fil serve --port 7654
+```
+
+The server exposes a REST API under `/api/v1/plans` for plan CRUD and lifecycle operations (pause, resume, archive). Plans are stored and transferred as raw YAML.
+
+### Connecting clients
+
+On each client machine, add `plans_server` to your config.json pointing at the server:
+
+```json
+{
+  "api_base": "http://raspberrypi4.local:7013",
+  "plans_server": "http://raspberrypi4.local:7654"
+}
+```
+
+Once configured, all `fil plan` subcommands automatically discover and operate on remote plans:
+
+- `fil plan list` — shows both local and remote plans (remote plans display as `<server>/filename.yaml`)
+- `fil plan check` — aggregates filament needs from local and remote plans
+- `fil plan resolve` — resolves filament IDs in remote plans and saves back to server
+- `fil plan complete` — marks plates/projects done and saves back to server
+- `fil plan edit` — downloads a remote plan to a temp file, opens your editor, and uploads on close
+- `fil plan move` — uploads a local plan to the server (and removes the local copy)
+- `fil plan pause/resume/archive/delete` — performs lifecycle operations on the server
+- `fil plan reprint` — can reprint from server-archived plans
+- `fil new plan -m` — creates a plan locally, then uploads it to the server with `--move`
+
+### Behavior notes
+
+- **Local wins**: If a local plan has the same filename as a remote plan, the local copy takes precedence.
+- **Graceful degradation**: If the server is unreachable, a warning is printed to stderr and fil continues with local plans only.
+- **All business logic stays on the client**: The server is a thin YAML file storage layer. Resolve, check, next, and complete logic all run locally.
+
+### Quick verification
+
+```bash
+# Start the server
+fil serve --port 7654 --config /path/to/config.json
+
+# From another terminal (or machine), test with curl
+curl http://localhost:7654/api/v1/plans                    # list (should return [])
+curl -X PUT -d @my-project.yaml http://localhost:7654/api/v1/plans/my-project.yaml  # upload
+curl http://localhost:7654/api/v1/plans/my-project.yaml    # download
+
+# Or use fil directly with plans_server configured
+fil plan list
+fil plan check
+```
 
 ---
 

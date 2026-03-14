@@ -23,45 +23,28 @@ var planCompleteCmd = &cobra.Command{
 		apiClient := api.NewClient(Cfg.ApiBase)
 		ctx := cmd.Context()
 
-		var path string
+		var dp *DiscoveredPlan
 		if len(args) > 0 {
-			path = args[0]
+			dp = &DiscoveredPlan{Path: args[0]}
+			data, err := os.ReadFile(args[0])
+			if err != nil {
+				return err
+			}
+			var plan models.PlanFile
+			_ = yaml.Unmarshal(data, &plan)
+			plan.DefaultStatus()
+			dp.Plan = plan
+			dp.DisplayName = FormatPlanPath(args[0])
 		} else {
 			plans, _ := discoverPlans()
-			if len(plans) == 0 {
-				return fmt.Errorf("no plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan file",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
+			var err error
+			dp, err = selectPlan("Select plan file", plans)
+			if err != nil {
+				return err
 			}
 		}
 
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var plan models.PlanFile
-		yaml.Unmarshal(data, &plan)
-		plan.DefaultStatus()
+		plan := dp.Plan
 
 		// Select Project and Plate
 		var options []string
@@ -162,10 +145,10 @@ var planCompleteCmd = &cobra.Command{
 			for _, req := range plan.Projects[choice.projIdx].Plates[choice.plateIdx].Needs {
 				fmt.Printf("Filament: %s. Amount used (default %.1fg): ", models.Sanitize(req.Name), req.Amount)
 				var input string
-				fmt.Scanln(&input)
+				_, _ = fmt.Scanln(&input)
 				used := req.Amount
 				if input != "" {
-					fmt.Sscanf(input, "%f", &used)
+					_, _ = fmt.Sscanf(input, "%f", &used)
 				}
 
 				for used > 0 {
@@ -239,7 +222,7 @@ var planCompleteCmd = &cobra.Command{
 						if used > matchedSpool.RemainingWeight && matchedSpool.RemainingWeight > 0 {
 							fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", matchedSpool.Id, matchedSpool.RemainingWeight)
 							var confirm string
-							fmt.Scanln(&confirm)
+							_, _ = fmt.Scanln(&confirm)
 							if confirm == "" || strings.ToLower(confirm) == "y" {
 								amountToDeduct = matchedSpool.RemainingWeight
 							}
@@ -256,17 +239,17 @@ var planCompleteCmd = &cobra.Command{
 						// Fallback: ask for Spool ID
 						fmt.Printf("Enter Spool ID to deduct from (%.1fg remaining to account for, or leave blank to skip): ", used)
 						var spoolIdStr string
-						fmt.Scanln(&spoolIdStr)
+						_, _ = fmt.Scanln(&spoolIdStr)
 						if spoolIdStr != "" {
 							var sid int
-							fmt.Sscanf(spoolIdStr, "%d", &sid)
+							_, _ = fmt.Sscanf(spoolIdStr, "%d", &sid)
 							spool, err := apiClient.FindSpoolsById(ctx, sid)
 							if err == nil {
 								amountToDeduct := used
 								if used > spool.RemainingWeight && spool.RemainingWeight > 0 {
 									fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", spool.Id, spool.RemainingWeight)
 									var confirm string
-									fmt.Scanln(&confirm)
+									_, _ = fmt.Scanln(&confirm)
 									if confirm == "" || strings.ToLower(confirm) == "y" {
 										amountToDeduct = spool.RemainingWeight
 									}
@@ -280,7 +263,7 @@ var planCompleteCmd = &cobra.Command{
 								}
 							} else {
 								fmt.Printf("Error finding spool #%d: %v. Using %.1fg anyway (may result in negative weight if not found in spoolman correctly)\n", sid, err, used)
-								apiClient.UseFilament(ctx, sid, used)
+								_ = apiClient.UseFilament(ctx, sid, used)
 								used = 0
 							}
 						} else {
@@ -291,8 +274,7 @@ var planCompleteCmd = &cobra.Command{
 			}
 		}
 
-		out, _ := yaml.Marshal(plan)
-		os.WriteFile(path, out, 0644)
+		_ = savePlan(*dp, plan)
 		fmt.Println("Plan updated.")
 		return nil
 	},

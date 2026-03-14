@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/dstockto/fil/api"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -15,47 +16,22 @@ var planDeleteCmd = &cobra.Command{
 	Aliases: []string{"del"},
 	Short:   "Delete an active plan",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var path string
-		var displayName string
+		var dp *DiscoveredPlan
 		if len(args) > 0 {
-			path = args[0]
-			displayName = FormatPlanPath(path)
+			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
 		} else {
 			plans, err := discoverPlans()
 			if err != nil {
 				return err
 			}
-			if len(plans) == 0 {
-				return fmt.Errorf("no plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-				displayName = plans[0].DisplayName
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan to delete",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
-				displayName = plans[selectedIdx].DisplayName
+			dp, err = selectPlan("Select plan to delete", plans)
+			if err != nil {
+				return err
 			}
 		}
 
 		confirmPrompt := promptui.Prompt{
-			Label:     fmt.Sprintf("Are you sure you want to delete plan %s", displayName),
+			Label:     fmt.Sprintf("Are you sure you want to delete plan %s", dp.DisplayName),
 			IsConfirm: true,
 			Stdout:    NoBellStdout,
 		}
@@ -69,12 +45,18 @@ var planDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		err = os.Remove(path)
-		if err != nil {
-			return fmt.Errorf("failed to delete plan: %w", err)
+		if dp.Remote {
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			if err := client.DeletePlan(context.Background(), dp.RemoteName); err != nil {
+				return fmt.Errorf("failed to delete remote plan: %w", err)
+			}
+		} else {
+			if err := os.Remove(dp.Path); err != nil {
+				return fmt.Errorf("failed to delete plan: %w", err)
+			}
 		}
 
-		fmt.Printf("Plan %s deleted successfully.\n", displayName)
+		fmt.Printf("Plan %s deleted successfully.\n", dp.DisplayName)
 		return nil
 	},
 }

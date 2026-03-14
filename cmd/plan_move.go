@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/dstockto/fil/api"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -13,10 +15,10 @@ import (
 var planMoveCmd = &cobra.Command{
 	Use:     "move [file]",
 	Aliases: []string{"mv", "m"},
-	Short:   "Move a plan file to the central plans directory",
+	Short:   "Move a plan file to the central plans directory or server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || Cfg.PlansDir == "" {
-			return fmt.Errorf("plans_dir not configured in config.json")
+		if Cfg == nil || (Cfg.PlansDir == "" && Cfg.PlansServer == "") {
+			return fmt.Errorf("plans_dir or plans_server must be configured in config.json")
 		}
 
 		var path string
@@ -49,6 +51,26 @@ var planMoveCmd = &cobra.Command{
 				}
 				path = result
 			}
+		}
+
+		// If plans_server is configured, upload to server and remove local file
+		if Cfg.PlansServer != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file: %w", err)
+			}
+
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			if err := client.PutPlan(context.Background(), filepath.Base(path), data); err != nil {
+				return fmt.Errorf("failed to upload plan to server: %w", err)
+			}
+
+			if err := os.Remove(path); err != nil {
+				fmt.Printf("Warning: uploaded to server but failed to remove local file: %v\n", err)
+			}
+
+			fmt.Printf("Moved %s to <server>/%s\n", path, filepath.Base(path))
+			return nil
 		}
 
 		// Ensure plans dir exists

@@ -22,20 +22,31 @@ var planCheckCmd = &cobra.Command{
 		apiClient := api.NewClient(Cfg.ApiBase)
 		ctx := cmd.Context()
 
-		var paths []string
+		var discovered []DiscoveredPlan
 		if len(args) > 0 {
-			paths = append(paths, args...)
+			for _, arg := range args {
+				data, err := os.ReadFile(arg)
+				if err != nil {
+					fmt.Printf("Error: Failed to read plan file %s: %v\n", FormatPlanPath(arg), err)
+					continue
+				}
+				var plan models.PlanFile
+				if err := yaml.Unmarshal(data, &plan); err != nil {
+					fmt.Printf("Error: Failed to parse plan file %s: %v\n", FormatPlanPath(arg), err)
+					continue
+				}
+				plan.DefaultStatus()
+				discovered = append(discovered, DiscoveredPlan{Path: arg, DisplayName: FormatPlanPath(arg), Plan: plan})
+			}
 		} else {
-			plans, err := discoverPlans()
+			var err error
+			discovered, err = discoverPlans()
 			if err != nil {
 				return err
 			}
-			for _, p := range plans {
-				paths = append(paths, p.Path)
-			}
 		}
 
-		if len(paths) == 0 {
+		if len(discovered) == 0 {
 			fmt.Println("No plans found to check.")
 			return nil
 		}
@@ -64,18 +75,9 @@ var planCheckCmd = &cobra.Command{
 		}
 		var zeroWarnings []zeroAmountWarning
 
-		for _, path := range paths {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				fmt.Printf("Error: Failed to read plan file %s: %v\n", FormatPlanPath(path), err)
-				continue
-			}
-			var plan models.PlanFile
-			if err := yaml.Unmarshal(data, &plan); err != nil {
-				fmt.Printf("Error: Failed to parse plan file %s: %v\n", FormatPlanPath(path), err)
-				continue
-			}
-			plan.DefaultStatus()
+		for _, dp := range discovered {
+			plan := dp.Plan
+			displayPath := dp.DisplayName
 
 			for _, proj := range plan.Projects {
 				if proj.Status == "completed" {
@@ -91,7 +93,7 @@ var planCheckCmd = &cobra.Command{
 								projectName: proj.Name,
 								plateName:   plate.Name,
 								filament:    req.Name,
-								planPath:    FormatPlanPath(path),
+								planPath:    displayPath,
 							})
 						}
 						key := fmt.Sprintf("id:%d", req.FilamentID)

@@ -1,12 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/dstockto/fil/api"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +15,32 @@ var planPauseCmd = &cobra.Command{
 	Aliases: []string{"p"},
 	Short:   "Move a plan file to the pause directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || Cfg.PauseDir == "" {
+		if Cfg == nil || (Cfg.PauseDir == "" && Cfg.PlansServer == "") {
+			return fmt.Errorf("pause_dir (or plans_server) not configured in config.json")
+		}
+
+		var dp *DiscoveredPlan
+		if len(args) > 0 {
+			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
+		} else {
+			plans, _ := discoverPlans()
+			var err error
+			dp, err = selectPlan("Select plan file to pause", plans)
+			if err != nil {
+				return err
+			}
+		}
+
+		if dp.Remote {
+			client := api.NewPlanServerClient(Cfg.PlansServer)
+			if err := client.PausePlan(context.Background(), dp.RemoteName); err != nil {
+				return fmt.Errorf("failed to pause remote plan: %w", err)
+			}
+			fmt.Printf("Paused %s\n", dp.DisplayName)
+			return nil
+		}
+
+		if Cfg.PauseDir == "" {
 			return fmt.Errorf("pause_dir not configured in config.json")
 		}
 
@@ -24,45 +49,13 @@ var planPauseCmd = &cobra.Command{
 			_ = os.MkdirAll(Cfg.PauseDir, 0755)
 		}
 
-		var path string
-		if len(args) > 0 {
-			path = args[0]
-		} else {
-			plans, _ := discoverPlans()
-			if len(plans) == 0 {
-				return fmt.Errorf("no plans found")
-			}
-			if len(plans) == 1 {
-				path = plans[0].Path
-			} else {
-				var items []string
-				for _, p := range plans {
-					items = append(items, p.DisplayName)
-				}
-				prompt := promptui.Select{
-					Label:             "Select plan file to pause",
-					Items:             items,
-					Stdout:            NoBellStdout,
-					StartInSearchMode: true,
-					Searcher: func(input string, index int) bool {
-						return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-					},
-				}
-				selectedIdx, _, err := prompt.Run()
-				if err != nil {
-					return err
-				}
-				path = plans[selectedIdx].Path
-			}
-		}
-
-		dest := filepath.Join(Cfg.PauseDir, filepath.Base(path))
-		err := os.Rename(path, dest)
+		dest := filepath.Join(Cfg.PauseDir, filepath.Base(dp.Path))
+		err := os.Rename(dp.Path, dest)
 		if err != nil {
 			return fmt.Errorf("failed to move file: %w", err)
 		}
 
-		fmt.Printf("Moved %s to %s\n", FormatPlanPath(path), FormatPlanPath(dest))
+		fmt.Printf("Moved %s to %s\n", dp.DisplayName, FormatPlanPath(dest))
 		return nil
 	},
 }
