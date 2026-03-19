@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fatih/color"
 )
 
 const versionHeader = "X-Fil-Version"
@@ -55,10 +57,11 @@ func (c *PlanServerClient) checkVersionMismatch(resp *http.Response) {
 		return
 	}
 	c.warnOnce.Do(func() {
+		warn := color.New(color.FgRed, color.Bold).FprintfFunc()
 		if serverVersion > c.version {
-			fmt.Fprintf(os.Stderr, "Note: server is running fil %s (you have %s). Consider updating your client.\n", serverVersion, c.version)
+			warn(os.Stderr, "Note: server is running fil %s (you have %s). Consider updating your client.\n", serverVersion, c.version)
 		} else {
-			fmt.Fprintf(os.Stderr, "Note: server is running fil %s (you have %s). The server may need updating.\n", serverVersion, c.version)
+			warn(os.Stderr, "Note: server is running fil %s (you have %s). The server may need updating.\n", serverVersion, c.version)
 		}
 	})
 }
