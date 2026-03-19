@@ -60,7 +60,7 @@ var planMoveCmd = &cobra.Command{
 				return fmt.Errorf("failed to read file: %w", err)
 			}
 
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.PutPlan(context.Background(), filepath.Base(path), data); err != nil {
 				return fmt.Errorf("failed to upload plan to server: %w", err)
 			}

@@ -199,7 +199,7 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 
 	// Fetch remote plans from plan server if configured
 	if Cfg != nil && Cfg.PlansServer != "" {
-		client := api.NewPlanServerClient(Cfg.PlansServer, version)
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 		ctx := context.Background()
 
 		var statuses []string
@@ -268,7 +268,7 @@ func savePlan(dp DiscoveredPlan, plan models.PlanFile) error {
 		return err
 	}
 	if dp.Remote {
-		client := api.NewPlanServerClient(Cfg.PlansServer, version)
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 		return client.PutPlan(context.Background(), dp.RemoteName, out)
 	}
 	return os.WriteFile(dp.Path, out, 0644)

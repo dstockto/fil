@@ -26,7 +26,7 @@ func runNewSpool(cmd *cobra.Command, _ []string) error {
 		return errors.New("api endpoint not configured")
 	}
 
-	apiClient := api.NewClient(Cfg.ApiBase)
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	ctx := cmd.Context()
 
 	dryRun, _ := cmd.Flags().GetBool("dry-run")

@@ -56,7 +56,7 @@ var planEditCmd = &cobra.Command{
 
 		// For remote plans, download to temp file, edit, then upload
 		if dp.Remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			data, err := client.GetPlan(context.Background(), dp.RemoteName)
 			if err != nil {
 				return fmt.Errorf("failed to download remote plan: %w", err)
@@ -95,7 +95,7 @@ var planEditCmd = &cobra.Command{
 				return fmt.Errorf("failed to read edited file: %w", err)
 			}
 
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.PutPlan(context.Background(), dp.RemoteName, data); err != nil {
 				return fmt.Errorf("failed to upload edited plan: %w", err)
 			}

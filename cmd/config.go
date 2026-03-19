@@ -31,7 +31,7 @@ var configPullCmd = &cobra.Command{
 
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-		client := api.NewPlanServerClient(Cfg.PlansServer, version)
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 		data, err := client.GetSharedConfig(context.Background())
 		if err != nil {
 			return fmt.Errorf("failed to fetch shared config: %w", err)
@@ -92,7 +92,7 @@ var configPushCmd = &cobra.Command{
 			return nil
 		}
 
-		client := api.NewPlanServerClient(Cfg.PlansServer, version)
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 		if err := client.PutSharedConfig(context.Background(), data); err != nil {
 			return fmt.Errorf("failed to push shared config: %w", err)
 		}

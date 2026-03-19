@@ -86,7 +86,7 @@ func buildFindQuery(cmd *cobra.Command) (map[string]string, []api.SpoolFilter, e
 	}
 
 	if needed, err := cmd.Flags().GetBool("needed"); err == nil && needed {
-		apiClient := api.NewClient(Cfg.ApiBase)
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 		neededIDs, err := GetNeededFilamentIDs(cmd.Context(), apiClient)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get needed filament IDs: %w", err)
@@ -108,7 +108,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 		args = append(args, "*")
 	}
 
-	apiClient := api.NewClient(Cfg.ApiBase)
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 
 	var (
 		spools  []models.FindSpool

@@ -24,7 +24,7 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		return errors.New("apiClient endpoint not configured")
 	}
 
-	apiClient := api.NewClient(Cfg.ApiBase)
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	ctx := cmd.Context()
 
 	write, err := cmd.Flags().GetBool("write")

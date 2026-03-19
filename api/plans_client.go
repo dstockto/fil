@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,13 +34,21 @@ type PlanServerClient struct {
 }
 
 // NewPlanServerClient creates a new client for the plan server API.
-func NewPlanServerClient(base string, version string) *PlanServerClient {
+func NewPlanServerClient(base string, version string, tlsSkipVerify bool) *PlanServerClient {
+	client := http.Client{
+		Timeout: 10 * time.Second,
+	}
+	if tlsSkipVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // user-configured for local CA trust issues
+			},
+		}
+	}
 	return &PlanServerClient{
-		base:    strings.TrimRight(base, "/"),
-		version: version,
-		httpClient: http.Client{
-			Timeout: 10 * time.Second,
-		},
+		base:       strings.TrimRight(base, "/"),
+		version:    version,
+		httpClient: client,
 	}
 }
 

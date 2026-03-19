@@ -38,7 +38,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return errors.New("apiClient endpoint not configured")
 	}
 
-	apiClient := api.NewClient(Cfg.ApiBase)
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	ctx := cmd.Context()
 
 	dryRun, err := cmd.Flags().GetBool("dry-run")

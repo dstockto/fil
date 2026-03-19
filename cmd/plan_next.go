@@ -20,7 +20,7 @@ var planNextCmd = &cobra.Command{
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api endpoint not configured")
 		}
-		apiClient := api.NewClient(Cfg.ApiBase)
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 		ctx := cmd.Context()
 
 		// 1. Select Printer

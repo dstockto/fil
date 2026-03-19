@@ -48,7 +48,7 @@ var planReprintCmd = &cobra.Command{
 
 		// Remote archived plans
 		if Cfg.PlansServer != "" {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			summaries, err := client.ListPlans(context.Background(), "archived")
 			if err != nil {
 				fmt.Printf("Warning: could not fetch archived plans from server: %v\n", err)
@@ -97,7 +97,7 @@ var planReprintCmd = &cobra.Command{
 		var data []byte
 		var err error
 		if selected.remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			data, err = client.GetPlan(context.Background(), selected.remoteName, "archived")
 		} else {
 			data, err = os.ReadFile(selected.path)
@@ -166,7 +166,7 @@ var planReprintCmd = &cobra.Command{
 		}
 
 		if Cfg.PlansServer != "" {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.PutPlan(context.Background(), newFilename, updatedData); err != nil {
 				return fmt.Errorf("failed to upload reprinted plan: %w", err)
 			}

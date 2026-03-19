@@ -38,6 +38,7 @@ type Config struct {
 	ArchiveDir       string                      `json:"archive_dir"`
 	PauseDir         string                      `json:"pause_dir"`
 	PlansServer      string                      `json:"plans_server"`
+	TLSSkipVerify    bool                        `json:"tls_skip_verify"`
 	SharedConfigDir  string                      `json:"shared_config_dir"`
 }
 
@@ -306,6 +307,10 @@ func mergeInto(dst, src *Config) {
 
 	if src.PlansServer != "" {
 		dst.PlansServer = src.PlansServer
+	}
+
+	if src.TLSSkipVerify {
+		dst.TLSSkipVerify = true
 	}
 
 	if src.SharedConfigDir != "" {

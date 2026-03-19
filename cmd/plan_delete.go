@@ -46,7 +46,7 @@ var planDeleteCmd = &cobra.Command{
 		}
 
 		if dp.Remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.DeletePlan(context.Background(), dp.RemoteName); err != nil {
 				return fmt.Errorf("failed to delete remote plan: %w", err)
 			}

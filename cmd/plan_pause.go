@@ -32,7 +32,7 @@ var planPauseCmd = &cobra.Command{
 		}
 
 		if dp.Remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version)
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.PausePlan(context.Background(), dp.RemoteName); err != nil {
 				return fmt.Errorf("failed to pause remote plan: %w", err)
 			}

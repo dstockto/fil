@@ -31,7 +31,7 @@ func runLow(cmd *cobra.Command, args []string) error {
 		args = append(args, "*")
 	}
 
-	apiClient := api.NewClient(Cfg.ApiBase)
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	ctx := cmd.Context()
 
 	// threshold (grams only)

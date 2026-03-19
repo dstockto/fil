@@ -60,7 +60,7 @@ var planArchiveCmd = &cobra.Command{
 
 			if allDone {
 				if dp.Remote {
-					client := api.NewPlanServerClient(Cfg.PlansServer, version)
+					client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 					if err := client.ArchivePlan(context.Background(), dp.RemoteName); err != nil {
 						fmt.Printf("  Error archiving remote plan %s: %v\n", dp.DisplayName, err)
 					} else {

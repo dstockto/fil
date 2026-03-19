@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,12 +45,20 @@ type SpoolFilter func(models.FindSpool) bool
 
 const defaultTimeout = 30 * time.Second
 
-func NewClient(base string) *Client {
+func NewClient(base string, tlsSkipVerify bool) *Client {
+	client := http.Client{
+		Timeout: defaultTimeout,
+	}
+	if tlsSkipVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // user-configured for local CA trust issues
+			},
+		}
+	}
 	return &Client{
-		base: base,
-		httpClient: http.Client{
-			Timeout: defaultTimeout,
-		},
+		base:       base,
+		httpClient: client,
 	}
 }
 
