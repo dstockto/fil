@@ -19,6 +19,7 @@ type PlanServer struct {
 	PlansDir   string
 	PauseDir   string
 	ArchiveDir string
+	ConfigDir  string
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -38,6 +39,8 @@ func (s *PlanServer) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/plans/{name}/pause", s.handlePausePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/resume", s.handleResumePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/archive", s.handleArchivePlan)
+	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
+	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	return mux
 }
 
@@ -297,6 +300,61 @@ func (s *PlanServer) handleArchivePlan(w http.ResponseWriter, r *http.Request) {
 	dest := filepath.Join(s.ArchiveDir, newFilename)
 	if err := os.Rename(src, dest); err != nil {
 		http.Error(w, fmt.Sprintf("failed to archive plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *PlanServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	if s.ConfigDir == "" {
+		http.Error(w, "config directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	path := filepath.Join(s.ConfigDir, "shared-config.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		http.Error(w, fmt.Sprintf("failed to read config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
+}
+
+func (s *PlanServer) handlePutConfig(w http.ResponseWriter, r *http.Request) {
+	if s.ConfigDir == "" {
+		http.Error(w, "config directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate that the body is valid JSON
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if err := os.MkdirAll(s.ConfigDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("failed to create config directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	path := filepath.Join(s.ConfigDir, "shared-config.json")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("failed to write config: %v", err), http.StatusInternalServerError)
 		return
 	}
 

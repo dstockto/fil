@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/dstockto/fil/server"
@@ -24,8 +25,16 @@ var serveCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetInt("port")
 		bind, _ := cmd.Flags().GetString("bind")
 
+		// Determine config directory for shared config storage
+		configDir := Cfg.SharedConfigDir
+		if configDir == "" {
+			if home, _ := os.UserHomeDir(); home != "" {
+				configDir = filepath.Join(home, ".config", "fil")
+			}
+		}
+
 		// Ensure directories exist
-		for _, dir := range []string{Cfg.PlansDir, Cfg.PauseDir, Cfg.ArchiveDir} {
+		for _, dir := range []string{Cfg.PlansDir, Cfg.PauseDir, Cfg.ArchiveDir, configDir} {
 			if dir == "" {
 				continue
 			}
@@ -38,6 +47,7 @@ var serveCmd = &cobra.Command{
 			PlansDir:   Cfg.PlansDir,
 			PauseDir:   Cfg.PauseDir,
 			ArchiveDir: Cfg.ArchiveDir,
+			ConfigDir:  configDir,
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)
@@ -63,6 +73,9 @@ var serveCmd = &cobra.Command{
 		}
 		if Cfg.ArchiveDir != "" {
 			fmt.Printf("  Archive dir: %s\n", Cfg.ArchiveDir)
+		}
+		if configDir != "" {
+			fmt.Printf("  Config dir:  %s\n", configDir)
 		}
 
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {

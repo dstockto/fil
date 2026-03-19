@@ -24,10 +24,16 @@ func setupTestServer(t *testing.T) (*PlanServer, string) {
 		}
 	}
 
+	configDir := filepath.Join(base, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
 	s := &PlanServer{
 		PlansDir:   plansDir,
 		PauseDir:   pauseDir,
 		ArchiveDir: archiveDir,
+		ConfigDir:  configDir,
 	}
 	return s, base
 }
@@ -335,5 +341,81 @@ func TestResumePlanNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetConfigEmpty(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("expected application/json, got %s", w.Header().Get("Content-Type"))
+	}
+	body := strings.TrimSpace(w.Body.String())
+	if body != "{}" {
+		t.Fatalf("expected empty JSON object, got %s", body)
+	}
+}
+
+func TestPutAndGetConfig(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	configJSON := `{"api_base":"http://spoolman:7912","location_aliases":{"A":"AMS A"}}`
+
+	// PUT
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader(configJSON))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("PUT expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d", w.Code)
+	}
+	body := strings.TrimSpace(w.Body.String())
+	if body != configJSON {
+		t.Fatalf("body mismatch:\ngot:  %s\nwant: %s", body, configJSON)
+	}
+}
+
+func TestPutConfigInvalidJSON(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader("not json"))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetConfigNoConfigDir(t *testing.T) {
+	s, _ := setupTestServer(t)
+	s.ConfigDir = ""
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }

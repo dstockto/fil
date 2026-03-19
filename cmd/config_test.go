@@ -109,6 +109,74 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestToSharedConfig(t *testing.T) {
+	cfg := &Config{
+		Database: "test.db",
+		ApiBase:  "http://spoolman:7912",
+		LocationAliases: map[string]string{
+			"A": "AMS A",
+		},
+		LowThresholds: map[string]float64{
+			"PLA": 100.0,
+		},
+		LowIgnore: []string{"OldSpool"},
+		Printers: map[string][]string{
+			"P1": {"A", "B"},
+		},
+		PlansDir:    "/plans",
+		PlansServer: "http://pi:7654",
+	}
+
+	shared := cfg.ToSharedConfig()
+
+	if shared.ApiBase != "http://spoolman:7912" {
+		t.Errorf("expected ApiBase %q, got %q", "http://spoolman:7912", shared.ApiBase)
+	}
+	if shared.LocationAliases["A"] != "AMS A" {
+		t.Errorf("expected LocationAliases[A] %q, got %q", "AMS A", shared.LocationAliases["A"])
+	}
+	if shared.LowThresholds["PLA"] != 100.0 {
+		t.Errorf("expected LowThresholds[PLA] 100.0, got %f", shared.LowThresholds["PLA"])
+	}
+	if len(shared.LowIgnore) != 1 || shared.LowIgnore[0] != "OldSpool" {
+		t.Errorf("expected LowIgnore [OldSpool], got %v", shared.LowIgnore)
+	}
+	if len(shared.Printers["P1"]) != 2 {
+		t.Errorf("expected Printers[P1] to have 2 elements, got %d", len(shared.Printers["P1"]))
+	}
+}
+
+func TestApplyTo(t *testing.T) {
+	dst := &Config{
+		Database: "local.db",
+		ApiBase:  "http://old:1234",
+		PlansDir: "/local/plans",
+	}
+
+	shared := SharedConfig{
+		ApiBase: "http://new:5678",
+		LocationAliases: map[string]string{
+			"X": "Location X",
+		},
+	}
+
+	shared.ApplyTo(dst)
+
+	if dst.ApiBase != "http://new:5678" {
+		t.Errorf("expected ApiBase %q, got %q", "http://new:5678", dst.ApiBase)
+	}
+	if dst.LocationAliases["X"] != "Location X" {
+		t.Errorf("expected LocationAliases[X] %q, got %q", "Location X", dst.LocationAliases["X"])
+	}
+	// Local-only fields should be preserved
+	if dst.Database != "local.db" {
+		t.Errorf("expected Database %q, got %q", "local.db", dst.Database)
+	}
+	if dst.PlansDir != "/local/plans" {
+		t.Errorf("expected PlansDir %q, got %q", "/local/plans", dst.PlansDir)
+	}
+}
+
 func TestExists(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "fil-exists-test")
 	if err != nil {

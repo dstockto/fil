@@ -38,6 +38,42 @@ type Config struct {
 	ArchiveDir       string                      `json:"archive_dir"`
 	PauseDir         string                      `json:"pause_dir"`
 	PlansServer      string                      `json:"plans_server"`
+	SharedConfigDir  string                      `json:"shared_config_dir"`
+}
+
+// SharedConfig contains only the fields that are synced between machines via the server.
+type SharedConfig struct {
+	ApiBase          string                      `json:"api_base,omitempty"`
+	LocationAliases  map[string]string           `json:"location_aliases,omitempty"`
+	LocationCapacity map[string]LocationCapacity `json:"location_capacity,omitempty"`
+	LowThresholds    map[string]float64          `json:"low_thresholds,omitempty"`
+	LowIgnore        []string                    `json:"low_ignore,omitempty"`
+	Printers         map[string][]string         `json:"printers,omitempty"`
+}
+
+// ToSharedConfig extracts the shared fields from a full Config.
+func (c *Config) ToSharedConfig() SharedConfig {
+	return SharedConfig{
+		ApiBase:          c.ApiBase,
+		LocationAliases:  c.LocationAliases,
+		LocationCapacity: c.LocationCapacity,
+		LowThresholds:    c.LowThresholds,
+		LowIgnore:        c.LowIgnore,
+		Printers:         c.Printers,
+	}
+}
+
+// ApplyTo merges shared config fields into a full Config using the same merge semantics.
+func (s SharedConfig) ApplyTo(dst *Config) {
+	src := &Config{
+		ApiBase:          s.ApiBase,
+		LocationAliases:  s.LocationAliases,
+		LocationCapacity: s.LocationCapacity,
+		LowThresholds:    s.LowThresholds,
+		LowIgnore:        s.LowIgnore,
+		Printers:         s.Printers,
+	}
+	mergeInto(dst, src)
 }
 
 // Cfg holds the loaded configuration and is available to all commands.
@@ -163,6 +199,13 @@ func LoadMergedConfig() (*Config, error) {
 // discoverConfigPaths returns existing config paths in merge order.
 func discoverConfigPaths() []string {
 	var out []string
+	// 0) Shared config pulled from server (lowest precedence)
+	if home, _ := os.UserHomeDir(); home != "" {
+		p := filepath.Join(home, ".config", "fil", "shared-config.json")
+		if exists(p) {
+			out = append(out, p)
+		}
+	}
 	// 1) HOME
 	if home, _ := os.UserHomeDir(); home != "" {
 		p := filepath.Join(home, ".config", "fil", "config.json")
@@ -263,5 +306,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.PlansServer != "" {
 		dst.PlansServer = src.PlansServer
+	}
+
+	if src.SharedConfigDir != "" {
+		dst.SharedConfigDir = src.SharedConfigDir
 	}
 }

@@ -154,6 +154,53 @@ func (c *PlanServerClient) ArchivePlan(ctx context.Context, name string) error {
 	return c.planAction(ctx, name, "archive")
 }
 
+// GetSharedConfig fetches the shared configuration from the server.
+func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) {
+	endpoint := c.base + "/api/v1/config"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// PutSharedConfig uploads a shared configuration to the server.
+func (c *PlanServerClient) PutSharedConfig(ctx context.Context, data []byte) error {
+	endpoint := c.base + "/api/v1/config"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return nil
+}
+
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
 
