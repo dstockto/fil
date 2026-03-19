@@ -66,7 +66,7 @@ func (c *PlanServerClient) checkVersionMismatch(resp *http.Response) {
 // do executes a request, injecting the version header and checking for version mismatch on the response.
 func (c *PlanServerClient) do(req *http.Request) (*http.Response, error) {
 	c.setVersionHeader(req)
-	resp, err := c.do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
