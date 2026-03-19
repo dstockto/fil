@@ -7,5 +7,6 @@ package main
 import "github.com/dstockto/fil/cmd"
 
 func main() {
+	cmd.SetVersion(Version)
 	cmd.Execute()
 }

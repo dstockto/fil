@@ -14,12 +14,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const versionHeader = "X-Fil-Version"
+
 // PlanServer handles HTTP requests for plan CRUD and lifecycle operations.
 type PlanServer struct {
 	PlansDir   string
 	PauseDir   string
 	ArchiveDir string
 	ConfigDir  string
+	Version    string
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -30,7 +33,7 @@ type PlanSummary struct {
 }
 
 // Routes registers all plan API routes on a new ServeMux using Go 1.22+ method routing.
-func (s *PlanServer) Routes() *http.ServeMux {
+func (s *PlanServer) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/plans", s.handleListPlans)
 	mux.HandleFunc("GET /api/v1/plans/{name}", s.handleGetPlan)
@@ -41,7 +44,23 @@ func (s *PlanServer) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/v1/plans/{name}/archive", s.handleArchivePlan)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
-	return mux
+	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
+	return s.versionMiddleware(mux)
+}
+
+// versionMiddleware adds the server's version header to every response.
+func (s *PlanServer) versionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.Version != "" {
+			w.Header().Set(versionHeader, s.Version)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *PlanServer) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": s.Version})
 }
 
 func (s *PlanServer) handleListPlans(w http.ResponseWriter, r *http.Request) {

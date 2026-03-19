@@ -48,6 +48,7 @@ var serveCmd = &cobra.Command{
 			PauseDir:   Cfg.PauseDir,
 			ArchiveDir: Cfg.ArchiveDir,
 			ConfigDir:  configDir,
+			Version:    version,
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)

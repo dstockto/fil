@@ -115,7 +115,7 @@ var newPlanCmd = &cobra.Command{
 					return fmt.Errorf("failed to read file for upload: %w", readErr)
 				}
 
-				client := api.NewPlanServerClient(Cfg.PlansServer)
+				client := api.NewPlanServerClient(Cfg.PlansServer, version)
 				if uploadErr := client.PutPlan(context.Background(), filename, data); uploadErr != nil {
 					return fmt.Errorf("failed to upload plan to server: %w", uploadErr)
 				}

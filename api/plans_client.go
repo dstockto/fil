@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
+
+const versionHeader = "X-Fil-Version"
 
 // PlanSummary represents a plan as returned by the plan server list endpoint.
 type PlanSummary struct {
@@ -21,17 +25,53 @@ type PlanSummary struct {
 // PlanServerClient communicates with the fil plan storage server.
 type PlanServerClient struct {
 	base       string
+	version    string
 	httpClient http.Client
+	warnOnce   sync.Once
 }
 
 // NewPlanServerClient creates a new client for the plan server API.
-func NewPlanServerClient(base string) *PlanServerClient {
+func NewPlanServerClient(base string, version string) *PlanServerClient {
 	return &PlanServerClient{
-		base: strings.TrimRight(base, "/"),
+		base:    strings.TrimRight(base, "/"),
+		version: version,
 		httpClient: http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+// setVersionHeader adds the client version header to an outgoing request.
+func (c *PlanServerClient) setVersionHeader(req *http.Request) {
+	if c.version != "" {
+		req.Header.Set(versionHeader, c.version)
+	}
+}
+
+// checkVersionMismatch reads the server's version header and warns once if it differs.
+func (c *PlanServerClient) checkVersionMismatch(resp *http.Response) {
+	serverVersion := resp.Header.Get(versionHeader)
+	if serverVersion == "" || serverVersion == c.version {
+		return
+	}
+	c.warnOnce.Do(func() {
+		if serverVersion > c.version {
+			fmt.Fprintf(os.Stderr, "Note: server is running fil %s (you have %s). Consider updating your client.\n", serverVersion, c.version)
+		} else {
+			fmt.Fprintf(os.Stderr, "Note: server is running fil %s (you have %s). The server may need updating.\n", serverVersion, c.version)
+		}
+	})
+}
+
+// do executes a request, injecting the version header and checking for version mismatch on the response.
+func (c *PlanServerClient) do(req *http.Request) (*http.Response, error) {
+	c.setVersionHeader(req)
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	c.checkVersionMismatch(resp)
+	return resp, nil
 }
 
 // ListPlans returns plan summaries. status can be "" (active), "paused", or "archived".
@@ -46,7 +86,7 @@ func (c *PlanServerClient) ListPlans(ctx context.Context, status string) ([]Plan
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -79,7 +119,7 @@ func (c *PlanServerClient) GetPlan(ctx context.Context, name string, status ...s
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -102,7 +142,7 @@ func (c *PlanServerClient) PutPlan(ctx context.Context, name string, yamlData []
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -125,7 +165,7 @@ func (c *PlanServerClient) DeletePlan(ctx context.Context, name string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -163,7 +203,7 @@ func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -187,7 +227,7 @@ func (c *PlanServerClient) PutSharedConfig(ctx context.Context, data []byte) err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("plan server request failed: %w", err)
 	}
@@ -209,7 +249,7 @@ func (c *PlanServerClient) planAction(ctx context.Context, name, action string) 
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("plan server request failed: %w", err)
 	}
