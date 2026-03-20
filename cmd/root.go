@@ -171,9 +171,8 @@ func init() {
 
 // LoadMergedConfig attempts to load and merge configs from standard locations when no explicit --config is provided.
 // Precedence (later overrides earlier):
-//  1. $HOME/.config/fil/config.json
-//  2. $XDG_CONFIG_HOME/fil/config.json
-//  3. ./config.json (current working directory)
+//  1. $HOME/.config/fil/shared-config.json (pulled from server)
+//  2. $HOME/.config/fil/config.json (local overrides)
 //
 // If none exist, returns (nil, nil).
 func LoadMergedConfig() (*Config, error) {
@@ -198,34 +197,21 @@ func LoadMergedConfig() (*Config, error) {
 
 // discoverConfigPaths returns existing config paths in merge order.
 func discoverConfigPaths() []string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return nil
+	}
+
+	configDir := filepath.Join(home, ".config", "fil")
 	var out []string
-	// 0) Shared config pulled from server (lowest precedence)
-	if home, _ := os.UserHomeDir(); home != "" {
-		p := filepath.Join(home, ".config", "fil", "shared-config.json")
-		if exists(p) {
-			out = append(out, p)
-		}
+
+	// 1) Shared config pulled from server (lowest precedence)
+	if p := filepath.Join(configDir, "shared-config.json"); exists(p) {
+		out = append(out, p)
 	}
-	// 1) HOME
-	if home, _ := os.UserHomeDir(); home != "" {
-		p := filepath.Join(home, ".config", "fil", "config.json")
-		if exists(p) {
-			out = append(out, p)
-		}
-	}
-	// 2) XDG
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		p := filepath.Join(xdg, "fil", "config.json")
-		if exists(p) {
-			out = append(out, p)
-		}
-	}
-	// 3) CWD
-	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		p := filepath.Join(cwd, "config.json")
-		if exists(p) {
-			out = append(out, p)
-		}
+	// 2) Local config (overrides shared)
+	if p := filepath.Join(configDir, "config.json"); exists(p) {
+		out = append(out, p)
 	}
 
 	return out
