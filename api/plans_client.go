@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +68,7 @@ func (c *PlanServerClient) checkVersionMismatch(resp *http.Response) {
 	}
 	c.warnOnce.Do(func() {
 		warn := color.New(color.FgRed, color.Bold).FprintfFunc()
-		if serverVersion > c.version {
+		if compareSemver(serverVersion, c.version) > 0 {
 			warn(os.Stderr, "Note: server is running fil %s (you have %s). Consider updating your client.\n", serverVersion, c.version)
 		} else {
 			warn(os.Stderr, "Note: server is running fil %s (you have %s). The server may need updating.\n", serverVersion, c.version)
@@ -251,6 +252,29 @@ func (c *PlanServerClient) PutSharedConfig(ctx context.Context, data []byte) err
 	}
 
 	return nil
+}
+
+// compareSemver compares two version strings numerically.
+// Returns >0 if a > b, <0 if a < b, 0 if equal.
+// Strips a leading "v" prefix and compares up to three numeric parts (major.minor.patch).
+// Non-numeric parts are treated as 0.
+func compareSemver(a, b string) int {
+	parse := func(v string) [3]int {
+		v = strings.TrimPrefix(v, "v")
+		parts := strings.SplitN(v, ".", 3)
+		var nums [3]int
+		for i := 0; i < len(parts) && i < 3; i++ {
+			nums[i], _ = strconv.Atoi(parts[i])
+		}
+		return nums
+	}
+	av, bv := parse(a), parse(b)
+	for i := 0; i < 3; i++ {
+		if av[i] != bv[i] {
+			return av[i] - bv[i]
+		}
+	}
+	return 0
 }
 
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
