@@ -8,7 +8,6 @@ import (
 
 func TestMergeInto(t *testing.T) {
 	dst := &Config{
-		Database: "default.db",
 		LocationAliases: map[string]string{
 			"A": "AMS A",
 			"B": "AMS B",
@@ -20,7 +19,6 @@ func TestMergeInto(t *testing.T) {
 	}
 
 	src := &Config{
-		Database: "new.db",
 		LocationAliases: map[string]string{
 			"B": "Box B",
 			"C": "Cabinet C",
@@ -33,10 +31,6 @@ func TestMergeInto(t *testing.T) {
 	}
 
 	mergeInto(dst, src)
-
-	if dst.Database != "new.db" {
-		t.Errorf("expected Database to be %q, got %q", "new.db", dst.Database)
-	}
 
 	if dst.ApiBase != "http://localhost:8000" {
 		t.Errorf("expected ApiBase to be %q, got %q", "http://localhost:8000", dst.ApiBase)
@@ -82,7 +76,6 @@ func TestLoadConfig(t *testing.T) {
 
 	configPath := filepath.Join(tmpDir, "config.json")
 	configContent := `{
-		"database": "test.db",
 		"api_base": "http://api.test",
 		"location_aliases": {
 			"T": "Test Location"
@@ -98,9 +91,6 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	if cfg.Database != "test.db" {
-		t.Errorf("expected Database %q, got %q", "test.db", cfg.Database)
-	}
 	if cfg.ApiBase != "http://api.test" {
 		t.Errorf("expected ApiBase %q, got %q", "http://api.test", cfg.ApiBase)
 	}
@@ -111,8 +101,7 @@ func TestLoadConfig(t *testing.T) {
 
 func TestToSharedConfig(t *testing.T) {
 	cfg := &Config{
-		Database: "test.db",
-		ApiBase:  "http://spoolman:7912",
+		ApiBase: "http://spoolman:7912",
 		LocationAliases: map[string]string{
 			"A": "AMS A",
 		},
@@ -148,8 +137,7 @@ func TestToSharedConfig(t *testing.T) {
 
 func TestApplyTo(t *testing.T) {
 	dst := &Config{
-		Database: "local.db",
-		ApiBase:  "http://old:1234",
+		ApiBase: "http://old:1234",
 		PlansDir: "/local/plans",
 	}
 
@@ -169,9 +157,6 @@ func TestApplyTo(t *testing.T) {
 		t.Errorf("expected LocationAliases[X] %q, got %q", "Location X", dst.LocationAliases["X"])
 	}
 	// Local-only fields should be preserved
-	if dst.Database != "local.db" {
-		t.Errorf("expected Database %q, got %q", "local.db", dst.Database)
-	}
 	if dst.PlansDir != "/local/plans" {
 		t.Errorf("expected PlansDir %q, got %q", "/local/plans", dst.PlansDir)
 	}

@@ -17,7 +17,6 @@ import (
 // Example at project root: config.json
 //
 //	{
-//	  "database": "spoolman.db",
 //	  "location_aliases": {"A": "AMS A", ...}
 //	}
 //
@@ -27,7 +26,6 @@ type LocationCapacity struct {
 }
 
 type Config struct {
-	Database         string                      `json:"database"`
 	LocationAliases  map[string]string           `json:"location_aliases"`
 	LocationCapacity map[string]LocationCapacity `json:"location_capacity"`
 	ApiBase          string                      `json:"api_base"`
@@ -237,10 +235,6 @@ func discoverConfigPaths() []string {
 func mergeInto(dst, src *Config) {
 	if src == nil || dst == nil {
 		return
-	}
-
-	if src.Database != "" {
-		dst.Database = src.Database
 	}
 
 	if src.ApiBase != "" {
