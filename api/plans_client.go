@@ -380,7 +380,7 @@ type CleanAssembliesResult struct {
 }
 
 func (c *PlanServerClient) CleanAssemblies(ctx context.Context, dryRun bool) (*CleanAssembliesResult, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/assemblies/clean?dry_run=%v", c.base, dryRun)
+	endpoint := fmt.Sprintf("%s/api/v1/plans/clean-assemblies?dry_run=%v", c.base, dryRun)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {

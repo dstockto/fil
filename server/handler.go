@@ -49,7 +49,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/plans/{name}/assembly", s.handleDeleteAssembly)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
-	mux.HandleFunc("POST /api/v1/assemblies/clean", s.handleCleanAssemblies)
+	mux.HandleFunc("POST /api/v1/plans/clean-assemblies", s.handleCleanAssemblies)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	return s.versionMiddleware(mux)
 }
