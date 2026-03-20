@@ -33,6 +33,22 @@ var newPlanCmd = &cobra.Command{
 			}
 			projectName = ToProjectName(strings.TrimSuffix(strings.TrimSuffix(filename, ".yaml"), ".yml"))
 		} else {
+			defaultName := projectName
+			if isInteractiveAllowed(false) {
+				namePrompt := promptui.Prompt{
+					Label:   "Plan name",
+					Default: defaultName,
+					Stdout:  NoBellStdout,
+				}
+				result, err := namePrompt.Run()
+				if err != nil {
+					return err
+				}
+				result = strings.TrimSpace(result)
+				if result != "" {
+					projectName = result
+				}
+			}
 			filename = projectName + ".yaml"
 			projectName = ToProjectName(projectName)
 		}
