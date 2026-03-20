@@ -244,9 +244,11 @@ func (s *PlanServer) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Best-effort cleanup of assembly PDF
+	// Only delete assembly PDF if no other plan references it
 	if assemblyFile != "" {
-		_ = os.Remove(filepath.Join(s.AssembliesDir, filepath.Base(assemblyFile)))
+		if refs := s.plansReferencingAssembly(assemblyFile); len(refs) == 0 {
+			_ = os.Remove(filepath.Join(s.AssembliesDir, filepath.Base(assemblyFile)))
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -537,10 +539,16 @@ func (s *PlanServer) handleDeleteAssembly(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	pdfPath := filepath.Join(s.AssembliesDir, filepath.Base(plan.Assembly))
+	assemblyFile := plan.Assembly
+	pdfPath := filepath.Join(s.AssembliesDir, filepath.Base(assemblyFile))
 	_ = os.Remove(pdfPath) // best-effort delete of the file
 
-	// Clear the assembly field in the plan YAML and save
+	// Clear the assembly field in this plan and all other plans referencing the same PDF
+	for _, ref := range s.plansReferencingAssembly(assemblyFile) {
+		s.clearAssemblyField(ref)
+	}
+
+	// Clear the requesting plan too (already deleted from plansDir so won't appear in refs)
 	plan.Assembly = ""
 	updatedData, err := yaml.Marshal(plan)
 	if err == nil {
@@ -548,4 +556,64 @@ func (s *PlanServer) handleDeleteAssembly(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// plansReferencingAssembly returns paths of all plan YAML files (across active,
+// paused, and archived directories) whose Assembly field matches the given filename.
+func (s *PlanServer) plansReferencingAssembly(assemblyFile string) []string {
+	var dirs []string
+	for _, d := range []string{s.PlansDir, s.PauseDir, s.ArchiveDir} {
+		if d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+
+	target := filepath.Base(assemblyFile)
+	var refs []string
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			if ext != ".yaml" && ext != ".yml" {
+				continue
+			}
+			path := filepath.Join(dir, e.Name())
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			var plan models.PlanFile
+			if err := yaml.Unmarshal(data, &plan); err != nil {
+				continue
+			}
+			if filepath.Base(plan.Assembly) == target {
+				refs = append(refs, path)
+			}
+		}
+	}
+	return refs
+}
+
+// clearAssemblyField removes the assembly reference from a plan YAML file.
+func (s *PlanServer) clearAssemblyField(planPath string) {
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return
+	}
+	var plan models.PlanFile
+	if err := yaml.Unmarshal(data, &plan); err != nil {
+		return
+	}
+	plan.Assembly = ""
+	updatedData, err := yaml.Marshal(plan)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(planPath, updatedData, 0644)
 }

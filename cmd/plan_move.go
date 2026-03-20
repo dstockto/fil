@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/models"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var planMoveCmd = &cobra.Command{
@@ -63,6 +65,25 @@ var planMoveCmd = &cobra.Command{
 			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 			if err := client.PutPlan(context.Background(), filepath.Base(path), data); err != nil {
 				return fmt.Errorf("failed to upload plan to server: %w", err)
+			}
+
+			// Upload assembly PDF if the plan references one
+			var plan models.PlanFile
+			if yamlErr := yaml.Unmarshal(data, &plan); yamlErr == nil && plan.Assembly != "" {
+				pdfPath := filepath.Join(filepath.Dir(path), plan.Assembly)
+				pdfData, readErr := os.ReadFile(pdfPath)
+				if readErr != nil {
+					fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", plan.Assembly, readErr)
+				} else if serverFilename, uploadErr := client.PutAssembly(context.Background(), filepath.Base(path), pdfData); uploadErr != nil {
+					fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
+				} else {
+					// Update the plan on the server with the server-side assembly filename
+					plan.Assembly = serverFilename
+					if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
+						_ = client.PutPlan(context.Background(), filepath.Base(path), updatedYAML)
+					}
+					fmt.Printf("Uploaded assembly instructions: %s\n", filepath.Base(pdfPath))
+				}
 			}
 
 			if err := os.Remove(path); err != nil {
