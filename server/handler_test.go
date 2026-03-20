@@ -18,7 +18,9 @@ func setupTestServer(t *testing.T) (*PlanServer, string) {
 	pauseDir := filepath.Join(base, "paused")
 	archiveDir := filepath.Join(base, "archive")
 
-	for _, d := range []string{plansDir, pauseDir, archiveDir} {
+	assembliesDir := filepath.Join(base, "assemblies")
+
+	for _, d := range []string{plansDir, pauseDir, archiveDir, assembliesDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -30,10 +32,11 @@ func setupTestServer(t *testing.T) (*PlanServer, string) {
 	}
 
 	s := &PlanServer{
-		PlansDir:   plansDir,
-		PauseDir:   pauseDir,
-		ArchiveDir: archiveDir,
-		ConfigDir:  configDir,
+		PlansDir:      plansDir,
+		PauseDir:      pauseDir,
+		ArchiveDir:    archiveDir,
+		ConfigDir:     configDir,
+		AssembliesDir: assembliesDir,
 	}
 	return s, base
 }
@@ -412,6 +415,196 @@ func TestGetConfigNoConfigDir(t *testing.T) {
 	mux := s.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestPutAndGetAssembly(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Create a plan first
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
+
+	pdfContent := "%PDF-1.4 fake pdf content for testing"
+
+	// PUT assembly
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader(pdfContent))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PUT assembly expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Decode the returned filename
+	var result struct {
+		Filename string `json:"filename"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&result)
+	if result.Filename == "" {
+		t.Fatal("expected filename in response")
+	}
+	if !strings.HasPrefix(result.Filename, "test-") || !strings.HasSuffix(result.Filename, ".pdf") {
+		t.Fatalf("expected timestamped filename like test-YYYYMMDD.pdf, got %s", result.Filename)
+	}
+
+	// Verify file exists on disk
+	if _, err := os.Stat(filepath.Join(s.AssembliesDir, result.Filename)); err != nil {
+		t.Fatalf("assembly PDF should exist on disk: %v", err)
+	}
+
+	// Update the plan YAML to reference the assembly so GET works
+	planWithAssembly := "assembly: " + result.Filename + "\n" + testPlanYAML
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
+
+	// GET assembly
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/plans/test.yaml/assembly", nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET assembly expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("expected application/pdf, got %s", w.Header().Get("Content-Type"))
+	}
+	if w.Header().Get("Content-Disposition") == "" {
+		t.Fatal("expected Content-Disposition header")
+	}
+	body, _ := io.ReadAll(w.Body)
+	if string(body) != pdfContent {
+		t.Fatalf("body mismatch")
+	}
+}
+
+func TestGetAssemblyNotFound(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans/nonexistent.yaml/assembly", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestDeleteAssembly(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Create assembly file and plan YAML referencing it
+	_ = os.WriteFile(filepath.Join(s.AssembliesDir, "test-20260319120000.pdf"), []byte("%PDF-1.4 test"), 0644)
+	planWithAssembly := "assembly: test-20260319120000.pdf\n" + testPlanYAML
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml/assembly", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE assembly expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify file is gone
+	if _, err := os.Stat(filepath.Join(s.AssembliesDir, "test-20260319120000.pdf")); !os.IsNotExist(err) {
+		t.Fatal("assembly file should have been deleted")
+	}
+}
+
+func TestDeleteAssemblyNotFound(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Plan exists but has no assembly
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml/assembly", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestPutAssemblyInvalidPDF(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader("not a pdf"))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestListPlansHasAssembly(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Write a plan with assembly field set
+	planWithAssembly := "assembly: test-20260319120000.pdf\n" + testPlanYAML
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var summaries []PlanSummary
+	_ = json.NewDecoder(w.Body).Decode(&summaries)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 plan, got %d", len(summaries))
+	}
+	if !summaries[0].HasAssembly {
+		t.Fatal("expected HasAssembly to be true")
+	}
+}
+
+func TestDeletePlanCleansUpAssembly(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Write plan with assembly reference and the actual PDF file
+	planWithAssembly := "assembly: test-20260319120000.pdf\n" + testPlanYAML
+	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
+	_ = os.WriteFile(filepath.Join(s.AssembliesDir, "test-20260319120000.pdf"), []byte("%PDF-1.4 test"), 0644)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE expected 204, got %d", w.Code)
+	}
+
+	// Verify plan and assembly are both gone
+	if _, err := os.Stat(filepath.Join(s.PlansDir, "test.yaml")); !os.IsNotExist(err) {
+		t.Fatal("plan file should have been deleted")
+	}
+	if _, err := os.Stat(filepath.Join(s.AssembliesDir, "test-20260319120000.pdf")); !os.IsNotExist(err) {
+		t.Fatal("assembly file should have been cleaned up")
+	}
+}
+
+func TestPutAssemblyNoAssembliesDir(t *testing.T) {
+	s, _ := setupTestServer(t)
+	s.AssembliesDir = ""
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader("%PDF-1.4 test"))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

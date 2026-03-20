@@ -9,6 +9,7 @@ import (
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -78,7 +79,42 @@ var newPlanCmd = &cobra.Command{
 			})
 		}
 
+		// Scan CWD for PDF files
+		var pdfFiles []string
+		for _, f := range files {
+			if f.IsDir() {
+				continue
+			}
+			if strings.ToLower(filepath.Ext(f.Name())) == ".pdf" {
+				pdfFiles = append(pdfFiles, f.Name())
+			}
+		}
+
+		var assemblyFile string
+		if len(pdfFiles) == 1 {
+			confirmPrompt := promptui.Prompt{
+				Label:     fmt.Sprintf("Attach assembly instructions? [%s]", pdfFiles[0]),
+				IsConfirm: true,
+				Stdout:    NoBellStdout,
+			}
+			if _, err := confirmPrompt.Run(); err == nil {
+				assemblyFile = pdfFiles[0]
+			}
+		} else if len(pdfFiles) > 1 {
+			items := append([]string{"None"}, pdfFiles...)
+			prompt := promptui.Select{
+				Label:  "Select PDF for assembly instructions",
+				Items:  items,
+				Stdout: NoBellStdout,
+			}
+			idx, _, err := prompt.Run()
+			if err == nil && idx > 0 {
+				assemblyFile = pdfFiles[idx-1]
+			}
+		}
+
 		plan := models.PlanFile{
+			Assembly: assemblyFile,
 			Projects: []models.Project{
 				{
 					Name:   projectName,
@@ -118,6 +154,23 @@ var newPlanCmd = &cobra.Command{
 				client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 				if uploadErr := client.PutPlan(context.Background(), filename, data); uploadErr != nil {
 					return fmt.Errorf("failed to upload plan to server: %w", uploadErr)
+				}
+
+				// Upload assembly PDF if one was selected
+				if assemblyFile != "" {
+					pdfData, readErr := os.ReadFile(assemblyFile)
+					if readErr != nil {
+						fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", assemblyFile, readErr)
+					} else if serverFilename, uploadErr := client.PutAssembly(context.Background(), filename, pdfData); uploadErr != nil {
+						fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
+					} else {
+						// Update the plan on the server with the server-side assembly filename
+						plan.Assembly = serverFilename
+						if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
+							_ = client.PutPlan(context.Background(), filename, updatedYAML)
+						}
+						fmt.Printf("Uploaded assembly instructions: %s\n", assemblyFile)
+					}
 				}
 
 				if removeErr := os.Remove(filename); removeErr != nil {

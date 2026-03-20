@@ -26,7 +26,11 @@ var planListCmd = &cobra.Command{
 		}
 
 		for _, p := range plans {
-			fmt.Printf("Plan: %s\n", p.DisplayName)
+			pdfIndicator := ""
+			if p.Plan.Assembly != "" {
+				pdfIndicator = " [PDF]"
+			}
+			fmt.Printf("Plan: %s%s\n", p.DisplayName, pdfIndicator)
 			for _, proj := range p.Plan.Projects {
 				todo := 0
 				total := len(proj.Plates)

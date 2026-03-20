@@ -36,6 +36,7 @@ func (p *Project) DefaultStatus() {
 }
 
 type PlanFile struct {
+	Assembly string    `yaml:"assembly,omitempty"`
 	Projects []Project `yaml:"projects"`
 }
 

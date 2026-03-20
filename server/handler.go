@@ -18,18 +18,20 @@ const versionHeader = "X-Fil-Version"
 
 // PlanServer handles HTTP requests for plan CRUD and lifecycle operations.
 type PlanServer struct {
-	PlansDir   string
-	PauseDir   string
-	ArchiveDir string
-	ConfigDir  string
-	Version    string
+	PlansDir      string
+	PauseDir      string
+	ArchiveDir    string
+	ConfigDir     string
+	AssembliesDir string
+	Version       string
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
 type PlanSummary struct {
-	Name       string `json:"name"`
-	Projects   int    `json:"projects"`
-	PlatesTodo int    `json:"plates_todo"`
+	Name        string `json:"name"`
+	Projects    int    `json:"projects"`
+	PlatesTodo  int    `json:"plates_todo"`
+	HasAssembly bool   `json:"has_assembly"`
 }
 
 // Routes registers all plan API routes on a new ServeMux using Go 1.22+ method routing.
@@ -42,6 +44,9 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/plans/{name}/pause", s.handlePausePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/resume", s.handleResumePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/archive", s.handleArchivePlan)
+	mux.HandleFunc("PUT /api/v1/plans/{name}/assembly", s.handlePutAssembly)
+	mux.HandleFunc("GET /api/v1/plans/{name}/assembly", s.handleGetAssembly)
+	mux.HandleFunc("DELETE /api/v1/plans/{name}/assembly", s.handleDeleteAssembly)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
@@ -128,9 +133,10 @@ func (s *PlanServer) handleListPlans(w http.ResponseWriter, r *http.Request) {
 		}
 
 		summaries = append(summaries, PlanSummary{
-			Name:       e.Name(),
-			Projects:   len(plan.Projects),
-			PlatesTodo: platesTodo,
+			Name:        e.Name(),
+			Projects:    len(plan.Projects),
+			PlatesTodo:  platesTodo,
+			HasAssembly: plan.Assembly != "",
 		})
 	}
 
@@ -217,6 +223,18 @@ func (s *PlanServer) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := filepath.Join(s.PlansDir, filepath.Base(name))
+
+	// Read plan before deleting to find assembly reference for cleanup
+	var assemblyFile string
+	if s.AssembliesDir != "" {
+		if planData, readErr := os.ReadFile(path); readErr == nil {
+			var plan models.PlanFile
+			if yamlErr := yaml.Unmarshal(planData, &plan); yamlErr == nil && plan.Assembly != "" {
+				assemblyFile = plan.Assembly
+			}
+		}
+	}
+
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "plan not found", http.StatusNotFound)
@@ -224,6 +242,11 @@ func (s *PlanServer) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, fmt.Sprintf("failed to delete plan: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Best-effort cleanup of assembly PDF
+	if assemblyFile != "" {
+		_ = os.Remove(filepath.Join(s.AssembliesDir, filepath.Base(assemblyFile)))
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -375,6 +398,153 @@ func (s *PlanServer) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		http.Error(w, fmt.Sprintf("failed to write config: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *PlanServer) handlePutAssembly(w http.ResponseWriter, r *http.Request) {
+	if s.AssembliesDir == "" {
+		http.Error(w, "assemblies directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "plan name required", http.StatusBadRequest)
+		return
+	}
+
+	// Limit upload to 100MB
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body (max 100MB)", http.StatusBadRequest)
+		return
+	}
+
+	// Validate PDF magic bytes
+	if len(data) < 4 || string(data[:4]) != "%PDF" {
+		http.Error(w, "uploaded file is not a valid PDF", http.StatusBadRequest)
+		return
+	}
+
+	if err := os.MkdirAll(s.AssembliesDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("failed to create assemblies directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate a timestamped filename to avoid conflicts across archive/reprint cycles
+	base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
+	timestamp := time.Now().Format("20060102150405")
+	pdfFilename := fmt.Sprintf("%s-%s.pdf", base, timestamp)
+
+	path := filepath.Join(s.AssembliesDir, pdfFilename)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("failed to write assembly PDF: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the server-side filename so the client can store it in the plan YAML
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{"filename": pdfFilename})
+}
+
+func (s *PlanServer) handleGetAssembly(w http.ResponseWriter, r *http.Request) {
+	if s.AssembliesDir == "" {
+		http.Error(w, "assemblies directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "plan name required", http.StatusBadRequest)
+		return
+	}
+
+	// Read the plan YAML to find which assembly file it references
+	planPath := filepath.Join(s.PlansDir, filepath.Base(name))
+	planData, err := os.ReadFile(planPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("failed to read plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var plan models.PlanFile
+	if err := yaml.Unmarshal(planData, &plan); err != nil {
+		http.Error(w, fmt.Sprintf("failed to parse plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if plan.Assembly == "" {
+		http.Error(w, "plan has no assembly", http.StatusNotFound)
+		return
+	}
+
+	pdfPath := filepath.Join(s.AssembliesDir, filepath.Base(plan.Assembly))
+	data, err := os.ReadFile(pdfPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "assembly file not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("failed to read assembly: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(plan.Assembly)))
+	_, _ = w.Write(data)
+}
+
+func (s *PlanServer) handleDeleteAssembly(w http.ResponseWriter, r *http.Request) {
+	if s.AssembliesDir == "" {
+		http.Error(w, "assemblies directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "plan name required", http.StatusBadRequest)
+		return
+	}
+
+	// Read the plan YAML to find which assembly file to delete
+	planPath := filepath.Join(s.PlansDir, filepath.Base(name))
+	planData, err := os.ReadFile(planPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("failed to read plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var plan models.PlanFile
+	if err := yaml.Unmarshal(planData, &plan); err != nil {
+		http.Error(w, fmt.Sprintf("failed to parse plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if plan.Assembly == "" {
+		http.Error(w, "plan has no assembly", http.StatusNotFound)
+		return
+	}
+
+	pdfPath := filepath.Join(s.AssembliesDir, filepath.Base(plan.Assembly))
+	_ = os.Remove(pdfPath) // best-effort delete of the file
+
+	// Clear the assembly field in the plan YAML and save
+	plan.Assembly = ""
+	updatedData, err := yaml.Marshal(plan)
+	if err == nil {
+		_ = os.WriteFile(planPath, updatedData, 0644)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -38,6 +38,7 @@ type Config struct {
 	PlansServer      string                      `json:"plans_server"`
 	TLSSkipVerify    bool                        `json:"tls_skip_verify"`
 	SharedConfigDir  string                      `json:"shared_config_dir"`
+	AssembliesDir    string                      `json:"assemblies_dir"`
 }
 
 // SharedConfig contains only the fields that are synced between machines via the server.
@@ -309,5 +310,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.SharedConfigDir != "" {
 		dst.SharedConfigDir = src.SharedConfigDir
+	}
+
+	if src.AssembliesDir != "" {
+		dst.AssembliesDir = src.AssembliesDir
 	}
 }

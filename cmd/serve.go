@@ -33,8 +33,14 @@ var serveCmd = &cobra.Command{
 			}
 		}
 
+		// Determine assemblies directory
+		assembliesDir := Cfg.AssembliesDir
+		if assembliesDir == "" {
+			assembliesDir = filepath.Join(Cfg.PlansDir, "..", "assemblies")
+		}
+
 		// Ensure directories exist
-		for _, dir := range []string{Cfg.PlansDir, Cfg.PauseDir, Cfg.ArchiveDir, configDir} {
+		for _, dir := range []string{Cfg.PlansDir, Cfg.PauseDir, Cfg.ArchiveDir, configDir, assembliesDir} {
 			if dir == "" {
 				continue
 			}
@@ -44,11 +50,12 @@ var serveCmd = &cobra.Command{
 		}
 
 		s := &server.PlanServer{
-			PlansDir:   Cfg.PlansDir,
-			PauseDir:   Cfg.PauseDir,
-			ArchiveDir: Cfg.ArchiveDir,
-			ConfigDir:  configDir,
-			Version:    version,
+			PlansDir:      Cfg.PlansDir,
+			PauseDir:      Cfg.PauseDir,
+			ArchiveDir:    Cfg.ArchiveDir,
+			ConfigDir:     configDir,
+			AssembliesDir: assembliesDir,
+			Version:       version,
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)
@@ -77,6 +84,9 @@ var serveCmd = &cobra.Command{
 		}
 		if configDir != "" {
 			fmt.Printf("  Config dir:  %s\n", configDir)
+		}
+		if assembliesDir != "" {
+			fmt.Printf("  Assemblies:  %s\n", assembliesDir)
 		}
 
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {

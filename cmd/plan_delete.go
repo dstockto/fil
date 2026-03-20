@@ -50,6 +50,8 @@ var planDeleteCmd = &cobra.Command{
 			if err := client.DeletePlan(context.Background(), dp.RemoteName); err != nil {
 				return fmt.Errorf("failed to delete remote plan: %w", err)
 			}
+			// Best-effort cleanup of assembly PDF
+			_ = client.DeleteAssembly(context.Background(), dp.RemoteName)
 		} else {
 			if err := os.Remove(dp.Path); err != nil {
 				return fmt.Errorf("failed to delete plan: %w", err)

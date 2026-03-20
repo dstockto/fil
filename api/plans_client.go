@@ -21,9 +21,10 @@ const versionHeader = "X-Fil-Version"
 
 // PlanSummary represents a plan as returned by the plan server list endpoint.
 type PlanSummary struct {
-	Name       string `json:"name"`
-	Projects   int    `json:"projects"`
-	PlatesTodo int    `json:"plates_todo"`
+	Name        string `json:"name"`
+	Projects    int    `json:"projects"`
+	PlatesTodo  int    `json:"plates_todo"`
+	HasAssembly bool   `json:"has_assembly"`
 }
 
 // PlanServerClient communicates with the fil plan storage server.
@@ -275,6 +276,101 @@ func compareSemver(a, b string) int {
 		}
 	}
 	return 0
+}
+
+// PutAssembly uploads a PDF assembly document for the given plan.
+// Returns the server-side filename that should be stored in the plan YAML's assembly field.
+func (c *PlanServerClient) PutAssembly(ctx context.Context, planName string, pdfData []byte) (string, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(pdfData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/pdf")
+
+	resp, err := c.do(req)
+	if err != nil {
+		return "", fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var result struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Filename, nil
+}
+
+// GetAssembly downloads the assembly PDF for a plan. Returns the PDF bytes and the filename from Content-Disposition.
+func (c *PlanServerClient) GetAssembly(ctx context.Context, planName string) ([]byte, string, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Extract filename from Content-Disposition header
+	filename := ""
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		// Parse "attachment; filename=\"foo.pdf\""
+		for _, part := range strings.Split(cd, ";") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "filename=") {
+				filename = strings.Trim(strings.TrimPrefix(part, "filename="), "\"")
+			}
+		}
+	}
+
+	return data, filename, nil
+}
+
+// DeleteAssembly removes the assembly PDF for a plan.
+func (c *PlanServerClient) DeleteAssembly(ctx context.Context, planName string) error {
+	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return nil
 }
 
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
