@@ -373,6 +373,39 @@ func (c *PlanServerClient) DeleteAssembly(ctx context.Context, planName string) 
 	return nil
 }
 
+// CleanAssembliesResult is the response from the clean-assemblies endpoint.
+type CleanAssembliesResult struct {
+	Orphans []string `json:"orphans"`
+	DryRun  bool     `json:"dry_run"`
+}
+
+func (c *PlanServerClient) CleanAssemblies(ctx context.Context, dryRun bool) (*CleanAssembliesResult, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/assemblies/clean?dry_run=%v", c.base, dryRun)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var result CleanAssembliesResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
 

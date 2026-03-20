@@ -49,6 +49,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/plans/{name}/assembly", s.handleDeleteAssembly)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
+	mux.HandleFunc("POST /api/v1/assemblies/clean", s.handleCleanAssemblies)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	return s.versionMiddleware(mux)
 }
@@ -556,6 +557,83 @@ func (s *PlanServer) handleDeleteAssembly(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *PlanServer) handleCleanAssemblies(w http.ResponseWriter, r *http.Request) {
+	if s.AssembliesDir == "" {
+		http.Error(w, "assemblies directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	dryRun := r.URL.Query().Get("dry_run") == "true"
+
+	// Collect all assembly filenames referenced by any plan
+	referenced := s.allReferencedAssemblies()
+
+	// Scan assemblies directory for files on disk
+	entries, err := os.ReadDir(s.AssembliesDir)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to read assemblies directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var orphans []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if _, ok := referenced[e.Name()]; !ok {
+			orphans = append(orphans, e.Name())
+		}
+	}
+
+	if !dryRun {
+		for _, name := range orphans {
+			_ = os.Remove(filepath.Join(s.AssembliesDir, name))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"orphans": orphans,
+		"dry_run": dryRun,
+	})
+}
+
+// allReferencedAssemblies returns a set of assembly filenames referenced by any
+// plan YAML across active, paused, and archived directories.
+func (s *PlanServer) allReferencedAssemblies() map[string]struct{} {
+	refs := map[string]struct{}{}
+	for _, dir := range []string{s.PlansDir, s.PauseDir, s.ArchiveDir} {
+		if dir == "" {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			if ext != ".yaml" && ext != ".yml" {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			var plan models.PlanFile
+			if err := yaml.Unmarshal(data, &plan); err != nil {
+				continue
+			}
+			if plan.Assembly != "" {
+				refs[filepath.Base(plan.Assembly)] = struct{}{}
+			}
+		}
+	}
+	return refs
 }
 
 // plansReferencingAssembly returns paths of all plan YAML files (across active,
