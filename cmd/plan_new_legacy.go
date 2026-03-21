@@ -12,16 +12,14 @@ var planNewLegacyCmd = &cobra.Command{
 	Hidden: true,
 	Short:  "Deprecated: use 'fil new plan' instead",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Fprintln(os.Stderr, "Deprecated: use 'fil new plan' instead")
-		move, _ := cmd.Flags().GetBool("move")
-		if move {
-			_ = newPlanCmd.Flags().Set("move", "true")
-		}
-		return newPlanCmd.RunE(newPlanCmd, args)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  *** 'fil plan new' has been removed. Use 'fil new plan' instead. ***")
+		fmt.Fprintln(os.Stderr, "")
+		os.Exit(1)
+		return nil
 	},
 }
 
 func init() {
 	planCmd.AddCommand(planNewLegacyCmd)
-	planNewLegacyCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
 }
