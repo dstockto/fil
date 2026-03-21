@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -17,8 +18,13 @@ import (
 var newPlanCmd = &cobra.Command{
 	Use:     "plan [filename]",
 	Aliases: []string{"p"},
-	Short:   "Create a new template plan file in the current directory",
+	Short:   "Create a new plan directly at its destination (server or plans_dir)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Deprecation notice for --move
+		if moveFlag, _ := cmd.Flags().GetBool("move"); moveFlag {
+			fmt.Println("Note: --move is no longer needed; plans are created directly at their destination.")
+		}
+
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("failed to get current working directory (it may have been deleted): %w", err)
@@ -140,83 +146,135 @@ var newPlanCmd = &cobra.Command{
 			},
 		}
 
-		// If filename already exists, try to avoid overwriting by adding a suffix or just erroring
-		if _, err := os.Stat(filename); err == nil {
-			return fmt.Errorf("file %s already exists", filename)
-		}
-
+		// Marshal plan to YAML
 		out, err := yaml.Marshal(plan)
 		if err != nil {
 			return err
 		}
 
-		err = os.WriteFile(filename, out, 0644)
-		if err != nil {
-			return err
-		}
+		ctx := context.Background()
 
-		fmt.Printf("Created new plan: %s\n", FormatPlanPath(filename))
+		// Track where we created the plan for --edit
+		var editPath string
+		var editRemote bool
 
-		// Check if we should move it to central location
-		moveToCentral, _ := cmd.Flags().GetBool("move")
-		if moveToCentral {
-			// If plans_server is configured, upload to server
-			if Cfg != nil && Cfg.PlansServer != "" {
-				data, readErr := os.ReadFile(filename)
+		if Cfg != nil && Cfg.PlansServer != "" {
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+			if err := client.PutPlan(ctx, filename, out); err != nil {
+				return fmt.Errorf("failed to upload plan to server: %w", err)
+			}
+
+			// Upload assembly PDF if selected
+			if assemblyFile != "" {
+				pdfData, readErr := os.ReadFile(assemblyFile)
 				if readErr != nil {
-					return fmt.Errorf("failed to read file for upload: %w", readErr)
-				}
-
-				client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-				if uploadErr := client.PutPlan(context.Background(), filename, data); uploadErr != nil {
-					return fmt.Errorf("failed to upload plan to server: %w", uploadErr)
-				}
-
-				// Upload assembly PDF if one was selected
-				if assemblyFile != "" {
-					pdfData, readErr := os.ReadFile(assemblyFile)
-					if readErr != nil {
-						fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", assemblyFile, readErr)
-					} else if serverFilename, uploadErr := client.PutAssembly(context.Background(), filename, pdfData); uploadErr != nil {
-						fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
-					} else {
-						// Update the plan on the server with the server-side assembly filename
-						plan.Assembly = serverFilename
-						if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
-							_ = client.PutPlan(context.Background(), filename, updatedYAML)
-						}
-						fmt.Printf("Uploaded assembly instructions: %s\n", assemblyFile)
+					fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", assemblyFile, readErr)
+				} else if serverFilename, uploadErr := client.PutAssembly(ctx, filename, pdfData); uploadErr != nil {
+					fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
+				} else {
+					plan.Assembly = serverFilename
+					if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
+						_ = client.PutPlan(ctx, filename, updatedYAML)
 					}
+					fmt.Printf("Uploaded assembly instructions: %s\n", assemblyFile)
 				}
-
-				if removeErr := os.Remove(filename); removeErr != nil {
-					fmt.Printf("Warning: uploaded to server but failed to remove local file: %v\n", removeErr)
-				}
-
-				fmt.Printf("Moved %s to <server>/%s\n", FormatPlanPath(filename), filename)
-				return nil
 			}
 
-			if Cfg == nil || Cfg.PlansDir == "" {
-				fmt.Println("Warning: plans_dir not configured, cannot move to central Location.")
-				return nil
-			}
-
-			// Ensure plans dir exists
+			fmt.Printf("Created plan: <server>/%s\n", filename)
+			editRemote = true
+		} else if Cfg != nil && Cfg.PlansDir != "" {
 			if _, err := os.Stat(Cfg.PlansDir); os.IsNotExist(err) {
 				_ = os.MkdirAll(Cfg.PlansDir, 0755)
 			}
 
 			dest := filepath.Join(Cfg.PlansDir, filename)
 			if _, err := os.Stat(dest); err == nil {
-				return fmt.Errorf("file %s already exists in central Location", dest)
+				return fmt.Errorf("file %s already exists", dest)
 			}
 
-			err = os.Rename(filename, dest)
-			if err != nil {
-				return fmt.Errorf("failed to move file: %w", err)
+			if err := os.WriteFile(dest, out, 0644); err != nil {
+				return err
 			}
-			fmt.Printf("Moved %s to %s\n", FormatPlanPath(filename), FormatPlanPath(dest))
+
+			fmt.Printf("Created plan: %s\n", FormatPlanPath(dest))
+			editPath = dest
+		} else {
+			return fmt.Errorf("plans_server or plans_dir must be configured")
+		}
+
+		// Optional: open in editor
+		edit, _ := cmd.Flags().GetBool("edit")
+		if edit {
+			editor := os.Getenv("VISUAL")
+			if editor == "" {
+				editor = os.Getenv("EDITOR")
+			}
+			if editor == "" {
+				for _, e := range []string{"vim", "vi", "nano"} {
+					if _, err := os.Stat("/usr/bin/" + e); err == nil {
+						editor = e
+						break
+					}
+					if _, err := os.Stat("/usr/local/bin/" + e); err == nil {
+						editor = e
+						break
+					}
+				}
+			}
+			if editor == "" {
+				return fmt.Errorf("no editor found. Please set $VISUAL or $EDITOR environment variable")
+			}
+
+			if editRemote {
+				// Download from server to temp file, edit, upload back
+				client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+				data, err := client.GetPlan(ctx, filename)
+				if err != nil {
+					return fmt.Errorf("failed to download plan for editing: %w", err)
+				}
+
+				tmpDir, err := os.MkdirTemp("", "fil-edit-*")
+				if err != nil {
+					return fmt.Errorf("failed to create temp directory: %w", err)
+				}
+				defer func() { _ = os.RemoveAll(tmpDir) }()
+
+				editPath = filepath.Join(tmpDir, filename)
+				if err := os.WriteFile(editPath, data, 0644); err != nil {
+					return fmt.Errorf("failed to write temp file: %w", err)
+				}
+
+				parts := strings.Fields(editor)
+				editorCmd := exec.Command(parts[0], append(parts[1:], editPath)...)
+				editorCmd.Stdin = os.Stdin
+				editorCmd.Stdout = os.Stdout
+				editorCmd.Stderr = os.Stderr
+
+				if err := editorCmd.Run(); err != nil {
+					return err
+				}
+
+				edited, err := os.ReadFile(editPath)
+				if err != nil {
+					return fmt.Errorf("failed to read edited file: %w", err)
+				}
+
+				if err := client.PutPlan(ctx, filename, edited); err != nil {
+					return fmt.Errorf("failed to upload edited plan: %w", err)
+				}
+				fmt.Printf("Updated plan: <server>/%s\n", filename)
+			} else {
+				// Edit local file directly
+				parts := strings.Fields(editor)
+				editorCmd := exec.Command(parts[0], append(parts[1:], editPath)...)
+				editorCmd.Stdin = os.Stdin
+				editorCmd.Stdout = os.Stdout
+				editorCmd.Stderr = os.Stderr
+
+				if err := editorCmd.Run(); err != nil {
+					return err
+				}
+			}
 		}
 
 		return nil
@@ -225,5 +283,6 @@ var newPlanCmd = &cobra.Command{
 
 func init() {
 	newCmd.AddCommand(newPlanCmd)
-	newPlanCmd.Flags().BoolP("move", "m", false, "Move the created plan to the central plans directory")
+	newPlanCmd.Flags().BoolP("edit", "e", false, "Open the plan in your editor after creation")
+	newPlanCmd.Flags().BoolP("move", "m", false, "Deprecated: plans are now created directly at their destination")
 }
