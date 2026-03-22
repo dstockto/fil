@@ -59,17 +59,80 @@ var planNextCmd = &cobra.Command{
 			discovered, _ = discoverPlans()
 		}
 
+		// 2b. Check if this printer already has a plate in-progress
+		for di, dp := range discovered {
+			for pi, proj := range dp.Plan.Projects {
+				if proj.Status == "completed" {
+					continue
+				}
+				for pli, plate := range proj.Plates {
+					if plate.Status == "in-progress" && plate.Printer == printerName {
+						fmt.Printf("\n%s - %s is currently printing on %s\n", models.Sanitize(proj.Name), models.Sanitize(plate.Name), models.Sanitize(printerName))
+
+						actionPrompt := promptui.Select{
+							Label:  "What would you like to do?",
+							Items:  []string{"Mark as completed", "Cancel (back to todo)", "Quit"},
+							Stdout: NoBellStdout,
+						}
+						actionIdx, _, err := actionPrompt.Run()
+						if err != nil {
+							return err
+						}
+
+						switch actionIdx {
+						case 0: // Complete
+							discovered[di].Plan.Projects[pi].Plates[pli].Status = "completed"
+							discovered[di].Plan.Projects[pi].Plates[pli].Printer = ""
+							// Auto-complete project if all plates done
+							allDone := true
+							for _, pl := range discovered[di].Plan.Projects[pi].Plates {
+								if pl.Status != "completed" {
+									allDone = false
+									break
+								}
+							}
+							if allDone {
+								discovered[di].Plan.Projects[pi].Status = "completed"
+								fmt.Printf("All plates complete — project %s marked completed\n", models.Sanitize(proj.Name))
+							}
+							if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
+								return fmt.Errorf("failed to save plan: %w", err)
+							}
+							fmt.Printf("Marked %s as completed\n\n", models.Sanitize(plate.Name))
+						case 1: // Cancel
+							discovered[di].Plan.Projects[pi].Plates[pli].Status = "todo"
+							discovered[di].Plan.Projects[pi].Plates[pli].Printer = ""
+							if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
+								return fmt.Errorf("failed to save plan: %w", err)
+							}
+							fmt.Printf("Cancelled %s — set back to todo\n\n", models.Sanitize(plate.Name))
+						case 2: // Quit
+							return nil
+						}
+					}
+				}
+			}
+		}
+
 		// 3. Collect all TODO plates
 		type plateOption struct {
-			planPath    string
-			projectIdx  int
-			plateIdx    int
-			plate       models.Plate
-			projectName string
-			swapCost    int
-			isReady     bool
+			discoveredIdx int
+			projectIdx    int
+			plateIdx      int
+			plate         models.Plate
+			projectName   string
+			swapCost      int
+			isReady       bool
 		}
 		var options []plateOption
+
+		// Also track in-progress plates on other printers for display
+		type inProgressElsewhere struct {
+			projectName string
+			plateName   string
+			printer     string
+		}
+		var busyElsewhere []inProgressElsewhere
 
 		// Get current inventory & loaded spools
 		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
@@ -82,13 +145,24 @@ var planNextCmd = &cobra.Command{
 			}
 		}
 
-		for _, dp := range discovered {
+		for di, dp := range discovered {
 			for i, proj := range dp.Plan.Projects {
 				if proj.Status == "completed" {
 					continue
 				}
 				for j, plate := range proj.Plates {
 					if plate.Status == "completed" {
+						continue
+					}
+					if plate.Status == "in-progress" {
+						// Already printing on another printer (same-printer was handled above)
+						if plate.Printer != printerName {
+							busyElsewhere = append(busyElsewhere, inProgressElsewhere{
+								projectName: proj.Name,
+								plateName:   plate.Name,
+								printer:     plate.Printer,
+							})
+						}
 						continue
 					}
 
@@ -127,16 +201,24 @@ var planNextCmd = &cobra.Command{
 					}
 
 					options = append(options, plateOption{
-						planPath:    dp.Path,
-						projectIdx:  i,
-						plateIdx:    j,
-						plate:       plate,
-						projectName: proj.Name,
-						swapCost:    cost,
-						isReady:     ready,
+						discoveredIdx: di,
+						projectIdx:    i,
+						plateIdx:      j,
+						plate:         plate,
+						projectName:   proj.Name,
+						swapCost:      cost,
+						isReady:       ready,
 					})
 				}
 			}
+		}
+
+		if len(busyElsewhere) > 0 {
+			fmt.Println("\nIn-progress on other printers:")
+			for _, b := range busyElsewhere {
+				fmt.Printf("  %s - %s (printing on %s)\n", models.Sanitize(b.projectName), models.Sanitize(b.plateName), models.Sanitize(b.printer))
+			}
+			fmt.Println()
 		}
 
 		if len(options) == 0 {
@@ -571,6 +653,18 @@ var planNextCmd = &cobra.Command{
 			// Update our local tracking
 			bestSpool.Location = targetLoc
 			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
+		}
+
+		// Mark the plate as in-progress with the printer name
+		dp := &discovered[choice.discoveredIdx]
+		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Status = "in-progress"
+		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Printer = printerName
+		// Also mark the project as in-progress if it was todo
+		if dp.Plan.Projects[choice.projectIdx].Status == "todo" {
+			dp.Plan.Projects[choice.projectIdx].Status = "in-progress"
+		}
+		if err := savePlan(*dp, dp.Plan); err != nil {
+			fmt.Printf("Warning: failed to save in-progress state: %v\n", err)
 		}
 
 		if swapsPerformed {

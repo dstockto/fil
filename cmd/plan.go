@@ -114,16 +114,8 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 	// Directories to search
 	var dirs []string
 
-	// Always search CWD if not looking for only paused plans
 	if !pausedOnly {
-		if cwd, err := os.Getwd(); err == nil {
-			dirs = append(dirs, cwd)
-		} else {
-			// Log warning but continue if CWD is inaccessible
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to get current working directory: %v\n", err)
-		}
-
-		// Add global plans dir if configured
+		// Search plans_dir if configured
 		if Cfg != nil && Cfg.PlansDir != "" {
 			absPlansDir, err := filepath.Abs(Cfg.PlansDir)
 			if err == nil {

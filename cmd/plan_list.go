@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
@@ -32,14 +33,36 @@ var planListCmd = &cobra.Command{
 			}
 			fmt.Printf("Plan: %s%s\n", p.DisplayName, pdfIndicator)
 			for _, proj := range p.Plan.Projects {
-				todo := 0
+				remaining := 0
 				total := len(proj.Plates)
+				var printing []string
 				for _, plate := range proj.Plates {
 					if plate.Status != "completed" {
-						todo++
+						remaining++
+					}
+					if plate.Status == "in-progress" && plate.Printer != "" {
+						printing = append(printing, plate.Printer)
 					}
 				}
-				fmt.Printf("  Project: %s [%s] (%d/%d plates remaining)\n", models.Sanitize(proj.Name), models.Sanitize(proj.Status), todo, total)
+				line := fmt.Sprintf("  Project: %s [%s] (%d/%d plates remaining", models.Sanitize(proj.Name), models.Sanitize(proj.Status), remaining, total)
+				if len(printing) > 0 {
+					// Deduplicate printer names in case multiple plates on same printer (shouldn't happen but safe)
+					seen := make(map[string]int)
+					for _, p := range printing {
+						seen[p]++
+					}
+					var printerInfo []string
+					for name, count := range seen {
+						if count == 1 {
+							printerInfo = append(printerInfo, fmt.Sprintf("1 on %s", name))
+						} else {
+							printerInfo = append(printerInfo, fmt.Sprintf("%d on %s", count, name))
+						}
+					}
+					line += fmt.Sprintf(", %s printing", strings.Join(printerInfo, ", "))
+				}
+				line += ")"
+				fmt.Println(line)
 			}
 			fmt.Println()
 		}

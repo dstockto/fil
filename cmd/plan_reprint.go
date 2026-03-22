@@ -122,6 +122,7 @@ var planReprintCmd = &cobra.Command{
 			plan.Projects[i].Status = "todo"
 			for j := range plan.Projects[i].Plates {
 				plan.Projects[i].Plates[j].Status = "todo"
+				plan.Projects[i].Plates[j].Printer = ""
 			}
 
 			if num > 1 {

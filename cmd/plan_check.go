@@ -55,6 +55,7 @@ var planCheckCmd = &cobra.Command{
 		type projectUsage struct {
 			projectName string
 			amount      float64
+			committed   float64 // in-progress plates
 		}
 		type totalNeed struct {
 			id              int
@@ -63,6 +64,7 @@ var planCheckCmd = &cobra.Command{
 			colorHex        string
 			multiColorHexes string
 			amount          float64
+			committed       float64 // amount from in-progress plates
 			projects        []projectUsage
 		}
 		needs := make(map[string]*totalNeed)
@@ -87,6 +89,7 @@ var planCheckCmd = &cobra.Command{
 					if plate.Status == "completed" {
 						continue
 					}
+					isCommitted := plate.Status == "in-progress"
 					for _, req := range plate.Needs {
 						if req.Amount == 0 {
 							zeroWarnings = append(zeroWarnings, zeroAmountWarning{
@@ -99,7 +102,6 @@ var planCheckCmd = &cobra.Command{
 						key := fmt.Sprintf("id:%d", req.FilamentID)
 						if req.FilamentID == 0 {
 							key = fmt.Sprintf("name:%s:%s", req.Name, req.Material)
-							// fmt.Printf("Warning: Plate '%s' in '%s' (%s) has unresolved filament '%s'\n", plate.Name, proj.Name, FormatPlanPath(path), req.Name)
 						}
 						if _, ok := needs[key]; !ok {
 							needs[key] = &totalNeed{
@@ -109,26 +111,34 @@ var planCheckCmd = &cobra.Command{
 								colorHex: req.Color,
 							}
 						} else if req.FilamentID != 0 && needs[key].name != req.Name {
-							// If the same ID is used with different names, we should probably let the user know
-							// but we will continue to aggregate them as they are technically the same filament ID
 							fmt.Printf("Note: Filament ID %d is used for both '%s' and '%s'. Aggregating needs.\n", req.FilamentID, models.Sanitize(needs[key].name), models.Sanitize(req.Name))
 						}
 						needs[key].amount += req.Amount
+						if isCommitted {
+							needs[key].committed += req.Amount
+						}
 
 						// Track project usage
 						found := false
 						for i, p := range needs[key].projects {
 							if p.projectName == proj.Name {
 								needs[key].projects[i].amount += req.Amount
+								if isCommitted {
+									needs[key].projects[i].committed += req.Amount
+								}
 								found = true
 								break
 							}
 						}
 						if !found {
-							needs[key].projects = append(needs[key].projects, projectUsage{
+							pu := projectUsage{
 								projectName: proj.Name,
 								amount:      req.Amount,
-							})
+							}
+							if isCommitted {
+								pu.committed = req.Amount
+							}
+							needs[key].projects = append(needs[key].projects, pu)
 						}
 					}
 				}
@@ -263,11 +273,25 @@ var planCheckCmd = &cobra.Command{
 		if !byProject {
 			for key, n := range needs {
 				d := displayInfo[key]
-				fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), n.amount, d.onHand, d.displayStatus, d.loaded)
+				neededStr := fmt.Sprintf("%.1fg", n.amount)
+				if n.committed > 0 {
+					pending := n.amount - n.committed
+					neededStr = fmt.Sprintf("%.1fg", n.amount)
+					if pending > 0 {
+						neededStr += fmt.Sprintf(" (%.0fg🖨/%.0fg⏳)", n.committed, pending)
+					} else {
+						neededStr += fmt.Sprintf(" (%.0fg🖨)", n.committed)
+					}
+				}
+				fmt.Printf("%s %-30s %10s %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
 
 				if verbose {
 					for _, p := range n.projects {
-						fmt.Printf("    - %s (%.1fg)\n", models.Sanitize(p.projectName), p.amount)
+						detail := fmt.Sprintf("%.1fg", p.amount)
+						if p.committed > 0 {
+							detail += fmt.Sprintf(" (%.0fg committed)", p.committed)
+						}
+						fmt.Printf("    - %s (%s)\n", models.Sanitize(p.projectName), detail)
 					}
 				}
 			}
@@ -298,7 +322,22 @@ var planCheckCmd = &cobra.Command{
 				fmt.Printf("\nProject: %s\n", models.Sanitize(projName))
 				for _, entry := range projectNeeds[projName] {
 					d := displayInfo[entry.key]
-					fmt.Printf("%s %-30s %10.1fg %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(entry.need.name), 30), entry.amount, d.onHand, d.displayStatus, d.loaded)
+					neededStr := fmt.Sprintf("%.1fg", entry.amount)
+					if entry.need.committed > 0 {
+						// Show committed portion for this project entry
+						for _, pu := range entry.need.projects {
+							if pu.projectName == projName && pu.committed > 0 {
+								pending := pu.amount - pu.committed
+								if pending > 0 {
+									neededStr += fmt.Sprintf(" (%.0fg🖨/%.0fg⏳)", pu.committed, pending)
+								} else {
+									neededStr += fmt.Sprintf(" (%.0fg🖨)", pu.committed)
+								}
+								break
+							}
+						}
+					}
+					fmt.Printf("%s %-30s %10s %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(entry.need.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
 				}
 			}
 		}

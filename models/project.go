@@ -9,9 +9,10 @@ type PlateRequirement struct {
 }
 
 type Plate struct {
-	Name   string             `yaml:"name"`
-	Status string             `yaml:"status"` // "todo", "in-progress", "completed"
-	Needs  []PlateRequirement `yaml:"needs"`
+	Name    string             `yaml:"name"`
+	Status  string             `yaml:"status"`            // "todo", "in-progress", "completed"
+	Printer string             `yaml:"printer,omitempty"` // printer name when in-progress
+	Needs   []PlateRequirement `yaml:"needs"`
 }
 
 func (p *Plate) DefaultStatus() {

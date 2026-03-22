@@ -55,18 +55,36 @@ var planCompleteCmd = &cobra.Command{
 		}
 		var optMap []opt
 
+		// Collect in-progress plates first, then the rest
+		var inProgressOptions []string
+		var inProgressOptMap []opt
+		var otherOptions []string
+		var otherOptMap []opt
+
 		for i, proj := range plan.Projects {
 			if proj.Status != "completed" {
-				options = append(options, fmt.Sprintf("Project: %s", proj.Name))
-				optMap = append(optMap, opt{projIdx: i, isProj: true})
+				// Add project option to the "other" group
+				otherOptions = append(otherOptions, fmt.Sprintf("Project: %s", proj.Name))
+				otherOptMap = append(otherOptMap, opt{projIdx: i, isProj: true})
 				for j, plate := range proj.Plates {
 					if plate.Status != "completed" {
-						options = append(options, fmt.Sprintf("  Plate: %s", plate.Name))
-						optMap = append(optMap, opt{projIdx: i, plateIdx: j, isProj: false})
+						label := fmt.Sprintf("  Plate: %s", plate.Name)
+						if plate.Status == "in-progress" && plate.Printer != "" {
+							label = fmt.Sprintf("  Plate: %s (printing on %s)", plate.Name, plate.Printer)
+							inProgressOptions = append(inProgressOptions, label)
+							inProgressOptMap = append(inProgressOptMap, opt{projIdx: i, plateIdx: j, isProj: false})
+						} else {
+							otherOptions = append(otherOptions, label)
+							otherOptMap = append(otherOptMap, opt{projIdx: i, plateIdx: j, isProj: false})
+						}
 					}
 				}
 			}
 		}
+
+		// Bubble in-progress plates to the top
+		options = append(inProgressOptions, otherOptions...)
+		optMap = append(inProgressOptMap, otherOptMap...)
 
 		if len(options) == 0 {
 			fmt.Println("Nothing to complete.")
@@ -93,9 +111,12 @@ var planCompleteCmd = &cobra.Command{
 			plan.Projects[choice.projIdx].Status = "completed"
 			for j := range plan.Projects[choice.projIdx].Plates {
 				plan.Projects[choice.projIdx].Plates[j].Status = "completed"
+				plan.Projects[choice.projIdx].Plates[j].Printer = ""
 			}
 		} else {
-			plan.Projects[choice.projIdx].Plates[choice.plateIdx].Status = "completed"
+			completedPlate := &plan.Projects[choice.projIdx].Plates[choice.plateIdx]
+			completedPlate.Status = "completed"
+
 			// Check if all plates in project are done
 			allDone := true
 			for _, p := range plan.Projects[choice.projIdx].Plates {
@@ -109,8 +130,12 @@ var planCompleteCmd = &cobra.Command{
 			}
 
 			// Printer selection for filament usage tracking
+			// Pre-fill from in-progress printer if available
 			var printerName string
-			if len(Cfg.Printers) > 0 {
+			if completedPlate.Printer != "" {
+				printerName = completedPlate.Printer
+				fmt.Printf("Printer: %s (from in-progress tracking)\n", printerName)
+			} else if len(Cfg.Printers) > 0 {
 				var printerNames []string
 				for name := range Cfg.Printers {
 					printerNames = append(printerNames, name)
@@ -134,6 +159,9 @@ var planCompleteCmd = &cobra.Command{
 					}
 				}
 			}
+
+			// Clear the printer field now that it's completed
+			completedPlate.Printer = ""
 
 			var printerLocations []string
 			if printerName != "" {
