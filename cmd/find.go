@@ -201,13 +201,20 @@ func runFind(cmd *cobra.Command, args []string) error {
 				return li.After(lj) // newer last-used first
 			})
 		} else if len(spools) > 1 && len(ranks) > 0 {
-			// Default behavior: sort according to settings-defined order within each Location.
+			// Default behavior: group by location, then sort by settings-defined order within each location.
 			// Items with a known rank (present in settings for their Location) come before unknowns.
 			sort.SliceStable(spools, func(i, j int) bool {
 				ai := spools[i]
 				aj := spools[j]
 				locI := MapToAlias(ai.Location)
 				locJ := MapToAlias(aj.Location)
+
+				// Group by location first
+				if locI != locJ {
+					return locI < locJ
+				}
+
+				// Within same location, sort by rank
 				rI, okI := ranks[locI][ai.Id]
 				rJ, okJ := ranks[locJ][aj.Id]
 				if okI && !okJ {
@@ -217,11 +224,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 					return false
 				}
 				if okI && okJ {
-					// When both have ranks (possibly in different locations), order by rank number.
 					if rI != rJ {
 						return rI < rJ
 					}
-					// As a tie-breaker across locations with same rank, keep stable order by returning false.
 					return false
 				}
 				// Neither has a rank; keep current relative order (stable sort preserves input order).
