@@ -221,9 +221,9 @@ var planCheckCmd = &cobra.Command{
 					n.multiColorHexes = c.multiColorHexes
 				}
 				if isLoaded[n.id] {
-					d.loaded = color.GreenString("YES")
+					d.loaded = "   " + color.GreenString("YES")
 					if color.NoColor {
-						d.loaded = "YES"
+						d.loaded = "   YES"
 					}
 				}
 				d.status = "OK"
@@ -267,23 +267,39 @@ var planCheckCmd = &cobra.Command{
 			displayInfo[key] = d
 		}
 
-		fmt.Printf("%-5s %-30s %10s %10s %10s %6s\n", "", "Filament", "Needed", "On Hand", "Status", "Loaded")
-		fmt.Println(strings.Repeat("-", 78))
+		// Pre-compute needed strings and find max width for alignment
+		neededStrs := make(map[string]string)
+		neededWidth := len("Needed")
+		for key, n := range needs {
+			s := fmt.Sprintf("%.1fg", n.amount)
+			if n.committed > 0 {
+				pending := n.amount - n.committed
+				s = fmt.Sprintf("%.1fg", n.amount)
+				if pending > 0 {
+					s += fmt.Sprintf(" (%.0fg ip/%.0fg pending)", n.committed, pending)
+				} else {
+					s += fmt.Sprintf(" (%.0fg ip)", n.committed)
+				}
+			}
+			neededStrs[key] = s
+			if len(s) > neededWidth {
+				neededWidth = len(s)
+			}
+		}
+		if neededWidth < 10 {
+			neededWidth = 10
+		}
+
+		headerFmt := fmt.Sprintf("%%-5s %%-30s %%%ds %%10s %%10s %%6s\n", neededWidth)
+		rowFmt := fmt.Sprintf("%%s %%-30s %%%ds %%10.1fg %%s %%6s\n", neededWidth)
+		totalWidth := 5 + 1 + 30 + 1 + neededWidth + 1 + 10 + 10 + 1 + 6
+		fmt.Printf(headerFmt, "", "Filament", "Needed", "On Hand", "Status", "Loaded")
+		fmt.Println(strings.Repeat("-", totalWidth))
 
 		if !byProject {
 			for key, n := range needs {
 				d := displayInfo[key]
-				neededStr := fmt.Sprintf("%.1fg", n.amount)
-				if n.committed > 0 {
-					pending := n.amount - n.committed
-					neededStr = fmt.Sprintf("%.1fg", n.amount)
-					if pending > 0 {
-						neededStr += fmt.Sprintf(" (%.0fg ip/%.0fg pending)", n.committed, pending)
-					} else {
-						neededStr += fmt.Sprintf(" (%.0fg ip)", n.committed)
-					}
-				}
-				fmt.Printf("%s %-30s %10s %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
+				fmt.Printf(rowFmt, d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), neededStrs[key], d.onHand, d.displayStatus, d.loaded)
 
 				if verbose {
 					for _, p := range n.projects {
@@ -337,7 +353,7 @@ var planCheckCmd = &cobra.Command{
 							}
 						}
 					}
-					fmt.Printf("%s %-30s %10s %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(entry.need.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
+					fmt.Printf(rowFmt, d.colorBlock, TruncateFront(models.Sanitize(entry.need.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
 				}
 			}
 		}
