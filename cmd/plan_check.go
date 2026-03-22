@@ -221,7 +221,7 @@ var planCheckCmd = &cobra.Command{
 					n.multiColorHexes = c.multiColorHexes
 				}
 				if isLoaded[n.id] {
-					d.loaded = "✅"
+					d.loaded = color.GreenString("YES")
 					if color.NoColor {
 						d.loaded = "YES"
 					}
@@ -278,9 +278,9 @@ var planCheckCmd = &cobra.Command{
 					pending := n.amount - n.committed
 					neededStr = fmt.Sprintf("%.1fg", n.amount)
 					if pending > 0 {
-						neededStr += fmt.Sprintf(" (%.0fg🖨/%.0fg⏳)", n.committed, pending)
+						neededStr += fmt.Sprintf(" (%.0fg ip/%.0fg pending)", n.committed, pending)
 					} else {
-						neededStr += fmt.Sprintf(" (%.0fg🖨)", n.committed)
+						neededStr += fmt.Sprintf(" (%.0fg ip)", n.committed)
 					}
 				}
 				fmt.Printf("%s %-30s %10s %10.1fg %s %6s\n", d.colorBlock, TruncateFront(models.Sanitize(n.name), 30), neededStr, d.onHand, d.displayStatus, d.loaded)
@@ -329,9 +329,9 @@ var planCheckCmd = &cobra.Command{
 							if pu.projectName == projName && pu.committed > 0 {
 								pending := pu.amount - pu.committed
 								if pending > 0 {
-									neededStr += fmt.Sprintf(" (%.0fg🖨/%.0fg⏳)", pu.committed, pending)
+									neededStr += fmt.Sprintf(" (%.0fg ip/%.0fg pending)", pu.committed, pending)
 								} else {
-									neededStr += fmt.Sprintf(" (%.0fg🖨)", pu.committed)
+									neededStr += fmt.Sprintf(" (%.0fg ip)", pu.committed)
 								}
 								break
 							}
