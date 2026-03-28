@@ -245,6 +245,33 @@ func TestArchivePlan(t *testing.T) {
 	}
 }
 
+func TestUnarchivePlan(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	// Place a timestamped file in the archive dir (as handleArchivePlan would)
+	archivedName := "test-20260328150405.yaml"
+	_ = os.WriteFile(filepath.Join(s.ArchiveDir, archivedName), []byte(testPlanYAML), 0644)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/"+archivedName+"/unarchive", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("UNARCHIVE expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Archived file should be gone
+	if _, err := os.Stat(filepath.Join(s.ArchiveDir, archivedName)); !os.IsNotExist(err) {
+		t.Fatal("file should have been moved from archive dir")
+	}
+
+	// Original name should be restored in plans dir
+	if _, err := os.Stat(filepath.Join(s.PlansDir, "test.yaml")); err != nil {
+		t.Fatalf("expected restored file test.yaml in plans dir, got error: %v", err)
+	}
+}
+
 func TestGetPlanNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()

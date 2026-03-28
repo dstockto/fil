@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/plans/{name}/pause", s.handlePausePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/resume", s.handleResumePlan)
 	mux.HandleFunc("POST /api/v1/plans/{name}/archive", s.handleArchivePlan)
+	mux.HandleFunc("POST /api/v1/plans/{name}/unarchive", s.handleUnarchivePlan)
 	mux.HandleFunc("PUT /api/v1/plans/{name}/assembly", s.handlePutAssembly)
 	mux.HandleFunc("GET /api/v1/plans/{name}/assembly", s.handleGetAssembly)
 	mux.HandleFunc("DELETE /api/v1/plans/{name}/assembly", s.handleDeleteAssembly)
@@ -345,6 +347,41 @@ func (s *PlanServer) handleArchivePlan(w http.ResponseWriter, r *http.Request) {
 	dest := filepath.Join(s.ArchiveDir, newFilename)
 	if err := os.Rename(src, dest); err != nil {
 		http.Error(w, fmt.Sprintf("failed to archive plan: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// archiveTimestampRe matches the -YYYYMMDDHHMMSS suffix added during archiving.
+var archiveTimestampRe = regexp.MustCompile(`-\d{14}$`)
+
+func (s *PlanServer) handleUnarchivePlan(w http.ResponseWriter, r *http.Request) {
+	if s.ArchiveDir == "" {
+		http.Error(w, "archive directory not configured", http.StatusBadRequest)
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "plan name required", http.StatusBadRequest)
+		return
+	}
+
+	src := filepath.Join(s.ArchiveDir, filepath.Base(name))
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		http.Error(w, "plan not found in archive directory", http.StatusNotFound)
+		return
+	}
+
+	// Strip the archive timestamp to restore the original filename.
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(filepath.Base(name), ext)
+	restored := archiveTimestampRe.ReplaceAllString(base, "") + ext
+
+	dest := filepath.Join(s.PlansDir, restored)
+	if err := os.Rename(src, dest); err != nil {
+		http.Error(w, fmt.Sprintf("failed to unarchive plan: %v", err), http.StatusInternalServerError)
 		return
 	}
 

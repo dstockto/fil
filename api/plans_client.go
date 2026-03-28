@@ -208,6 +208,11 @@ func (c *PlanServerClient) ArchivePlan(ctx context.Context, name string) error {
 	return c.planAction(ctx, name, "archive")
 }
 
+// UnarchivePlan moves a plan from the archive back to active on the server.
+func (c *PlanServerClient) UnarchivePlan(ctx context.Context, name string) error {
+	return c.planAction(ctx, name, "unarchive")
+}
+
 // GetSharedConfig fetches the shared configuration from the server.
 func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) {
 	endpoint := c.base + "/api/v1/config"
