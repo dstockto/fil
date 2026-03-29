@@ -238,7 +238,7 @@ Found 8 spools matching 'white':
  - ████ Shelf 7B - #128 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 1000.0g remaining, last used never
 ```
 
-You can filter by the location of the spool using the -l / --location flag. The -l will not apply to ID matches. The 
+You can filter by the location of the spool using the -l / --location flag. The -l will not apply to ID matches. The
 location can be a partial case-insensitive match. Use 'ams' to find all spools in AMS.
 > $ fil f '*' -l 6b
 ```aiignore
@@ -252,6 +252,23 @@ Found 7 spools matching '*':
  - ████ Shelf 6B - #32 PolyLite™ Silk Bronze (Matte PLA #a9470a) - 1000.0g remaining, last used never
  - ████ Shelf 6B - #31 PolyTerra™ PLA+ Blue (Matte PLA #342de7) - 1000.0g remaining, last used never
 ```
+
+When filtering by a printer location (any location listed under `printers` in config), spools are displayed with
+slot positions and empty slots are shown. This makes it easy to see which AMS slots are available:
+> $ fil f -l ams
+```aiignore
+Found 11 spools matching '*':
+
+ AMS A:1 ████ #223 PolyTerra™ Cotton White (Matte PLA #E6DDDB) - 91.5g remaining, last used 2 days ago
+ AMS A:2 ████ #153 PolyLite™ Black (PLA #000000) - 450.2g remaining, last used 5 days ago
+ AMS A:3 ████ #90 PolyTerra™ Army Red (Matte PLA #8B2500) - 200.0g remaining, last used 1 day ago
+ AMS A:4 (empty)
+ AMS B:1 ████ #201 PolyTerra™ Marble White (Matte PLA #EEEBE7) - 800.0g remaining, last used 3 days ago
+ AMS B:2 ████ #175 PolyLite™ Galaxy Black (PLA #1A1A2E) - 650.0g remaining, last used 4 days ago
+ AMS B:3 ████ #224 PolyTerra™ Sakura Pink (Matte PLA #CB7C93) - 900.0g remaining, last used 1 day ago
+ AMS B:4 ████ #227 PolyTerra™ Charcoal Black (Matte PLA #1C1C1C) - 700.0g remaining, last used 2 days ago
+```
+The slot prefix (e.g. `AMS A:1`) matches the move command syntax — you can use it directly as a destination.
 
 ---
 
@@ -277,25 +294,52 @@ error and a non-zero exit code.
 # Ideas:
 
 Find options:
-- Show spools that are in AMS's (in the right order)
+- ~~Show spools that are in AMS's (in the right order)~~ ✓ Implemented: `fil f -l ams` shows slot positions
 - Filtering by filament type (partial match?)
-- Add purchase link in normal find (with switch)
-    
+- ~~Add purchase link in normal find (with switch)~~ ✓ Implemented: `--purchase` flag
+
 Move options:
-- Allow changing of position within a location???? (to line up where stuff is in the AMS)
+- ~~Allow changing of position within a location (to line up where stuff is in the AMS)~~ ✓ Implemented: slot-based moves with sentinel tracking
+- ~~Suggest destinations with available space~~ ✓ Implemented: `_` destination and `-s` flag
   Other options (ideas, not implemented):
 - -v / --verbose - show more info about a spool or spools (like info command)
 - -t / --template - allow customizable templates for output
-- allow customizable templates for output
 
 Other uses for this tool:
-- Figure out what filaments are running low and show them
+- ~~Figure out what filaments are running low and show them~~ ✓ Implemented: `fil low`
 
 move (m) - move a spool from one location to another, allows for aliased locations for ease of use
 > $ fil m 20 A - (A could be an alias for AMS A)
 ```
 Moved #20 Polymaker Muted Red from Shelf 6B to AMS A
 ```
+
+Moves support slot positions for printer locations (AMS units, etc.):
+> $ fil m 250 "AMS A:1"
+```
+Moved #250 to AMS A slot 1
+```
+
+For printer locations, moving a spool out replaces it with an empty slot marker. Moving into an empty
+slot fills it. Moving into an occupied slot displaces the occupant to the end of the location's list.
+
+### Destination suggestions
+
+Use `_` as the destination to open an interactive location picker that shows available space:
+> $ fil m 223 _
+```
+Select destination (type to filter; Esc to cancel)
+▸ Shelf 3D              3/5 (2 available)
+  Shelf 1B              2/5 (3 available)
+  Top Shelf             2 spools
+  Shelf 1A              5/5 (full)
+```
+
+You can mix `_` with explicit destinations in one command:
+> $ fil m 223 _ 225 "Shelf 1B" 226 _
+
+Use `-s` / `--suggest` to suggest destinations for all spools (shorthand for `-d _`):
+> $ fil m 223 225 226 -s
 
 Use ideas:
 - `fil -m -f <limit search> <spool selector> <amount> <spool selector> <amount>...`
@@ -315,6 +359,54 @@ Examples:
 - `fil use "cotton white" 2.5` → prompts to choose the exact spool, then applies the usage.
 - `fil use -n "blue" 5.0` → non-interactive; if multiple "blue" spools match, prints an error and does nothing.
 
+
+---
+
+## Location Management
+
+`fil location capacity set <location> [capacity]` - Set the capacity for a location.
+
+If no capacity is provided, uses the current spool count:
+> $ fil location capacity set "Shelf 1A"
+```
+Shelf 1A currently has 5 spool(s). Set capacity to 5? [Y/n]
+Set capacity for Shelf 1A to 5
+```
+
+Use `--full` to skip the confirmation prompt:
+> $ fil location capacity set "Shelf 1A" --full
+
+Or set a specific capacity directly:
+> $ fil location capacity set "Shelf 1A" 8
+
+`fil location capacity show [location]` - Display capacity and usage for all locations or a specific one:
+> $ fil location capacity show
+```
+AMS A                3/4 (1 available)
+AMS B                4/4 (full)
+AMS C                4/4 (full)
+Prusa                5/5 (full)
+Shelf 1A             5/5 (full)
+Shelf 2A             7 spools
+```
+
+Capacity is stored in the shared config and synced via the plan server. Setting a capacity automatically
+pulls the latest shared config, updates it, and pushes it back.
+
+---
+
+### Slot tracking for printer locations
+
+Locations listed under `printers` in the config get positional slot tracking. Empty slots are represented
+with sentinel values in `locations_spoolorders`. This enables:
+- `fil find -l ams` showing empty slot indicators
+- `fil move` preserving slot positions when moving spools in/out of AMS units
+- `fil plan next` correctly placing spools in vacated slots
+
+Run `fil clean-orders --write` once after configuring printer capacities to initialize the empty slot
+markers. After that, moves and archives maintain them automatically.
+
+---
 
 Provide a way to archive spools.
 Special output when using the last bit of a spool (when it goes empty)
