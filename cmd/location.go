@@ -322,13 +322,204 @@ func printLocationCapacity(location string, count int) {
 	}
 }
 
+var locationDeleteCmd = &cobra.Command{
+	Use:   "delete <location...>",
+	Short: "Delete a location from tracking",
+	Long: `Remove one or more locations from locations_spoolorders and location_capacity.
+Refuses to delete locations that still have spools assigned to them.`,
+	Args:    cobra.MinimumNArgs(1),
+	RunE:    runLocationDelete,
+	Aliases: []string{"del", "rm"},
+}
+
+func runLocationDelete(cmd *cobra.Command, args []string) error {
+	if Cfg == nil || Cfg.ApiBase == "" {
+		return fmt.Errorf("api_base must be configured")
+	}
+
+	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+	ctx := cmd.Context()
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+	// Load current orders
+	orders, err := LoadLocationOrders(ctx, apiClient)
+	if err != nil {
+		return fmt.Errorf("failed to load location orders: %w", err)
+	}
+
+	// Fetch all spools to check for occupants
+	spools, err := apiClient.FindSpoolsByName(ctx, "*", nil, map[string]string{"allow_archived": "true"})
+	if err != nil {
+		return fmt.Errorf("failed to fetch spools: %w", err)
+	}
+	spoolsByLoc := map[string]int{}
+	for _, s := range spools {
+		if s.Location != "" {
+			spoolsByLoc[s.Location]++
+		}
+	}
+
+	deleted := 0
+	capacityRemoved := 0
+	for _, arg := range args {
+		location := MapToAlias(arg)
+
+		// Check if spools are assigned to this location
+		if count := spoolsByLoc[location]; count > 0 {
+			color.Red("Cannot delete %s: %d spool(s) still assigned\n", location, count)
+			continue
+		}
+
+		// Check it exists in orders or capacity
+		_, inOrders := orders[location]
+		inCapacity := false
+		if Cfg.LocationCapacity != nil {
+			_, inCapacity = Cfg.LocationCapacity[location]
+		}
+
+		if !inOrders && !inCapacity {
+			fmt.Printf("%s: not found in orders or capacity config\n", location)
+			continue
+		}
+
+		if dryRun {
+			parts := []string{}
+			if inOrders {
+				parts = append(parts, "locations_spoolorders")
+			}
+			if inCapacity {
+				parts = append(parts, "location_capacity")
+			}
+			fmt.Printf("Would delete %s from %s\n", location, strings.Join(parts, " and "))
+			continue
+		}
+
+		if inOrders {
+			delete(orders, location)
+			deleted++
+			fmt.Printf("Removed %s from locations_spoolorders\n", location)
+		}
+
+		if inCapacity {
+			capacityRemoved++
+		}
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	// Persist orders if any were deleted
+	if deleted > 0 {
+		if err := apiClient.PostSettingObject(ctx, "locations_spoolorders", orders); err != nil {
+			return fmt.Errorf("failed to update locations_spoolorders: %w", err)
+		}
+	}
+
+	// Remove from capacity config via pull→update→push
+	if capacityRemoved > 0 {
+		locsToRemove := []string{}
+		for _, arg := range args {
+			location := MapToAlias(arg)
+			if Cfg.LocationCapacity != nil {
+				if _, ok := Cfg.LocationCapacity[location]; ok {
+					locsToRemove = append(locsToRemove, location)
+				}
+			}
+		}
+		if err := pullRemoveCapacity(ctx, locsToRemove); err != nil {
+			return fmt.Errorf("failed to update capacity config: %w", err)
+		}
+		for _, loc := range locsToRemove {
+			fmt.Printf("Removed %s from location_capacity\n", loc)
+		}
+	}
+
+	return nil
+}
+
+// pullRemoveCapacity pulls the shared config, removes the given locations from
+// location_capacity, pushes back, and writes the local shared config file.
+func pullRemoveCapacity(ctx context.Context, locations []string) error {
+	if Cfg == nil || Cfg.PlansServer == "" {
+		return removeLocalCapacity(locations)
+	}
+
+	client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+
+	data, err := client.GetSharedConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to pull shared config: %w", err)
+	}
+
+	var shared SharedConfig
+	if err := json.Unmarshal(data, &shared); err != nil {
+		return fmt.Errorf("failed to parse shared config: %w", err)
+	}
+
+	for _, loc := range locations {
+		delete(shared.LocationCapacity, loc)
+		delete(Cfg.LocationCapacity, loc)
+	}
+
+	updatedData, err := json.MarshalIndent(shared, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal shared config: %w", err)
+	}
+	if err := client.PutSharedConfig(ctx, updatedData); err != nil {
+		return fmt.Errorf("failed to push shared config: %w", err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to determine home directory: %w", err)
+	}
+	destPath := filepath.Join(home, ".config", "fil", "shared-config.json")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	return os.WriteFile(destPath, updatedData, 0644)
+}
+
+func removeLocalCapacity(locations []string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to determine home directory: %w", err)
+	}
+	destPath := filepath.Join(home, ".config", "fil", "shared-config.json")
+
+	var shared SharedConfig
+	if data, err := os.ReadFile(destPath); err == nil {
+		_ = json.Unmarshal(data, &shared)
+	}
+
+	for _, loc := range locations {
+		delete(shared.LocationCapacity, loc)
+		if Cfg != nil {
+			delete(Cfg.LocationCapacity, loc)
+		}
+	}
+
+	updatedData, err := json.MarshalIndent(shared, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal shared config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	return os.WriteFile(destPath, updatedData, 0644)
+}
+
 //nolint:gochecknoinits
 func init() {
 	rootCmd.AddCommand(locationCmd)
 	locationCmd.AddCommand(locationCapacityCmd)
+	locationCmd.AddCommand(locationDeleteCmd)
 	locationCapacityCmd.AddCommand(locationCapacitySetCmd)
 	locationCapacityCmd.AddCommand(locationCapacityShowCmd)
 
 	locationCapacitySetCmd.Flags().Bool("full", false, "set capacity from current spool count without prompting")
 	locationCapacitySetCmd.Flags().Bool("dry-run", false, "show what would be set without making changes")
+
+	locationDeleteCmd.Flags().Bool("dry-run", false, "show what would be deleted without making changes")
 }

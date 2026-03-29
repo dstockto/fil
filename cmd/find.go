@@ -280,11 +280,14 @@ func runFind(cmd *cobra.Command, args []string) error {
 				if IsPrinterLocation(loc) {
 					slotList := orders[loc]
 					slotList = PadToCapacity(loc, slotList)
+					showEmpties := a == "*"
 					for i, id := range slotList {
 						slotNum := i + 1
 						if id == EmptySlot {
-							dimmed := color.New(color.Faint).SprintFunc()
-							fmt.Printf(" %s:%d %s\n", loc, slotNum, dimmed("(empty)"))
+							if showEmpties {
+								dimmed := color.New(color.Faint).SprintFunc()
+								fmt.Printf(" %s:%d %s\n", loc, slotNum, dimmed("(empty)"))
+							}
 						} else if s, ok := locSpools[id]; ok {
 							fmt.Printf(" %s:%d %s\n", loc, slotNum, s.StringNoLocation())
 							if showPurchase {
