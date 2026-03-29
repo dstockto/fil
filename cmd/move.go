@@ -203,12 +203,29 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve any suggest destinations via interactive picker
+	// Fetch actual spool counts if any moves need suggestions
+	var spoolCounts map[string]int
+	for _, m := range moves {
+		if m.needSuggest && m.err == nil {
+			allSpools, fetchErr := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+			if fetchErr == nil {
+				spoolCounts = map[string]int{}
+				for _, s := range allSpools {
+					if s.Location != "" {
+						spoolCounts[s.Location]++
+					}
+				}
+			}
+			break
+		}
+	}
+
 	for i, m := range moves {
 		if !m.needSuggest || m.err != nil {
 			continue
 		}
 		fmt.Printf("Select destination for spool #%d (%s):\n", m.spoolId, m.spool)
-		loc, canceled, selErr := selectLocationInteractively(orders, simpleSelect)
+		loc, canceled, selErr := selectLocationInteractively(orders, spoolCounts, simpleSelect)
 		if selErr != nil {
 			errs = errors.Join(errs, fmt.Errorf("selection error for spool #%d: %w", m.spoolId, selErr))
 			moves[i].err = selErr

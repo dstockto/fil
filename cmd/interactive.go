@@ -152,14 +152,21 @@ type locationEntry struct {
 
 // selectLocationInteractively shows an interactive location picker ordered by
 // available space. Locations with space come first, then those with no capacity
-// configured, then full locations.
-func selectLocationInteractively(orders map[string][]int, forceSimple bool) (string, bool, error) {
+// configured, then full locations. spoolCounts provides the actual spool count
+// per location from the API (source of truth); if nil, falls back to counting
+// non-sentinel entries in the orders arrays.
+func selectLocationInteractively(orders map[string][]int, spoolCounts map[string]int, forceSimple bool) (string, bool, error) {
 	var entries []locationEntry
-	for loc, ids := range orders {
+	for loc := range orders {
 		if loc == "" {
 			continue
 		}
-		count := CountSpools(ids)
+		count := 0
+		if spoolCounts != nil {
+			count = spoolCounts[loc]
+		} else {
+			count = CountSpools(orders[loc])
+		}
 		cap := 0
 		if Cfg != nil && Cfg.LocationCapacity != nil {
 			if capInfo, ok := Cfg.LocationCapacity[loc]; ok {

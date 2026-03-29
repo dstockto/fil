@@ -144,6 +144,28 @@ func runNewSpool(cmd *cobra.Command, _ []string) error {
 		fmt.Printf(" - %s\n", s)
 	}
 
+	// Update locations_spoolorders if the new spools have a location
+	if location != "" {
+		orders, oErr := LoadLocationOrders(ctx, apiClient)
+		if oErr == nil {
+			for _, s := range created {
+				list := orders[location]
+				if IsPrinterLocation(location) {
+					emptyIdx := FirstEmptySlot(list)
+					if emptyIdx >= 0 {
+						list[emptyIdx] = s.Id
+					} else {
+						list = append(list, s.Id)
+					}
+				} else {
+					list = append(list, s.Id)
+				}
+				orders[location] = list
+			}
+			_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
+		}
+	}
+
 	return nil
 }
 
