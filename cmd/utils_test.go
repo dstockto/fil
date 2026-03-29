@@ -110,6 +110,7 @@ func TestInsertAt(t *testing.T) {
 }
 
 func TestRemoveFromAllOrders(t *testing.T) {
+	// Non-printer locations: collapse (remove element)
 	orders := map[string][]int{
 		"loc1": {1, 2, 3},
 		"loc2": {2, 4},
@@ -131,6 +132,198 @@ func TestRemoveFromAllOrders(t *testing.T) {
 				t.Errorf("RemoveFromAllOrders() for %s at index %d = %d, want %d", loc, i, actual[loc][i], ids[i])
 			}
 		}
+	}
+}
+
+func TestRemoveFromAllOrders_PrinterLocation(t *testing.T) {
+	oldCfg := Cfg
+	defer func() { Cfg = oldCfg }()
+
+	Cfg = &Config{
+		Printers: map[string][]string{
+			"Bambu X1C": {"AMS A", "AMS B"},
+		},
+	}
+
+	orders := map[string][]int{
+		"AMS A":    {101, 102, 103, 104},
+		"AMS B":    {201, 202, 203, 204},
+		"Shelf 1A": {102, 301},
+	}
+
+	// Remove spool 102 — it appears in AMS A (printer) and Shelf 1A (non-printer)
+	actual := RemoveFromAllOrders(orders, 102)
+
+	// AMS A: should replace with -1 (preserve position)
+	expectedAMS := []int{101, EmptySlot, 103, 104}
+	if len(actual["AMS A"]) != len(expectedAMS) {
+		t.Fatalf("AMS A length = %d, want %d", len(actual["AMS A"]), len(expectedAMS))
+	}
+	for i, v := range expectedAMS {
+		if actual["AMS A"][i] != v {
+			t.Errorf("AMS A[%d] = %d, want %d", i, actual["AMS A"][i], v)
+		}
+	}
+
+	// Shelf 1A: should collapse (remove element)
+	expectedShelf := []int{301}
+	if len(actual["Shelf 1A"]) != len(expectedShelf) {
+		t.Fatalf("Shelf 1A length = %d, want %d", len(actual["Shelf 1A"]), len(expectedShelf))
+	}
+	for i, v := range expectedShelf {
+		if actual["Shelf 1A"][i] != v {
+			t.Errorf("Shelf 1A[%d] = %d, want %d", i, actual["Shelf 1A"][i], v)
+		}
+	}
+
+	// AMS B: should be unchanged
+	expectedB := []int{201, 202, 203, 204}
+	if len(actual["AMS B"]) != len(expectedB) {
+		t.Fatalf("AMS B length = %d, want %d", len(actual["AMS B"]), len(expectedB))
+	}
+}
+
+func TestIsPrinterLocation(t *testing.T) {
+	oldCfg := Cfg
+	defer func() { Cfg = oldCfg }()
+
+	Cfg = &Config{
+		Printers: map[string][]string{
+			"Bambu X1C": {"AMS A", "AMS B", "AMS C"},
+			"Prusa":     {"Prusa"},
+		},
+	}
+
+	tests := []struct {
+		location string
+		expected bool
+	}{
+		{"AMS A", true},
+		{"AMS B", true},
+		{"AMS C", true},
+		{"Prusa", true},
+		{"Shelf 1A", false},
+		{"", false},
+		{"AMS D", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.location, func(t *testing.T) {
+			if got := IsPrinterLocation(tt.location); got != tt.expected {
+				t.Errorf("IsPrinterLocation(%q) = %v, want %v", tt.location, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsPrinterLocation_NilConfig(t *testing.T) {
+	oldCfg := Cfg
+	defer func() { Cfg = oldCfg }()
+
+	Cfg = nil
+	if IsPrinterLocation("AMS A") {
+		t.Error("IsPrinterLocation should return false when Cfg is nil")
+	}
+}
+
+func TestPadToCapacity(t *testing.T) {
+	oldCfg := Cfg
+	defer func() { Cfg = oldCfg }()
+
+	Cfg = &Config{
+		Printers: map[string][]string{
+			"Bambu X1C": {"AMS A"},
+		},
+		LocationCapacity: map[string]LocationCapacity{
+			"AMS A":    {Capacity: 4},
+			"Shelf 1A": {Capacity: 5},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		location string
+		ids      []int
+		expected []int
+	}{
+		{
+			"printer location under capacity",
+			"AMS A", []int{101, 102}, []int{101, 102, EmptySlot, EmptySlot},
+		},
+		{
+			"printer location at capacity",
+			"AMS A", []int{101, 102, 103, 104}, []int{101, 102, 103, 104},
+		},
+		{
+			"printer location over capacity",
+			"AMS A", []int{101, 102, 103, 104, 105}, []int{101, 102, 103, 104, 105},
+		},
+		{
+			"non-printer location unchanged",
+			"Shelf 1A", []int{201, 202}, []int{201, 202},
+		},
+		{
+			"unknown location unchanged",
+			"Unknown", []int{301}, []int{301},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := PadToCapacity(tt.location, tt.ids)
+			if len(actual) != len(tt.expected) {
+				t.Fatalf("PadToCapacity(%q) length = %d, want %d", tt.location, len(actual), len(tt.expected))
+			}
+			for i, v := range tt.expected {
+				if actual[i] != v {
+					t.Errorf("PadToCapacity(%q)[%d] = %d, want %d", tt.location, i, actual[i], v)
+				}
+			}
+		})
+	}
+}
+
+func TestCountSpools(t *testing.T) {
+	tests := []struct {
+		name     string
+		ids      []int
+		expected int
+	}{
+		{"all real spools", []int{101, 102, 103}, 3},
+		{"with sentinels", []int{101, EmptySlot, 103, EmptySlot}, 2},
+		{"all sentinels", []int{EmptySlot, EmptySlot}, 0},
+		{"empty", []int{}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CountSpools(tt.ids); got != tt.expected {
+				t.Errorf("CountSpools() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFirstEmptySlot(t *testing.T) {
+	tests := []struct {
+		name     string
+		ids      []int
+		expected int
+	}{
+		{"first slot empty", []int{EmptySlot, 102, 103}, 0},
+		{"middle slot empty", []int{101, EmptySlot, 103}, 1},
+		{"last slot empty", []int{101, 102, EmptySlot}, 2},
+		{"no empty slots", []int{101, 102, 103}, -1},
+		{"empty slice", []int{}, -1},
+		{"multiple empties returns first", []int{101, EmptySlot, EmptySlot}, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FirstEmptySlot(tt.ids); got != tt.expected {
+				t.Errorf("FirstEmptySlot() = %d, want %d", got, tt.expected)
+			}
+		})
 	}
 }
 

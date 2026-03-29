@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/dstockto/fil/api"
@@ -139,6 +140,139 @@ func selectSpoolInteractively(ctx context.Context, apiClient *api.Client, initia
 	}
 
 	return candidates[idx], false, nil
+}
+
+// locationEntry holds information about a location for the interactive picker.
+type locationEntry struct {
+	name      string
+	count     int
+	capacity  int // 0 = not configured
+	available int // capacity - count; large positive if no capacity
+}
+
+// selectLocationInteractively shows an interactive location picker ordered by
+// available space. Locations with space come first, then those with no capacity
+// configured, then full locations.
+func selectLocationInteractively(orders map[string][]int, forceSimple bool) (string, bool, error) {
+	var entries []locationEntry
+	for loc, ids := range orders {
+		if loc == "" {
+			continue
+		}
+		count := CountSpools(ids)
+		cap := 0
+		if Cfg != nil && Cfg.LocationCapacity != nil {
+			if capInfo, ok := Cfg.LocationCapacity[loc]; ok {
+				cap = capInfo.Capacity
+			}
+		}
+		avail := 1 << 30 // large number for "no capacity set"
+		if cap > 0 {
+			avail = cap - count
+		}
+		entries = append(entries, locationEntry{
+			name:      loc,
+			count:     count,
+			capacity:  cap,
+			available: avail,
+		})
+	}
+
+	// Sort: available space (has space first), then no-capacity, then full
+	sort.Slice(entries, func(i, j int) bool {
+		catI := locationCategory(entries[i].available, entries[i].capacity)
+		catJ := locationCategory(entries[j].available, entries[j].capacity)
+		if catI != catJ {
+			return catI < catJ
+		}
+		if entries[i].available != entries[j].available {
+			return entries[i].available > entries[j].available
+		}
+		return entries[i].name < entries[j].name
+	})
+
+	if len(entries) == 0 {
+		return "", false, fmt.Errorf("no locations found")
+	}
+
+	// Build display items
+	items := make([]string, len(entries))
+	for i, e := range entries {
+		if e.capacity > 0 {
+			items[i] = fmt.Sprintf("%-20s %d/%d (%d available)", e.name, e.count, e.capacity, e.available)
+		} else {
+			items[i] = fmt.Sprintf("%-20s %d spools", e.name, e.count)
+		}
+	}
+
+	if forceSimple || !supportsAdvancedTUI() {
+		return selectLocationSimple(entries, items)
+	}
+
+	searcher := func(input string, index int) bool {
+		needle := strings.ToLower(strings.TrimSpace(input))
+		if needle == "" {
+			return true
+		}
+		return strings.Contains(strings.ToLower(entries[index].name), needle)
+	}
+
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "▸ {{ . | cyan }}",
+		Inactive: "  {{ . }}",
+		Selected: "✔ {{ . | green }}",
+	}
+
+	prompt := promptui.Select{
+		Label:             "Select destination (type to filter; Esc to cancel)",
+		Items:             items,
+		Templates:         templates,
+		Size:              15,
+		Searcher:          searcher,
+		StartInSearchMode: true,
+		Stdin:             os.Stdin,
+		Stdout:            NoBellStdout,
+	}
+
+	idx, _, perr := prompt.Run()
+	if perr != nil {
+		if perr == promptui.ErrInterrupt || perr == promptui.ErrAbort {
+			return "", true, nil
+		}
+		return selectLocationSimple(entries, items)
+	}
+	return entries[idx].name, false, nil
+}
+
+func locationCategory(available int, capacity int) int {
+	if capacity == 0 {
+		return 1 // no capacity set
+	}
+	if available > 0 {
+		return 0 // has space
+	}
+	return 2 // full or over
+}
+
+func selectLocationSimple(entries []locationEntry, items []string) (string, bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Select a destination location:")
+	for i, item := range items {
+		fmt.Printf("%2d) %s\n", i+1, item)
+	}
+	fmt.Print("Enter number to select, or press Enter to cancel: ")
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", true, nil
+	}
+	for idx := range items {
+		if line == fmt.Sprintf("%d", idx+1) {
+			return entries[idx].name, false, nil
+		}
+	}
+	return "", true, fmt.Errorf("invalid selection: %q", line)
 }
 
 // supportsAdvancedTUI gates the promptui-based UI to terminals that typically

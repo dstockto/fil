@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/spf13/cobra"
@@ -82,10 +83,14 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	// Process locations already present in orders
 	for loc, ids := range orders {
 		set := current[loc] // nil map is fine; membership will be false
+		isPrinter := IsPrinterLocation(loc)
 		kept := make([]int, 0, len(ids))
 		removed := make([]int, 0)
 		for _, id := range ids {
-			if _, ok := set[id]; ok {
+			if id == EmptySlot && isPrinter {
+				// Preserve empty slot sentinels in printer locations
+				kept = append(kept, id)
+			} else if _, ok := set[id]; ok {
 				kept = append(kept, id)
 			} else {
 				removed = append(removed, id)
@@ -144,19 +149,37 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if removedTotal == 0 && addedTotal == 0 {
+	// Pad printer locations to their configured capacity with EmptySlot sentinels
+	paddedTotal := 0
+	for loc, ids := range cleaned {
+		if !IsPrinterLocation(loc) {
+			continue
+		}
+		padded := PadToCapacity(loc, ids)
+		if len(padded) != len(ids) {
+			paddedTotal += len(padded) - len(ids)
+			fmt.Printf("%s: padding %d empty slot(s) to capacity\n", locLabel(loc), len(padded)-len(ids))
+			cleaned[loc] = padded
+		}
+	}
+
+	if removedTotal == 0 && addedTotal == 0 && paddedTotal == 0 {
 		fmt.Println("No changes needed; nothing to clean or add.")
 		return nil
 	}
 
 	if !write {
-		if addedTotal > 0 && removedTotal > 0 {
-			fmt.Printf("Dry run: would remove %d stale id(s) and add %d missing id(s). Use --write to apply changes.\n", removedTotal, addedTotal)
-		} else if removedTotal > 0 {
-			fmt.Printf("Dry run: would remove %d stale id(s). Use --write to apply changes.\n", removedTotal)
-		} else {
-			fmt.Printf("Dry run: would add %d missing id(s). Use --write to apply changes.\n", addedTotal)
+		parts := []string{}
+		if removedTotal > 0 {
+			parts = append(parts, fmt.Sprintf("remove %d stale id(s)", removedTotal))
 		}
+		if addedTotal > 0 {
+			parts = append(parts, fmt.Sprintf("add %d missing id(s)", addedTotal))
+		}
+		if paddedTotal > 0 {
+			parts = append(parts, fmt.Sprintf("pad %d empty slot(s)", paddedTotal))
+		}
+		fmt.Printf("Dry run: would %s. Use --write to apply changes.\n", strings.Join(parts, ", "))
 		return nil
 	}
 
@@ -165,13 +188,17 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
 
-	if addedTotal > 0 && removedTotal > 0 {
-		fmt.Printf("Updated locations_spoolorders; removed %d stale id(s) and added %d missing id(s).\n", removedTotal, addedTotal)
-	} else if removedTotal > 0 {
-		fmt.Printf("Updated locations_spoolorders; removed %d stale id(s).\n", removedTotal)
-	} else {
-		fmt.Printf("Updated locations_spoolorders; added %d missing id(s).\n", addedTotal)
+	parts := []string{}
+	if removedTotal > 0 {
+		parts = append(parts, fmt.Sprintf("removed %d stale id(s)", removedTotal))
 	}
+	if addedTotal > 0 {
+		parts = append(parts, fmt.Sprintf("added %d missing id(s)", addedTotal))
+	}
+	if paddedTotal > 0 {
+		parts = append(parts, fmt.Sprintf("padded %d empty slot(s)", paddedTotal))
+	}
+	fmt.Printf("Updated locations_spoolorders; %s.\n", strings.Join(parts, ", "))
 	return nil
 }
 

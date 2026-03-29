@@ -122,6 +122,65 @@ func (s FindSpool) String() string {
 	)
 }
 
+// StringNoLocation returns the same display as String() but without the location prefix.
+func (s FindSpool) StringNoLocation() string {
+	archived := ""
+	if s.Archived {
+		archived = color.RGB(200, 0, 0).Sprintf(" (archived)")
+	}
+
+	colorBlock := GetColorBlock(s.Filament.ColorHex, s.Filament.MultiColorHexes)
+	if colorBlock != "" {
+		colorBlock += " "
+	}
+
+	diameter := ""
+	if s.Filament.Diameter != 1.75 {
+		diameter = color.RGB(200, 128, 0).Sprintf(" %.2fmm", s.Filament.Diameter)
+	}
+
+	var lastUsedDuration string
+	if s.LastUsed.IsZero() {
+		lastUsedDuration = "never"
+	} else {
+		duration := time.Since(s.LastUsed)
+		if duration.Hours() > 24 {
+			lastUsedDuration = fmt.Sprintf("%d days ago", int(duration.Truncate(24*time.Hour).Hours())/24)
+		} else if duration.Hours() > 1 {
+			lastUsedDuration = fmt.Sprintf("%d hours ago", int(duration.Truncate(time.Hour).Hours()))
+		} else if duration.Minutes() > 1 {
+			lastUsedDuration = fmt.Sprintf("%d minutes ago", int(duration.Truncate(time.Minute).Minutes()))
+		} else if duration.Seconds() > 1 {
+			lastUsedDuration = fmt.Sprintf("%d seconds ago", int(duration.Truncate(time.Second).Seconds()))
+		} else {
+			lastUsedDuration = time.Since(s.LastUsed).String() + " ago"
+		}
+	}
+
+	colorHex := ""
+	if s.Filament.ColorHex != "" {
+		colorHex = " #" + s.Filament.ColorHex
+	}
+
+	vendorName := Sanitize(s.Filament.Vendor.Name)
+	filamentName := Sanitize(s.Filament.Name)
+	material := Sanitize(s.Filament.Material)
+
+	return fmt.Sprintf(
+		"%s#%d %s %s%s (%s%s) - %.1fg remaining, last used %s%s",
+		colorBlock,
+		s.Id,
+		vendorName,
+		filamentName,
+		diameter,
+		material,
+		colorHex,
+		s.RemainingWeight,
+		lastUsedDuration,
+		archived,
+	)
+}
+
 func GetColorBlock(colorHex, multiColorHexes string) string {
 	colorBlock := ""
 

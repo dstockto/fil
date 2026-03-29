@@ -248,13 +248,80 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 		showPurchase, _ := cmd.Flags().GetBool("purchase")
 
+		// Check if any results are in printer locations — if so, render those
+		// locations with slot numbers and empty indicators.
+		hasPrinterLoc := false
 		for _, s := range spools {
-			fmt.Printf(" - %s\n", s)
-			if showPurchase {
-				fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+			if IsPrinterLocation(s.Location) {
+				hasPrinterLoc = true
+				break
 			}
-			totalRemaining += s.RemainingWeight
-			totalUsed += s.UsedWeight
+		}
+
+		if hasPrinterLoc && len(spools) > 0 {
+			// Group spools by location
+			spoolsByLoc := map[string]map[int]models.FindSpool{}
+			locOrder := []string{}
+			locSeen := map[string]struct{}{}
+			for _, s := range spools {
+				loc := s.Location
+				if _, ok := spoolsByLoc[loc]; !ok {
+					spoolsByLoc[loc] = map[int]models.FindSpool{}
+				}
+				spoolsByLoc[loc][s.Id] = s
+				if _, ok := locSeen[loc]; !ok {
+					locOrder = append(locOrder, loc)
+					locSeen[loc] = struct{}{}
+				}
+			}
+
+			for _, loc := range locOrder {
+				locSpools := spoolsByLoc[loc]
+				if IsPrinterLocation(loc) {
+					slotList := orders[loc]
+					slotList = PadToCapacity(loc, slotList)
+					for i, id := range slotList {
+						slotNum := i + 1
+						if id == EmptySlot {
+							dimmed := color.New(color.Faint).SprintFunc()
+							fmt.Printf(" %s:%d %s\n", loc, slotNum, dimmed("(empty)"))
+						} else if s, ok := locSpools[id]; ok {
+							fmt.Printf(" %s:%d %s\n", loc, slotNum, s.StringNoLocation())
+							if showPurchase {
+								fmt.Printf("    %s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+							}
+							totalRemaining += s.RemainingWeight
+							totalUsed += s.UsedWeight
+							delete(locSpools, id)
+						}
+					}
+					// Any spools not in the slot list (overflow)
+					for _, s := range locSpools {
+						fmt.Printf(" %s:? %s\n", loc, s.StringNoLocation())
+						totalRemaining += s.RemainingWeight
+						totalUsed += s.UsedWeight
+					}
+				} else {
+					// Non-printer location — standard display
+					for _, s := range locSpools {
+						fmt.Printf(" - %s\n", s)
+						if showPurchase {
+							fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+						}
+						totalRemaining += s.RemainingWeight
+						totalUsed += s.UsedWeight
+					}
+				}
+			}
+		} else {
+			for _, s := range spools {
+				fmt.Printf(" - %s\n", s)
+				if showPurchase {
+					fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+				}
+				totalRemaining += s.RemainingWeight
+				totalUsed += s.UsedWeight
+			}
 		}
 
 		if len(spools) > 0 {

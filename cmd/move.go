@@ -24,12 +24,13 @@ var moveCmd = &cobra.Command{
 }
 
 type move struct {
-	spoolId int
-	spool   models.FindSpool
-	from    string
-	to      string // may include slot shorthand like "A:2"; resolve later
-	dest    DestSpec
-	err     error
+	spoolId     int
+	spool       models.FindSpool
+	from        string
+	to          string // may include slot shorthand like "A:2"; resolve later
+	dest        DestSpec
+	needSuggest bool // true when destination is "_" (interactive picker)
+	err         error
 }
 
 func (m move) String() string {
@@ -83,6 +84,12 @@ func runMove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --suggest / -s is shorthand for --destination _
+	suggest, _ := cmd.Flags().GetBool("suggest")
+	if suggest {
+		allTo = "_"
+	}
+
 	var (
 		errs  error
 		moves []move
@@ -103,11 +110,22 @@ func runMove(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		dspec, derr := ParseDestSpec(destination)
-		if derr != nil {
-			// mark this move as errored but continue parsing others
-			moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: derr})
-			continue
+		// Check for suggest destination token
+		isSuggest := destination == "_"
+		if isSuggest && !allowInteractive {
+			errs = errors.Join(errs, errors.New("destination suggestion (_) requires interactive mode"))
+			break
+		}
+
+		var dspec DestSpec
+		if !isSuggest {
+			var derr error
+			dspec, derr = ParseDestSpec(destination)
+			if derr != nil {
+				// mark this move as errored but continue parsing others
+				moves = append(moves, move{spoolId: -1, to: destination, dest: dspec, err: derr})
+				continue
+			}
 		}
 
 		// Resolve the spool ID from selector (ID or name)
@@ -153,7 +171,7 @@ func runMove(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		moves = append(moves, move{spoolId: spoolId, to: destination, dest: dspec})
+		moves = append(moves, move{spoolId: spoolId, to: destination, dest: dspec, needSuggest: isSuggest})
 	}
 
 	// Resolve current spools and fill from/source
@@ -184,41 +202,115 @@ func runMove(cmd *cobra.Command, args []string) error {
 		return loadErr
 	}
 
+	// Resolve any suggest destinations via interactive picker
+	for i, m := range moves {
+		if !m.needSuggest || m.err != nil {
+			continue
+		}
+		fmt.Printf("Select destination for spool #%d (%s):\n", m.spoolId, m.spool)
+		loc, canceled, selErr := selectLocationInteractively(orders, simpleSelect)
+		if selErr != nil {
+			errs = errors.Join(errs, fmt.Errorf("selection error for spool #%d: %w", m.spoolId, selErr))
+			moves[i].err = selErr
+			continue
+		}
+		if canceled {
+			return errors.New("selection canceled; no moves executed")
+		}
+		dspec := DestSpec{Location: loc}
+		moves[i].dest = dspec
+		moves[i].to = loc
+		moves[i].needSuggest = false
+	}
+
+	// Ensure printer locations are padded to capacity before we begin
+	for loc := range orders {
+		orders[loc] = PadToCapacity(loc, orders[loc])
+	}
+
 	// Track before/after for touched destinations for dry-run output
 	before := map[string][]int{}
 	touched := map[string]struct{}{}
 
-	// Apply moves to orders in-memory (remove from any existing list; insert/append at destination)
+	// snapshotLocation records the before-state for a location if not yet captured.
+	snapshotLocation := func(loc string) {
+		if _, ok := touched[loc]; !ok {
+			before[loc] = append([]int(nil), orders[loc]...)
+			touched[loc] = struct{}{}
+		}
+	}
+
+	// Apply moves to orders in-memory
 	for _, m := range moves {
 		if m.err != nil || m.spoolId <= 0 {
 			continue
 		}
 
-		// Snapshot before state once per touched destination Location
-		if _, ok := touched[m.dest.Location]; !ok {
-			before[m.dest.Location] = append([]int(nil), orders[m.dest.Location]...)
-			touched[m.dest.Location] = struct{}{}
+		destLoc := m.dest.Location
+		destIsPrinter := IsPrinterLocation(destLoc)
+
+		// Snapshot before state for destination and source locations
+		snapshotLocation(destLoc)
+		if m.from != "" {
+			snapshotLocation(m.from)
 		}
 
-		// Remove ID from all lists to avoid duplicates in settings
+		// Remove ID from all lists to avoid duplicates.
+		// For printer locations this replaces the ID with EmptySlot.
 		orders = RemoveFromAllOrders(orders, m.spoolId)
 
 		// Insert/append into destination
-		list := orders[m.dest.Location]
-		if m.dest.hasPos {
-			p := m.dest.pos
-			if p < 1 {
-				p = 1
+		list := orders[destLoc]
+		if destIsPrinter {
+			if m.dest.hasPos {
+				p := m.dest.pos
+				if p < 1 {
+					p = 1
+				}
+				idx := p - 1
+				if idx >= len(list) {
+					// Extend to fit the requested slot
+					for len(list) <= idx {
+						list = append(list, EmptySlot)
+					}
+				}
+				occupant := list[idx]
+				if occupant == EmptySlot {
+					// Slot is empty — just place the spool
+					list[idx] = m.spoolId
+				} else {
+					// Slot is occupied — replace and append occupant to end
+					list[idx] = m.spoolId
+					list = append(list, occupant)
+					fmt.Printf("  Spool #%d displaced from slot %d to end of %s\n", occupant, p, destLoc)
+				}
+			} else {
+				// No slot specified — find first empty slot
+				emptyIdx := FirstEmptySlot(list)
+				if emptyIdx >= 0 {
+					list[emptyIdx] = m.spoolId
+				} else {
+					// No empty slots — append (exceeding capacity)
+					list = append(list, m.spoolId)
+				}
 			}
-			if p > len(list)+1 {
-				p = len(list) + 1
-			}
-			idx := p - 1
-			list = InsertAt(list, idx, m.spoolId)
 		} else {
-			list = append(list, m.spoolId)
+			// Non-printer location: original insert/append behavior
+			if m.dest.hasPos {
+				p := m.dest.pos
+				if p < 1 {
+					p = 1
+				}
+				if p > len(list)+1 {
+					p = len(list) + 1
+				}
+				idx := p - 1
+				list = InsertAt(list, idx, m.spoolId)
+			} else {
+				list = append(list, m.spoolId)
+			}
 		}
-		orders[m.dest.Location] = list
+		orders[destLoc] = list
 	}
 
 	// Execute
@@ -316,4 +408,5 @@ func init() {
 	moveCmd.Flags().Bool("debug", false, "show extra debug details in --dry-run output")
 	moveCmd.Flags().BoolP("non-interactive", "n", false, "do not prompt; if multiple spools match, behave as current non-interactive error behavior")
 	moveCmd.Flags().Bool("simple-select", false, "use a basic numbered selector instead of interactive menu (fallback for limited terminals)")
+	moveCmd.Flags().BoolP("suggest", "s", false, "interactively suggest destinations for all spools (shorthand for -d _)")
 }

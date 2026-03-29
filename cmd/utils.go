@@ -11,6 +11,46 @@ import (
 	"github.com/dstockto/fil/api"
 )
 
+// EmptySlot is the sentinel value used in locations_spoolorders to represent
+// an unoccupied slot in a printer location (AMS unit, etc.).
+const EmptySlot = -1
+
+// IsPrinterLocation returns true if the given location is listed under any
+// printer in the config's Printers map.
+func IsPrinterLocation(location string) bool {
+	if Cfg == nil || Cfg.Printers == nil {
+		return false
+	}
+	for _, locs := range Cfg.Printers {
+		for _, loc := range locs {
+			if loc == location {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// PadToCapacity ensures a printer location's spool order array is at least
+// as long as its configured capacity, padding with EmptySlot (-1) sentinels.
+// Non-printer locations and locations without capacity config are returned as-is.
+func PadToCapacity(location string, ids []int) []int {
+	if !IsPrinterLocation(location) {
+		return ids
+	}
+	if Cfg == nil || Cfg.LocationCapacity == nil {
+		return ids
+	}
+	capInfo, ok := Cfg.LocationCapacity[location]
+	if !ok {
+		return ids
+	}
+	for len(ids) < capInfo.Capacity {
+		ids = append(ids, EmptySlot)
+	}
+	return ids
+}
+
 // MapToAlias maps a Location alias to a Location name. If it's not found in the map, it returns the original string.
 func MapToAlias(to string) string {
 	if Cfg == nil {
@@ -104,15 +144,28 @@ func LoadLocationOrders(ctx context.Context, apiClient *api.Client) (map[string]
 }
 
 // RemoveFromAllOrders removes id from every Location list to avoid duplicates.
+// For printer locations, the id is replaced with EmptySlot (-1) to preserve
+// positional slot tracking. For non-printer locations, the id is removed and
+// the array collapses.
 func RemoveFromAllOrders(orders map[string][]int, id int) map[string][]int {
 	for loc, ids := range orders {
-		kept := make([]int, 0, len(ids))
-		for _, v := range ids {
-			if v != id {
-				kept = append(kept, v)
+		if IsPrinterLocation(loc) {
+			// Replace with sentinel to preserve slot positions
+			for i, v := range ids {
+				if v == id {
+					ids[i] = EmptySlot
+				}
 			}
+			orders[loc] = ids
+		} else {
+			kept := make([]int, 0, len(ids))
+			for _, v := range ids {
+				if v != id {
+					kept = append(kept, v)
+				}
+			}
+			orders[loc] = kept
 		}
-		orders[loc] = kept
 	}
 	return orders
 }
@@ -135,6 +188,29 @@ func InsertAt(s []int, i int, val int) []int {
 func indexOf(s []int, val int) int {
 	for i, v := range s {
 		if v == val {
+			return i
+		}
+	}
+	return -1
+}
+
+// CountSpools returns the number of actual spool IDs in a location order list,
+// excluding EmptySlot sentinels.
+func CountSpools(ids []int) int {
+	count := 0
+	for _, id := range ids {
+		if id != EmptySlot {
+			count++
+		}
+	}
+	return count
+}
+
+// FirstEmptySlot returns the 0-based index of the first EmptySlot sentinel in
+// the slice, or -1 if there are no empty slots.
+func FirstEmptySlot(ids []int) int {
+	for i, id := range ids {
+		if id == EmptySlot {
 			return i
 		}
 	}

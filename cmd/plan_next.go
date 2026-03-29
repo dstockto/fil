@@ -603,18 +603,44 @@ var planNextCmd = &cobra.Command{
 						if err == nil {
 							orders = RemoveFromAllOrders(orders, spoolToUnload.Id)
 							list := orders[newLoc]
-							if dspec.hasPos {
-								p := dspec.pos
-								if p < 1 {
-									p = 1
+							if IsPrinterLocation(newLoc) {
+								if dspec.hasPos {
+									idx := dspec.pos - 1
+									if idx < 0 {
+										idx = 0
+									}
+									for len(list) <= idx {
+										list = append(list, EmptySlot)
+									}
+									if list[idx] == EmptySlot {
+										list[idx] = spoolToUnload.Id
+									} else {
+										displaced := list[idx]
+										list[idx] = spoolToUnload.Id
+										list = append(list, displaced)
+									}
+								} else {
+									emptyIdx := FirstEmptySlot(list)
+									if emptyIdx >= 0 {
+										list[emptyIdx] = spoolToUnload.Id
+									} else {
+										list = append(list, spoolToUnload.Id)
+									}
 								}
-								if p > len(list)+1 {
-									p = len(list) + 1
-								}
-								idx := p - 1
-								list = InsertAt(list, idx, spoolToUnload.Id)
 							} else {
-								list = append(list, spoolToUnload.Id)
+								if dspec.hasPos {
+									p := dspec.pos
+									if p < 1 {
+										p = 1
+									}
+									if p > len(list)+1 {
+										p = len(list) + 1
+									}
+									idx := p - 1
+									list = InsertAt(list, idx, spoolToUnload.Id)
+								} else {
+									list = append(list, spoolToUnload.Id)
+								}
 							}
 							orders[newLoc] = list
 							_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
@@ -641,10 +667,24 @@ var planNextCmd = &cobra.Command{
 			if err == nil {
 				orders = RemoveFromAllOrders(orders, bestSpool.Id)
 				list := orders[targetLoc]
-				if unloadIdx != -1 {
-					list = InsertAt(list, unloadIdx, bestSpool.Id)
+				if IsPrinterLocation(targetLoc) {
+					if unloadIdx >= 0 && unloadIdx < len(list) && list[unloadIdx] == EmptySlot {
+						// Place into the slot vacated by the unloaded spool
+						list[unloadIdx] = bestSpool.Id
+					} else {
+						emptyIdx := FirstEmptySlot(list)
+						if emptyIdx >= 0 {
+							list[emptyIdx] = bestSpool.Id
+						} else {
+							list = append(list, bestSpool.Id)
+						}
+					}
 				} else {
-					list = append(list, bestSpool.Id)
+					if unloadIdx != -1 {
+						list = InsertAt(list, unloadIdx, bestSpool.Id)
+					} else {
+						list = append(list, bestSpool.Id)
+					}
 				}
 				orders[targetLoc] = list
 				_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
