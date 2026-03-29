@@ -229,9 +229,16 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	ctx := cmd.Context()
 
-	orders, err := LoadLocationOrders(ctx, apiClient)
+	// Get actual spool counts from the API (source of truth)
+	allSpools, err := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
 	if err != nil {
-		return fmt.Errorf("failed to load location orders: %w", err)
+		return fmt.Errorf("failed to fetch spools: %w", err)
+	}
+	spoolCountByLoc := map[string]int{}
+	for _, s := range allSpools {
+		if s.Location != "" {
+			spoolCountByLoc[s.Location]++
+		}
 	}
 
 	// Build partial-match filters from args (OR logic)
@@ -261,16 +268,12 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 	}
 	var locs []locInfo
 
-	// Gather from orders
+	// Gather from all known locations (API spool locations + capacity config)
 	seen := map[string]struct{}{}
-	for loc, ids := range orders {
-		if loc == "" {
+	for loc, count := range spoolCountByLoc {
+		if loc == "" || !matchesFilter(loc) {
 			continue
 		}
-		if !matchesFilter(loc) {
-			continue
-		}
-		count := CountSpools(ids)
 		cap := 0
 		if capInfo, ok := Cfg.LocationCapacity[loc]; ok {
 			cap = capInfo.Capacity
@@ -279,7 +282,7 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 		seen[loc] = struct{}{}
 	}
 
-	// Add capacity-configured locations not in orders
+	// Add capacity-configured locations with no spools
 	if Cfg.LocationCapacity != nil {
 		for loc, capInfo := range Cfg.LocationCapacity {
 			if _, ok := seen[loc]; ok {
