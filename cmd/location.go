@@ -18,15 +18,17 @@ import (
 )
 
 var locationCmd = &cobra.Command{
-	Use:   "location",
-	Short: "Manage locations",
-	Long:  `View and manage location settings such as capacity.`,
+	Use:     "location",
+	Short:   "Manage locations",
+	Long:    `View and manage location settings such as capacity.`,
+	Aliases: []string{"loc", "lo", "l"},
 }
 
 var locationCapacityCmd = &cobra.Command{
-	Use:   "capacity",
-	Short: "Manage location capacity",
-	Long:  `View and set capacity for locations.`,
+	Use:     "capacity",
+	Short:   "Manage location capacity",
+	Long:    `View and set capacity for locations.`,
+	Aliases: []string{"cap", "ca", "c"},
 }
 
 var locationCapacitySetCmd = &cobra.Command{
@@ -35,15 +37,14 @@ var locationCapacitySetCmd = &cobra.Command{
 	Long: `Set the capacity for a location. If capacity is not provided, uses the
 current spool count. Use --full to skip the confirmation prompt when
 setting from current count.`,
-	Args: cobra.RangeArgs(1, 2),
-	RunE: runLocationCapacitySet,
+	Args:    cobra.RangeArgs(1, 2),
+	RunE:    runLocationCapacitySet,
 }
 
 var locationCapacityShowCmd = &cobra.Command{
-	Use:   "show [location]",
+	Use:   "show [location...]",
 	Short: "Show location capacity and usage",
-	Long:  `Display capacity and current spool count for one or all locations.`,
-	Args:  cobra.MaximumNArgs(1),
+	Long:  `Display capacity and current spool count for specified locations, or all if none given.`,
 	RunE:  runLocationCapacityShow,
 }
 
@@ -232,26 +233,23 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load location orders: %w", err)
 	}
 
-	// If a specific location is requested, show just that one
-	if len(args) == 1 {
-		location := MapToAlias(args[0])
-		ids := orders[location]
-		count := CountSpools(ids)
-		if capInfo, ok := Cfg.LocationCapacity[location]; ok {
-			avail := capInfo.Capacity - count
-			fmt.Printf("%s: %d/%d", location, count, capInfo.Capacity)
-			if avail > 0 {
-				color.Green(" (%d available)", avail)
-			} else if avail == 0 {
-				color.Yellow(" (full)")
-			} else {
-				color.Red(" (%d over capacity)", -avail)
-			}
-			fmt.Println()
-		} else {
-			fmt.Printf("%s: %d spools (no capacity set)\n", location, count)
+	// Build partial-match filters from args (OR logic)
+	filters := make([]string, len(args))
+	for i, a := range args {
+		filters[i] = strings.ToLower(strings.TrimSpace(a))
+	}
+
+	matchesFilter := func(loc string) bool {
+		if len(filters) == 0 {
+			return true
 		}
-		return nil
+		lower := strings.ToLower(loc)
+		for _, f := range filters {
+			if strings.Contains(lower, f) {
+				return true
+			}
+		}
+		return false
 	}
 
 	// Show all locations that have spools or capacity configured
@@ -266,6 +264,9 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 	seen := map[string]struct{}{}
 	for loc, ids := range orders {
 		if loc == "" {
+			continue
+		}
+		if !matchesFilter(loc) {
 			continue
 		}
 		count := CountSpools(ids)
@@ -283,29 +284,36 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 			if _, ok := seen[loc]; ok {
 				continue
 			}
+			if !matchesFilter(loc) {
+				continue
+			}
 			locs = append(locs, locInfo{name: loc, count: 0, capacity: capInfo.Capacity})
 		}
 	}
 
 	// Print
 	for _, l := range locs {
-		if l.capacity > 0 {
-			avail := l.capacity - l.count
-			fmt.Printf("%-20s %d/%d", l.name, l.count, l.capacity)
-			if avail > 0 {
-				color.Green(" (%d available)", avail)
-			} else if avail == 0 {
-				color.Yellow(" (full)")
-			} else {
-				color.Red(" (%d over capacity)", -avail)
-			}
-			fmt.Println()
-		} else {
-			fmt.Printf("%-20s %d spools\n", l.name, l.count)
-		}
+		printLocationCapacity(l.name, l.count)
 	}
 
 	return nil
+}
+
+func printLocationCapacity(location string, count int) {
+	if capInfo, ok := Cfg.LocationCapacity[location]; ok {
+		avail := capInfo.Capacity - count
+		fmt.Printf("%-20s %d/%d", location, count, capInfo.Capacity)
+		if avail > 0 {
+			color.Green(" (%d available)", avail)
+		} else if avail == 0 {
+			color.Yellow(" (full)")
+		} else {
+			color.Red(" (%d over capacity)", -avail)
+		}
+		fmt.Println()
+	} else {
+		fmt.Printf("%-20s %d spools\n", location, count)
+	}
 }
 
 //nolint:gochecknoinits
