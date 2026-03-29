@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -291,6 +292,11 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Sort by name
+	sort.Slice(locs, func(i, j int) bool {
+		return locs[i].name < locs[j].name
+	})
+
 	// Print
 	for _, l := range locs {
 		printLocationCapacity(l.name, l.count)
@@ -302,15 +308,15 @@ func runLocationCapacityShow(cmd *cobra.Command, args []string) error {
 func printLocationCapacity(location string, count int) {
 	if capInfo, ok := Cfg.LocationCapacity[location]; ok {
 		avail := capInfo.Capacity - count
-		fmt.Printf("%-20s %d/%d", location, count, capInfo.Capacity)
+		status := ""
 		if avail > 0 {
-			color.Green(" (%d available)", avail)
+			status = color.GreenString(" (%d available)", avail)
 		} else if avail == 0 {
-			color.Yellow(" (full)")
+			status = color.YellowString(" (full)")
 		} else {
-			color.Red(" (%d over capacity)", -avail)
+			status = color.RedString(" (%d over capacity)", -avail)
 		}
-		fmt.Println()
+		fmt.Printf("%-20s %d/%d%s\n", location, count, capInfo.Capacity, status)
 	} else {
 		fmt.Printf("%-20s %d spools\n", location, count)
 	}
