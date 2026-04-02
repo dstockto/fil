@@ -238,6 +238,10 @@ func runMove(cmd *cobra.Command, args []string) error {
 		moves[i].dest = dspec
 		moves[i].to = loc
 		moves[i].needSuggest = false
+		spoolCounts[loc]++
+		if spoolCounts[m.from] > 0 {
+			spoolCounts[m.from]--
+		}
 	}
 
 	// Ensure printer locations are padded to capacity before we begin
