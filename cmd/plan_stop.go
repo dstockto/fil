@@ -97,6 +97,7 @@ var planStopCmd = &cobra.Command{
 		dp := &plans[selected.discoveredIdx]
 		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].Status = "todo"
 		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].Printer = ""
+		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].StartedAt = ""
 
 		if err := savePlan(*dp, dp.Plan); err != nil {
 			return fmt.Errorf("failed to save plan: %w", err)

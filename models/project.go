@@ -9,10 +9,12 @@ type PlateRequirement struct {
 }
 
 type Plate struct {
-	Name    string             `yaml:"name"`
-	Status  string             `yaml:"status"`            // "todo", "in-progress", "completed"
-	Printer string             `yaml:"printer,omitempty"` // printer name when in-progress
-	Needs   []PlateRequirement `yaml:"needs"`
+	Name              string             `yaml:"name"`
+	Status            string             `yaml:"status"`                        // "todo", "in-progress", "completed"
+	Printer           string             `yaml:"printer,omitempty"`             // printer name when in-progress
+	StartedAt         string             `yaml:"started_at,omitempty"`          // RFC3339 timestamp when printing started
+	EstimatedDuration string             `yaml:"estimated_duration,omitempty"`  // e.g. "6h25m"
+	Needs             []PlateRequirement `yaml:"needs"`
 }
 
 func (p *Plate) DefaultStatus() {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
@@ -102,6 +103,7 @@ var planNextCmd = &cobra.Command{
 						case 1: // Cancel
 							discovered[di].Plan.Projects[pi].Plates[pli].Status = "todo"
 							discovered[di].Plan.Projects[pi].Plates[pli].Printer = ""
+							discovered[di].Plan.Projects[pi].Plates[pli].StartedAt = ""
 							if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
 								return fmt.Errorf("failed to save plan: %w", err)
 							}
@@ -699,6 +701,7 @@ var planNextCmd = &cobra.Command{
 		dp := &discovered[choice.discoveredIdx]
 		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Status = "in-progress"
 		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Printer = printerName
+		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].StartedAt = time.Now().Format(time.RFC3339)
 		// Also mark the project as in-progress if it was todo
 		if dp.Plan.Projects[choice.projectIdx].Status == "todo" {
 			dp.Plan.Projects[choice.projectIdx].Status = "in-progress"

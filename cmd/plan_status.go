@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
@@ -23,10 +24,12 @@ var planStatusCmd = &cobra.Command{
 			return err
 		}
 
-		// Build map of printer → (project name, plate name)
+		// Build map of printer → (project name, plate name, time info)
 		type printingInfo struct {
-			Project string
-			Plate   string
+			Project           string
+			Plate             string
+			StartedAt         string
+			EstimatedDuration string
 		}
 		printerMap := make(map[string]printingInfo)
 
@@ -35,8 +38,10 @@ var planStatusCmd = &cobra.Command{
 				for _, plate := range proj.Plates {
 					if plate.Status == "in-progress" && plate.Printer != "" {
 						printerMap[plate.Printer] = printingInfo{
-							Project: proj.Name,
-							Plate:   plate.Name,
+							Project:           proj.Name,
+							Plate:             plate.Name,
+							StartedAt:         plate.StartedAt,
+							EstimatedDuration: plate.EstimatedDuration,
 						}
 					}
 				}
@@ -57,7 +62,9 @@ var planStatusCmd = &cobra.Command{
 
 		for _, name := range active {
 			info := printerMap[name]
-			fmt.Printf("%s: %s / %s\n", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			line := fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+			fmt.Println(line)
 		}
 		for _, name := range idle {
 			fmt.Printf("%s: (idle)\n", name)
@@ -65,6 +72,31 @@ var planStatusCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func formatTimeInfo(startedAt, estimatedDuration string) string {
+	if startedAt == "" {
+		return ""
+	}
+
+	started, err := time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return ""
+	}
+
+	startedStr := started.Format("3:04pm")
+
+	if estimatedDuration == "" {
+		return fmt.Sprintf(" (started %s)", startedStr)
+	}
+
+	dur, err := time.ParseDuration(estimatedDuration)
+	if err != nil {
+		return fmt.Sprintf(" (started %s)", startedStr)
+	}
+
+	eta := started.Add(dur)
+	return fmt.Sprintf(" (started %s, done ~%s)", startedStr, eta.Format("3:04pm"))
 }
 
 func init() {
