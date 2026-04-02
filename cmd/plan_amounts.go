@@ -14,7 +14,7 @@ import (
 
 var planAmountsCmd = &cobra.Command{
 	Use:     "amounts [file]",
-	Aliases: []string{"a", "amt"},
+	Aliases: []string{"amt"},
 	Short:   "Interactively fill in filament amounts for plan plates",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var dp *DiscoveredPlan
