@@ -43,19 +43,24 @@ var planStatusCmd = &cobra.Command{
 			}
 		}
 
-		// Sort printer names for consistent output
-		printerNames := make([]string, 0, len(Cfg.Printers))
+		// Split into active and idle, each sorted alphabetically
+		var active, idle []string
 		for name := range Cfg.Printers {
-			printerNames = append(printerNames, name)
-		}
-		sort.Strings(printerNames)
-
-		for _, name := range printerNames {
-			if info, ok := printerMap[name]; ok {
-				fmt.Printf("%s: %s / %s\n", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			if _, ok := printerMap[name]; ok {
+				active = append(active, name)
 			} else {
-				fmt.Printf("%s: (idle)\n", name)
+				idle = append(idle, name)
 			}
+		}
+		sort.Strings(active)
+		sort.Strings(idle)
+
+		for _, name := range active {
+			info := printerMap[name]
+			fmt.Printf("%s: %s / %s\n", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+		}
+		for _, name := range idle {
+			fmt.Printf("%s: (idle)\n", name)
 		}
 
 		return nil
