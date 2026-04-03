@@ -64,6 +64,7 @@ func (w *ETAWatcher) Reschedule() {
 		w.timer.Stop()
 	}
 
+	fmt.Println("[notify] Reschedule triggered")
 	w.scheduleNextLocked()
 }
 
@@ -127,6 +128,7 @@ func (w *ETAWatcher) scheduleNextLocked() {
 	}
 
 	if nextEvent.IsZero() {
+		fmt.Println("[notify] No upcoming ETAs to schedule")
 		return // nothing to schedule
 	}
 
@@ -135,6 +137,7 @@ func (w *ETAWatcher) scheduleNextLocked() {
 		delay = 0
 	}
 
+	fmt.Printf("[notify] Next check in %s (%d plates tracked, %d already notified)\n", delay.Round(time.Second), len(plates), len(w.notified))
 	w.timer = time.AfterFunc(delay, func() {
 		w.fireNotifications()
 	})
@@ -233,7 +236,11 @@ func (w *ETAWatcher) fireNotifications() {
 				if p.printer == "" {
 					msg = fmt.Sprintf("%s / %s should be done", p.key.project, p.key.plate)
 				}
-				w.notifier.Send(title, msg)
+				fmt.Printf("[notify] Sending ETA notification for %s / %s\n", p.key.project, p.key.plate)
+				errs := w.notifier.Send(title, msg)
+				for _, e := range errs {
+					fmt.Printf("[notify] Send error: %v\n", e)
+				}
 				w.notified[p.key] = notifyState{eta: p.eta, count: 1}
 			}
 		case 1:
@@ -244,7 +251,11 @@ func (w *ETAWatcher) fireNotifications() {
 				if p.printer == "" {
 					msg = fmt.Sprintf("%s / %s still not marked complete", p.key.project, p.key.plate)
 				}
-				w.notifier.Send(title, msg)
+				fmt.Printf("[notify] Sending reminder for %s / %s\n", p.key.project, p.key.plate)
+				errs := w.notifier.Send(title, msg)
+				for _, e := range errs {
+					fmt.Printf("[notify] Send error: %v\n", e)
+				}
 				w.notified[p.key] = notifyState{eta: p.eta, count: 2}
 			}
 		}
