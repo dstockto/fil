@@ -69,6 +69,8 @@ var serveCmd = &cobra.Command{
 				PushoverUserKey: Cfg.Notifications.PushoverUserKey,
 				NtfyTopic:       Cfg.Notifications.NtfyTopic,
 				NtfyServer:      Cfg.Notifications.NtfyServer,
+				QuietStart:      Cfg.Notifications.QuietStart,
+				QuietEnd:        Cfg.Notifications.QuietEnd,
 			}
 			notifier := server.NewNotifier(notifyCfg)
 			if notifier.Enabled() {

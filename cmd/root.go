@@ -30,6 +30,8 @@ type NotificationConfig struct {
 	PushoverUserKey string `json:"pushover_user_key,omitempty"`
 	NtfyTopic       string `json:"ntfy_topic,omitempty"`
 	NtfyServer      string `json:"ntfy_server,omitempty"` // defaults to https://ntfy.sh
+	QuietStart      string `json:"quiet_start,omitempty"` // e.g. "22:00"
+	QuietEnd        string `json:"quiet_end,omitempty"`   // e.g. "07:00"
 }
 
 type Config struct {

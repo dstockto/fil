@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // NotificationConfig mirrors cmd.NotificationConfig for use in the server package.
@@ -13,6 +14,8 @@ type NotificationConfig struct {
 	PushoverUserKey string
 	NtfyTopic       string
 	NtfyServer      string // defaults to https://ntfy.sh
+	QuietStart      string // e.g. "22:00"
+	QuietEnd        string // e.g. "07:00"
 }
 
 // Notifier sends notifications via configured channels (Pushover, ntfy).
@@ -49,6 +52,42 @@ func (n *Notifier) Send(title, message string) []error {
 	}
 
 	return errs
+}
+
+// IsQuietHours returns true if the given time falls within the configured quiet window.
+func (n *Notifier) IsQuietHours(t time.Time) bool {
+	if n.config.QuietStart == "" || n.config.QuietEnd == "" {
+		return false
+	}
+	start, err := time.Parse("15:04", n.config.QuietStart)
+	if err != nil {
+		return false
+	}
+	end, err := time.Parse("15:04", n.config.QuietEnd)
+	if err != nil {
+		return false
+	}
+
+	now := t.Hour()*60 + t.Minute()
+	s := start.Hour()*60 + start.Minute()
+	e := end.Hour()*60 + end.Minute()
+
+	if s <= e {
+		// Same-day window (e.g., 09:00 - 17:00)
+		return now >= s && now < e
+	}
+	// Overnight window (e.g., 22:00 - 07:00)
+	return now >= s || now < e
+}
+
+// QuietEndTime returns the next time quiet hours end, relative to the given time.
+func (n *Notifier) QuietEndTime(t time.Time) time.Time {
+	end, _ := time.Parse("15:04", n.config.QuietEnd)
+	endToday := time.Date(t.Year(), t.Month(), t.Day(), end.Hour(), end.Minute(), 0, 0, t.Location())
+	if endToday.After(t) {
+		return endToday
+	}
+	return endToday.Add(24 * time.Hour)
 }
 
 func (n *Notifier) sendPushover(title, message string) error {
