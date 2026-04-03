@@ -211,10 +211,25 @@ func (s *PlanServer) handlePutPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := filepath.Join(s.PlansDir, filepath.Base(name))
+
+	// Read old plan for completion diffing before overwriting
+	var oldPlan *models.PlanFile
+	if oldData, err := os.ReadFile(path); err == nil {
+		var op models.PlanFile
+		if yaml.Unmarshal(oldData, &op) == nil {
+			op.DefaultStatus()
+			oldPlan = &op
+		}
+	}
+
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		http.Error(w, fmt.Sprintf("failed to write plan: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Log any plates that transitioned to completed
+	plan.DefaultStatus()
+	s.logCompletions(name, oldPlan, &plan)
 
 	if s.Watcher != nil {
 		s.Watcher.Reschedule()
