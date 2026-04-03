@@ -25,6 +25,7 @@ type PlanServer struct {
 	ConfigDir     string
 	AssembliesDir string
 	Version       string
+	Watcher       *ETAWatcher
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -213,6 +214,10 @@ func (s *PlanServer) handlePutPlan(w http.ResponseWriter, r *http.Request) {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		http.Error(w, fmt.Sprintf("failed to write plan: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	if s.Watcher != nil {
+		s.Watcher.Reschedule()
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -25,6 +25,13 @@ type LocationCapacity struct {
 	Capacity int `json:"capacity"`
 }
 
+type NotificationConfig struct {
+	PushoverAPIKey  string `json:"pushover_api_key,omitempty"`
+	PushoverUserKey string `json:"pushover_user_key,omitempty"`
+	NtfyTopic       string `json:"ntfy_topic,omitempty"`
+	NtfyServer      string `json:"ntfy_server,omitempty"` // defaults to https://ntfy.sh
+}
+
 type Config struct {
 	LocationAliases  map[string]string           `json:"location_aliases"`
 	LocationCapacity map[string]LocationCapacity `json:"location_capacity"`
@@ -32,6 +39,7 @@ type Config struct {
 	LowThresholds    map[string]float64          `json:"low_thresholds"`
 	LowIgnore        []string                    `json:"low_ignore"`
 	Printers         map[string][]string         `json:"printers"`
+	Notifications    *NotificationConfig         `json:"notifications,omitempty"`
 	PlansDir         string                      `json:"plans_dir"`
 	ArchiveDir       string                      `json:"archive_dir"`
 	PauseDir         string                      `json:"pause_dir"`
@@ -49,6 +57,7 @@ type SharedConfig struct {
 	LowThresholds    map[string]float64          `json:"low_thresholds,omitempty"`
 	LowIgnore        []string                    `json:"low_ignore,omitempty"`
 	Printers         map[string][]string         `json:"printers,omitempty"`
+	Notifications    *NotificationConfig         `json:"notifications,omitempty"`
 }
 
 // ToSharedConfig extracts the shared fields from a full Config.
@@ -60,6 +69,7 @@ func (c *Config) ToSharedConfig() SharedConfig {
 		LowThresholds:    c.LowThresholds,
 		LowIgnore:        c.LowIgnore,
 		Printers:         c.Printers,
+		Notifications:    c.Notifications,
 	}
 }
 
@@ -72,6 +82,7 @@ func (s SharedConfig) ApplyTo(dst *Config) {
 		LowThresholds:    s.LowThresholds,
 		LowIgnore:        s.LowIgnore,
 		Printers:         s.Printers,
+		Notifications:    s.Notifications,
 	}
 	mergeInto(dst, src)
 }
@@ -300,5 +311,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.AssembliesDir != "" {
 		dst.AssembliesDir = src.AssembliesDir
+	}
+
+	if src.Notifications != nil {
+		dst.Notifications = src.Notifications
 	}
 }

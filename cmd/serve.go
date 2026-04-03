@@ -49,6 +49,10 @@ var serveCmd = &cobra.Command{
 			}
 		}
 
+		// Graceful shutdown on SIGINT/SIGTERM
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
 		s := &server.PlanServer{
 			PlansDir:      Cfg.PlansDir,
 			PauseDir:      Cfg.PauseDir,
@@ -58,15 +62,28 @@ var serveCmd = &cobra.Command{
 			Version:       version,
 		}
 
+		// Start ETA notification watcher if notifications are configured
+		if Cfg.Notifications != nil {
+			notifyCfg := server.NotificationConfig{
+				PushoverAPIKey:  Cfg.Notifications.PushoverAPIKey,
+				PushoverUserKey: Cfg.Notifications.PushoverUserKey,
+				NtfyTopic:       Cfg.Notifications.NtfyTopic,
+				NtfyServer:      Cfg.Notifications.NtfyServer,
+			}
+			notifier := server.NewNotifier(notifyCfg)
+			if notifier.Enabled() {
+				watcher := server.NewETAWatcher(ctx, Cfg.PlansDir, notifier)
+				s.Watcher = watcher
+				defer watcher.Stop()
+				fmt.Println("  Notifications: enabled")
+			}
+		}
+
 		addr := fmt.Sprintf("%s:%d", bind, port)
 		srv := &http.Server{
 			Addr:    addr,
 			Handler: s.Routes(),
 		}
-
-		// Graceful shutdown on SIGINT/SIGTERM
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
 
 		go func() {
 			<-ctx.Done()
