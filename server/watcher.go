@@ -20,13 +20,19 @@ type plateKey struct {
 	plate   string
 }
 
+// notifyState tracks notification progress for a plate with a specific ETA.
+type notifyState struct {
+	eta   time.Time // the ETA we notified about; if it changes, we reset
+	count int       // 0=none, 1=ETA sent, 2=reminder sent
+}
+
 // ETAWatcher monitors in-progress plates and sends notifications when ETAs pass.
 type ETAWatcher struct {
 	plansDir string
 	notifier *Notifier
 
 	mu        sync.Mutex
-	notified  map[plateKey]int // tracks how many notifications sent (0=none, 1=ETA, 2=reminder)
+	notified  map[plateKey]notifyState
 	timer     *time.Timer
 	cancel    context.CancelFunc
 	ctx       context.Context
@@ -40,7 +46,7 @@ func NewETAWatcher(ctx context.Context, plansDir string, notifier *Notifier) *ET
 	w := &ETAWatcher{
 		plansDir: plansDir,
 		notifier: notifier,
-		notified: make(map[plateKey]int),
+		notified: make(map[plateKey]notifyState),
 		cancel:   cancel,
 		ctx:      ctx,
 	}
@@ -76,13 +82,18 @@ func (w *ETAWatcher) Stop() {
 func (w *ETAWatcher) scheduleNextLocked() {
 	plates := w.scanPlates()
 
-	// Clean up notified entries for plates no longer in-progress
-	activeKeys := make(map[plateKey]bool)
+	// Clean up notified entries for plates no longer in-progress,
+	// and reset notifications if ETA changed (e.g. fil plan time was re-run).
+	activeKeys := make(map[plateKey]time.Time)
 	for _, p := range plates {
-		activeKeys[p.key] = true
+		activeKeys[p.key] = p.eta
 	}
-	for k := range w.notified {
-		if !activeKeys[k] {
+	for k, state := range w.notified {
+		eta, active := activeKeys[k]
+		if !active {
+			delete(w.notified, k)
+		} else if !eta.Equal(state.eta) {
+			// ETA changed — reset so notifications fire for new ETA
 			delete(w.notified, k)
 		}
 	}
@@ -92,10 +103,10 @@ func (w *ETAWatcher) scheduleNextLocked() {
 	var nextEvent time.Time
 
 	for _, p := range plates {
-		count := w.notified[p.key]
+		state := w.notified[p.key]
 
 		var eventTime time.Time
-		switch count {
+		switch state.count {
 		case 0:
 			eventTime = p.eta
 		case 1:
@@ -207,9 +218,14 @@ func (w *ETAWatcher) fireNotifications() {
 	now := time.Now()
 
 	for _, p := range plates {
-		count := w.notified[p.key]
+		state := w.notified[p.key]
 
-		switch count {
+		// If ETA changed since we last notified, reset
+		if state.count > 0 && !p.eta.Equal(state.eta) {
+			state = notifyState{}
+		}
+
+		switch state.count {
 		case 0:
 			if now.After(p.eta) || now.Equal(p.eta) {
 				title := "Print should be done"
@@ -218,7 +234,7 @@ func (w *ETAWatcher) fireNotifications() {
 					msg = fmt.Sprintf("%s / %s should be done", p.key.project, p.key.plate)
 				}
 				w.notifier.Send(title, msg)
-				w.notified[p.key] = 1
+				w.notified[p.key] = notifyState{eta: p.eta, count: 1}
 			}
 		case 1:
 			reminderTime := p.eta.Add(reminderDelay)
@@ -229,7 +245,7 @@ func (w *ETAWatcher) fireNotifications() {
 					msg = fmt.Sprintf("%s / %s still not marked complete", p.key.project, p.key.plate)
 				}
 				w.notifier.Send(title, msg)
-				w.notified[p.key] = 2
+				w.notified[p.key] = notifyState{eta: p.eta, count: 2}
 			}
 		}
 	}
