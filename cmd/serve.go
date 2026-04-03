@@ -77,6 +77,8 @@ var serveCmd = &cobra.Command{
 				defer watcher.Stop()
 				fmt.Println("  Notifications: enabled")
 			}
+		} else {
+			fmt.Println("  Notifications: disabled")
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)
