@@ -3,3 +3,4 @@ fil
 fil-linux-*
 .idea
 Makefile
+cmd/bambu_test_trays.go
