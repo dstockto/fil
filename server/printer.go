@@ -30,12 +30,12 @@ type TrayInfo struct {
 
 // TrayUpdate contains the fields to push to a printer tray.
 type TrayUpdate struct {
-	AmsID   int
-	TrayID  int
-	Color   string // hex RRGGBBAA
-	Type    string // e.g. "PLA", "Matte PLA"
-	TempMin int
-	TempMax int
+	AmsID   int    `json:"ams_id"`
+	TrayID  int    `json:"tray_id"`
+	Color   string `json:"color"`    // hex RRGGBBAA
+	Type    string `json:"type"`     // e.g. "PLA", "Matte PLA"
+	TempMin int    `json:"temp_min"`
+	TempMax int    `json:"temp_max"`
 }
 
 // PrinterAdapter defines the interface for communicating with a printer.

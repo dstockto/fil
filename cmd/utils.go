@@ -31,6 +31,38 @@ func IsPrinterLocation(location string) bool {
 	return false
 }
 
+// PrinterTrayMapping describes how a location+slot maps to a printer's tray.
+type PrinterTrayMapping struct {
+	PrinterName string
+	PrinterType string
+	AmsID       int // index of the location within the printer's locations list
+	TrayID      int // 0-based slot index within the location
+}
+
+// MapLocationToTray maps a location name and 1-based slot position to a printer tray.
+// Returns nil if the location is not a printer location or printer has no type configured.
+func MapLocationToTray(location string, slotPos int) *PrinterTrayMapping {
+	if Cfg == nil || Cfg.Printers == nil {
+		return nil
+	}
+	for name, pCfg := range Cfg.Printers {
+		if pCfg.Type == "" {
+			continue
+		}
+		for locIdx, loc := range pCfg.Locations {
+			if loc == location {
+				return &PrinterTrayMapping{
+					PrinterName: name,
+					PrinterType: pCfg.Type,
+					AmsID:       locIdx,
+					TrayID:      slotPos - 1, // convert 1-based to 0-based
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // PadToCapacity ensures a printer location's spool order array is at least
 // as long as its configured capacity, padding with EmptySlot (-1) sentinels.
 // Non-printer locations and locations without capacity config are returned as-is.

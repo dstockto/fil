@@ -462,6 +462,44 @@ func (c *PlanServerClient) GetPrinterStatus(ctx context.Context) ([]PrinterStatu
 	return statuses, nil
 }
 
+// PushTray pushes filament metadata to a specific printer tray via the server.
+func (c *PlanServerClient) PushTray(ctx context.Context, printerName string, update TrayPushRequest) error {
+	endpoint := fmt.Sprintf("%s/api/v1/printers/%s/push-tray", c.base, printerName)
+
+	body, err := json.Marshal(update)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("push tray failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+// TrayPushRequest is the payload for pushing filament metadata to a printer tray.
+type TrayPushRequest struct {
+	AmsID   int    `json:"ams_id"`
+	TrayID  int    `json:"tray_id"`
+	Color   string `json:"color"`
+	Type    string `json:"type"`
+	TempMin int    `json:"temp_min"`
+	TempMax int    `json:"temp_max"`
+}
+
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
 

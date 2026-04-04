@@ -4,9 +4,11 @@ Copyright © 2025 David Stockton <dave@davidstockton.com>
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
@@ -413,10 +415,66 @@ func runMove(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("Moved %s to %s\n", m.spool, label)
 		}
+
+		// Push tray info to printer if destination is a printer location
+		pushTrayUpdate(m, orders)
 	}
 
 	cmd.SilenceUsage = true
 	return errs
+}
+
+// pushTrayUpdate pushes filament metadata to the printer after a spool move.
+// It determines the slot position from the orders map and maps it to the printer's tray.
+func pushTrayUpdate(m move, orders map[string][]int) {
+	if Cfg == nil || Cfg.PlansServer == "" {
+		return
+	}
+
+	destLoc := m.dest.Location
+	if !IsPrinterLocation(destLoc) {
+		return
+	}
+
+	// Determine the slot position (1-based) of this spool in the destination
+	slotPos := 0
+	if ids, ok := orders[destLoc]; ok {
+		for i, id := range ids {
+			if id == m.spoolId {
+				slotPos = i + 1
+				break
+			}
+		}
+	}
+	if slotPos == 0 {
+		return
+	}
+
+	mapping := MapLocationToTray(destLoc, slotPos)
+	if mapping == nil {
+		return
+	}
+
+	// Build color string with alpha (RRGGBBFF)
+	colorHex := strings.TrimPrefix(m.spool.Filament.ColorHex, "#")
+	if len(colorHex) == 6 {
+		colorHex += "FF"
+	}
+
+	client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+	err := client.PushTray(context.Background(), mapping.PrinterName, api.TrayPushRequest{
+		AmsID:   mapping.AmsID,
+		TrayID:  mapping.TrayID,
+		Color:   strings.ToUpper(colorHex),
+		Type:    m.spool.Filament.Material,
+		TempMin: 190,
+		TempMax: 240,
+	})
+	if err != nil {
+		fmt.Printf("  Note: could not update printer tray: %v\n", err)
+	} else {
+		fmt.Printf("  Updated %s tray %s slot %d\n", mapping.PrinterName, destLoc, slotPos)
+	}
 }
 
 func init() {

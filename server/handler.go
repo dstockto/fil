@@ -55,6 +55,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("POST /api/v1/plans/clean-assemblies", s.handleCleanAssemblies)
 	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)
+	mux.HandleFunc("POST /api/v1/printers/{name}/push-tray", s.handlePushTray)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	return s.versionMiddleware(mux)
 }
@@ -83,6 +84,32 @@ func (s *PlanServer) handleListPrinters(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(states)
+}
+
+func (s *PlanServer) handlePushTray(w http.ResponseWriter, r *http.Request) {
+	if s.Printers == nil {
+		http.Error(w, "no printer connections configured", http.StatusBadRequest)
+		return
+	}
+
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "printer name required", http.StatusBadRequest)
+		return
+	}
+
+	var update TrayUpdate
+	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.Printers.PushTray(name, update); err != nil {
+		http.Error(w, fmt.Sprintf("failed to push tray: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *PlanServer) handleVersion(w http.ResponseWriter, r *http.Request) {
