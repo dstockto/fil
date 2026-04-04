@@ -108,7 +108,7 @@ func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 			"tray_type":       update.Type,
 			"nozzle_temp_min": update.TempMin,
 			"nozzle_temp_max": update.TempMax,
-			"tray_info_idx":   "GFL99",
+			"tray_info_idx":   "GFL01",
 		},
 	}
 
