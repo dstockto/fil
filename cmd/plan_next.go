@@ -692,6 +692,39 @@ var planNextCmd = &cobra.Command{
 				_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
 			}
 
+			// Push tray update to printer if this is a printer location
+			if IsPrinterLocation(targetLoc) && Cfg.PlansServer != "" {
+				// Find the slot position of the spool we just placed
+				slotPos := 0
+				for i, id := range orders[targetLoc] {
+					if id == bestSpool.Id {
+						slotPos = i + 1
+						break
+					}
+				}
+				if slotPos > 0 {
+					if mapping := MapLocationToTray(targetLoc, slotPos); mapping != nil {
+						colorHex := strings.TrimPrefix(bestSpool.Filament.ColorHex, "#")
+						if len(colorHex) == 6 {
+							colorHex += "FF"
+						}
+						planClient := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+						if err := planClient.PushTray(ctx, mapping.PrinterName, api.TrayPushRequest{
+							AmsID:   mapping.AmsID,
+							TrayID:  mapping.TrayID,
+							Color:   strings.ToUpper(colorHex),
+							Type:    bestSpool.Filament.Material,
+							TempMin: 190,
+							TempMax: 240,
+						}); err != nil {
+							fmt.Printf("  Note: could not update printer tray: %v\n", err)
+						} else {
+							fmt.Printf("  Updated %s tray\n", mapping.PrinterName)
+						}
+					}
+				}
+			}
+
 			// Update our local tracking
 			bestSpool.Location = targetLoc
 			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
