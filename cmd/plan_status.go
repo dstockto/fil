@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
 
+	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
 )
@@ -48,6 +50,17 @@ var planStatusCmd = &cobra.Command{
 			}
 		}
 
+		// Fetch live printer status from server if available
+		liveStatus := make(map[string]api.PrinterStatus)
+		if Cfg.PlansServer != "" {
+			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+			if statuses, err := client.GetPrinterStatus(context.Background()); err == nil {
+				for _, s := range statuses {
+					liveStatus[s.Name] = s
+				}
+			}
+		}
+
 		// Split into active and idle, each sorted alphabetically
 		var active, idle []string
 		for name := range Cfg.Printers {
@@ -63,15 +76,35 @@ var planStatusCmd = &cobra.Command{
 		for _, name := range active {
 			info := printerMap[name]
 			line := fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
-			line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+
+			// Prefer live printer data over fil's time estimate
+			if live, ok := liveStatus[name]; ok && live.State == "printing" {
+				line += formatLiveStatus(live)
+			} else {
+				line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+			}
 			fmt.Println(line)
 		}
+
 		for _, name := range idle {
-			fmt.Printf("%s: (idle)\n", name)
+			// Check if printer reports a non-idle state even though fil has no plate tracked
+			if live, ok := liveStatus[name]; ok && live.State != "idle" && live.State != "offline" {
+				fmt.Printf("%s: (%s)\n", name, live.State)
+			} else {
+				fmt.Printf("%s: (idle)\n", name)
+			}
 		}
 
 		return nil
 	},
+}
+
+func formatLiveStatus(status api.PrinterStatus) string {
+	if status.RemainingMins > 0 {
+		eta := time.Now().Add(time.Duration(status.RemainingMins) * time.Minute)
+		return fmt.Sprintf(" (%d%%, done ~%s)", status.Progress, eta.Format("3:04pm"))
+	}
+	return fmt.Sprintf(" (%d%%)", status.Progress)
 }
 
 func formatTimeInfo(startedAt, estimatedDuration string) string {

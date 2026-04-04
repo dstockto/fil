@@ -411,6 +411,44 @@ func (c *PlanServerClient) CleanAssemblies(ctx context.Context, dryRun bool) (*C
 	return &result, nil
 }
 
+// PrinterStatus represents a printer's current state as returned by the server.
+type PrinterStatus struct {
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	State         string `json:"state"`
+	Progress      int    `json:"progress,omitempty"`
+	RemainingMins int    `json:"remaining_mins,omitempty"`
+	CurrentFile   string `json:"current_file,omitempty"`
+	Layer         int    `json:"layer,omitempty"`
+	TotalLayers   int    `json:"total_layers,omitempty"`
+}
+
+// GetPrinterStatus fetches the current status of all printers from the server.
+func (c *PlanServerClient) GetPrinterStatus(ctx context.Context) ([]PrinterStatus, error) {
+	endpoint := c.base + "/api/v1/printers"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var statuses []PrinterStatus
+	if err := json.NewDecoder(resp.Body).Decode(&statuses); err != nil {
+		return nil, fmt.Errorf("failed to decode printer status: %w", err)
+	}
+	return statuses, nil
+}
+
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
 
