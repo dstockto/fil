@@ -93,6 +93,16 @@ var serveCmd = &cobra.Command{
 			}
 		}
 
+		// Build set of live-connected printer names for the ETA watcher
+		livePrinters := make(map[string]bool)
+		if s.Printers != nil {
+			for name := range Cfg.Printers {
+				if _, ok := s.Printers.Adapter(name); ok {
+					livePrinters[name] = true
+				}
+			}
+		}
+
 		// Start ETA notification watcher if notifications are configured
 		if Cfg.Notifications != nil {
 			notifyCfg := server.NotificationConfig{
@@ -105,52 +115,64 @@ var serveCmd = &cobra.Command{
 			}
 			notifier := server.NewNotifier(notifyCfg)
 			if notifier.Enabled() {
-				watcher := server.NewETAWatcher(ctx, Cfg.PlansDir, notifier)
+				watcher := server.NewETAWatcher(ctx, Cfg.PlansDir, notifier, livePrinters)
 				s.Watcher = watcher
 				defer watcher.Stop()
 				fmt.Println("  Notifications: enabled")
+
+				// Wire up printer state change notifications
+				if s.Printers != nil {
+					plansDir := Cfg.PlansDir
+					for name := range Cfg.Printers {
+						adapter, ok := s.Printers.Adapter(name)
+						if !ok {
+							continue
+						}
+						printerName := name
+						adapter.OnStateChange(func(oldState, newState string) {
+							// Look up what's printing on this printer
+							projName, plateName := server.LookupInProgressPlate(plansDir, printerName)
+							plateInfo := ""
+							if projName != "" && plateName != "" {
+								plateInfo = fmt.Sprintf("%s / %s", projName, plateName)
+							}
+
+							var title, msg string
+							switch newState {
+							case "finished":
+								title = "Print finished"
+								if plateInfo != "" {
+									msg = fmt.Sprintf("%s: %s — print finished", printerName, plateInfo)
+								} else {
+									msg = fmt.Sprintf("%s: print finished", printerName)
+								}
+							case "paused":
+								title = "Print paused"
+								if plateInfo != "" {
+									msg = fmt.Sprintf("%s: %s — paused, check printer", printerName, plateInfo)
+								} else {
+									msg = fmt.Sprintf("%s: print paused — check printer", printerName)
+								}
+							case "failed":
+								title = "Print failed"
+								if plateInfo != "" {
+									msg = fmt.Sprintf("%s: %s — print failed", printerName, plateInfo)
+								} else {
+									msg = fmt.Sprintf("%s: print failed", printerName)
+								}
+							default:
+								return
+							}
+							if notifier.IsQuietHours(time.Now()) {
+								return
+							}
+							notifier.Send(title, msg)
+						})
+					}
+				}
 			}
 		} else {
 			fmt.Println("  Notifications: disabled")
-		}
-
-		// Wire up printer state change notifications
-		if s.Printers != nil && s.Watcher != nil {
-			notifyCfg := server.NotificationConfig{
-				PushoverAPIKey:  Cfg.Notifications.PushoverAPIKey,
-				PushoverUserKey: Cfg.Notifications.PushoverUserKey,
-				NtfyTopic:       Cfg.Notifications.NtfyTopic,
-				NtfyServer:      Cfg.Notifications.NtfyServer,
-			}
-			notifier := server.NewNotifier(notifyCfg)
-
-			for name := range Cfg.Printers {
-				adapter, ok := s.Printers.Adapter(name)
-				if !ok {
-					continue
-				}
-				printerName := name
-				adapter.OnStateChange(func(oldState, newState string) {
-					var title, msg string
-					switch newState {
-					case "finished":
-						title = "Print finished"
-						msg = fmt.Sprintf("%s: print finished", printerName)
-					case "paused":
-						title = "Print paused"
-						msg = fmt.Sprintf("%s: print paused — check printer", printerName)
-					case "failed":
-						title = "Print failed"
-						msg = fmt.Sprintf("%s: print failed", printerName)
-					default:
-						return
-					}
-					if notifier.IsQuietHours(time.Now()) {
-						return
-					}
-					notifier.Send(title, msg)
-				})
-			}
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)

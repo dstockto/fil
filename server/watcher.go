@@ -28,8 +28,9 @@ type notifyState struct {
 
 // ETAWatcher monitors in-progress plates and sends notifications when ETAs pass.
 type ETAWatcher struct {
-	plansDir string
-	notifier *Notifier
+	plansDir     string
+	notifier     *Notifier
+	livePrinters map[string]bool // printers with live connections (skip ETA-based notifications)
 
 	mu        sync.Mutex
 	notified  map[plateKey]notifyState
@@ -41,14 +42,17 @@ type ETAWatcher struct {
 const reminderDelay = 5 * time.Minute
 
 // NewETAWatcher creates and starts an ETA watcher.
-func NewETAWatcher(ctx context.Context, plansDir string, notifier *Notifier) *ETAWatcher {
+// livePrinters is a set of printer names that have active live connections;
+// plates on these printers are skipped (notifications come from state changes instead).
+func NewETAWatcher(ctx context.Context, plansDir string, notifier *Notifier, livePrinters map[string]bool) *ETAWatcher {
 	ctx, cancel := context.WithCancel(ctx)
 	w := &ETAWatcher{
-		plansDir: plansDir,
-		notifier: notifier,
-		notified: make(map[plateKey]notifyState),
-		cancel:   cancel,
-		ctx:      ctx,
+		plansDir:     plansDir,
+		notifier:     notifier,
+		livePrinters: livePrinters,
+		notified:     make(map[plateKey]notifyState),
+		cancel:       cancel,
+		ctx:          ctx,
 	}
 	w.Reschedule()
 	return w
@@ -182,6 +186,12 @@ func (w *ETAWatcher) scanPlates() []plateETA {
 					continue
 				}
 
+				// Skip plates on printers with live connections —
+				// those get notifications from printer state changes instead
+				if plate.Printer != "" && w.livePrinters[plate.Printer] {
+					continue
+				}
+
 				started, err := time.Parse(time.RFC3339, plate.StartedAt)
 				if err != nil {
 					continue
@@ -256,4 +266,43 @@ func (w *ETAWatcher) fireNotifications() {
 
 	// Schedule next event
 	w.scheduleNextLocked()
+}
+
+// LookupInProgressPlate finds the in-progress plate assigned to a given printer
+// by scanning plan files. Returns project name and plate name, or empty strings if not found.
+func LookupInProgressPlate(plansDir, printerName string) (projectName, plateName string) {
+	entries, err := os.ReadDir(plansDir)
+	if err != nil {
+		return "", ""
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext != ".yaml" && ext != ".yml" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(plansDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var plan models.PlanFile
+		if err := yaml.Unmarshal(data, &plan); err != nil {
+			continue
+		}
+		plan.DefaultStatus()
+
+		for _, proj := range plan.Projects {
+			for _, plate := range proj.Plates {
+				if plate.Status == "in-progress" && plate.Printer == printerName {
+					return proj.Name, plate.Name
+				}
+			}
+		}
+	}
+
+	return "", ""
 }
