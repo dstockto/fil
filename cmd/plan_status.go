@@ -180,11 +180,18 @@ func activeTrayColorSwatch(status api.PrinterStatus) string {
 }
 
 func formatLiveStatus(status api.PrinterStatus) string {
+	parts := []string{fmt.Sprintf("%d%%", status.Progress)}
+
+	if status.Layer > 0 && status.TotalLayers > 0 {
+		parts = append(parts, fmt.Sprintf("layer %d/%d", status.Layer, status.TotalLayers))
+	}
+
 	if status.RemainingMins > 0 {
 		eta := time.Now().Add(time.Duration(status.RemainingMins) * time.Minute)
-		return fmt.Sprintf(" (%d%%, done ~%s)", status.Progress, eta.Format("3:04pm"))
+		parts = append(parts, fmt.Sprintf("done ~%s", eta.Format("3:04pm")))
 	}
-	return fmt.Sprintf(" (%d%%)", status.Progress)
+
+	return fmt.Sprintf(" (%s)", strings.Join(parts, ", "))
 }
 
 func formatTimeInfo(startedAt, estimatedDuration string) string {
