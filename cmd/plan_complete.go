@@ -165,7 +165,7 @@ var planCompleteCmd = &cobra.Command{
 
 			var printerLocations []string
 			if printerName != "" {
-				printerLocations = Cfg.Printers[printerName]
+				printerLocations = Cfg.Printers[printerName].Locations
 			}
 
 			// Interactive usage recording

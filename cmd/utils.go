@@ -21,8 +21,8 @@ func IsPrinterLocation(location string) bool {
 	if Cfg == nil || Cfg.Printers == nil {
 		return false
 	}
-	for _, locs := range Cfg.Printers {
-		for _, loc := range locs {
+	for _, p := range Cfg.Printers {
+		for _, loc := range p.Locations {
 			if loc == location {
 				return true
 			}

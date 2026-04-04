@@ -140,8 +140,8 @@ func TestRemoveFromAllOrders_PrinterLocation(t *testing.T) {
 	defer func() { Cfg = oldCfg }()
 
 	Cfg = &Config{
-		Printers: map[string][]string{
-			"Bambu X1C": {"AMS A", "AMS B"},
+		Printers: map[string]PrinterConfig{
+			"Bambu X1C": {Locations: []string{"AMS A", "AMS B"}},
 		},
 	}
 
@@ -188,9 +188,9 @@ func TestIsPrinterLocation(t *testing.T) {
 	defer func() { Cfg = oldCfg }()
 
 	Cfg = &Config{
-		Printers: map[string][]string{
-			"Bambu X1C": {"AMS A", "AMS B", "AMS C"},
-			"Prusa":     {"Prusa"},
+		Printers: map[string]PrinterConfig{
+			"Bambu X1C": {Locations: []string{"AMS A", "AMS B", "AMS C"}},
+			"Prusa":     {Locations: []string{"Prusa"}},
 		},
 	}
 
@@ -231,8 +231,8 @@ func TestPadToCapacity(t *testing.T) {
 	defer func() { Cfg = oldCfg }()
 
 	Cfg = &Config{
-		Printers: map[string][]string{
-			"Bambu X1C": {"AMS A"},
+		Printers: map[string]PrinterConfig{
+			"Bambu X1C": {Locations: []string{"AMS A"}},
 		},
 		LocationCapacity: map[string]LocationCapacity{
 			"AMS A":    {Capacity: 4},

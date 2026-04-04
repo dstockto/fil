@@ -6,7 +6,11 @@
       "Bash(golangci-lint run:*)",
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(go get:*)",
+      "Bash(./fil f:*)",
+      "Bash(go run:*)",
+      "Bash(curl:*)"
     ]
   }
 }

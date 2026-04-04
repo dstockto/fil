@@ -45,7 +45,7 @@ var planNextCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		printerLocations := Cfg.Printers[printerName]
+		printerLocations := Cfg.Printers[printerName].Locations
 
 		// 2. Discover and Load Plans
 		var discovered []DiscoveredPlan
@@ -295,8 +295,8 @@ var planNextCmd = &cobra.Command{
 
 		// Pre-collect all locations that are assigned to ANY printer
 		allPrinterLocations := make(map[string]string) // Location -> printer name
-		for pName, locs := range Cfg.Printers {
-			for _, l := range locs {
+		for pName, pCfg := range Cfg.Printers {
+			for _, l := range pCfg.Locations {
 				allPrinterLocations[l] = pName
 			}
 		}

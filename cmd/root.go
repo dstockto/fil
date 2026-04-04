@@ -34,13 +34,23 @@ type NotificationConfig struct {
 	QuietEnd        string `json:"quiet_end,omitempty"`   // e.g. "07:00"
 }
 
+type PrinterConfig struct {
+	Locations  []string `json:"locations"`
+	Type       string   `json:"type,omitempty"`        // "bambu" or "prusa"
+	IP         string   `json:"ip,omitempty"`
+	Serial     string   `json:"serial,omitempty"`      // Bambu only
+	AccessCode string   `json:"access_code,omitempty"` // Bambu only
+	Username   string   `json:"username,omitempty"`    // Prusa only
+	Password   string   `json:"password,omitempty"`    // Prusa only
+}
+
 type Config struct {
 	LocationAliases  map[string]string           `json:"location_aliases"`
 	LocationCapacity map[string]LocationCapacity `json:"location_capacity"`
 	ApiBase          string                      `json:"api_base"`
 	LowThresholds    map[string]float64          `json:"low_thresholds"`
 	LowIgnore        []string                    `json:"low_ignore"`
-	Printers         map[string][]string         `json:"printers"`
+	Printers         map[string]PrinterConfig    `json:"printers"`
 	Notifications    *NotificationConfig         `json:"notifications,omitempty"`
 	PlansDir         string                      `json:"plans_dir"`
 	ArchiveDir       string                      `json:"archive_dir"`
@@ -58,7 +68,7 @@ type SharedConfig struct {
 	LocationCapacity map[string]LocationCapacity `json:"location_capacity,omitempty"`
 	LowThresholds    map[string]float64          `json:"low_thresholds,omitempty"`
 	LowIgnore        []string                    `json:"low_ignore,omitempty"`
-	Printers         map[string][]string         `json:"printers,omitempty"`
+	Printers         map[string]PrinterConfig    `json:"printers,omitempty"`
 	Notifications    *NotificationConfig         `json:"notifications,omitempty"`
 }
 
@@ -273,7 +283,7 @@ func mergeInto(dst, src *Config) {
 
 	if src.Printers != nil {
 		if dst.Printers == nil {
-			dst.Printers = map[string][]string{}
+			dst.Printers = map[string]PrinterConfig{}
 		}
 
 		for k, v := range src.Printers {

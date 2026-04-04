@@ -109,8 +109,8 @@ func TestToSharedConfig(t *testing.T) {
 			"PLA": 100.0,
 		},
 		LowIgnore: []string{"OldSpool"},
-		Printers: map[string][]string{
-			"P1": {"A", "B"},
+		Printers: map[string]PrinterConfig{
+			"P1": {Locations: []string{"A", "B"}},
 		},
 		PlansDir:    "/plans",
 		PlansServer: "http://pi:7654",
@@ -130,8 +130,8 @@ func TestToSharedConfig(t *testing.T) {
 	if len(shared.LowIgnore) != 1 || shared.LowIgnore[0] != "OldSpool" {
 		t.Errorf("expected LowIgnore [OldSpool], got %v", shared.LowIgnore)
 	}
-	if len(shared.Printers["P1"]) != 2 {
-		t.Errorf("expected Printers[P1] to have 2 elements, got %d", len(shared.Printers["P1"]))
+	if len(shared.Printers["P1"].Locations) != 2 {
+		t.Errorf("expected Printers[P1].Locations to have 2 elements, got %d", len(shared.Printers["P1"].Locations))
 	}
 }
 

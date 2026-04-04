@@ -1,10 +1,17 @@
 module github.com/dstockto/fil
 
-go 1.23.1
+go 1.24.0
 
 require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
+	golang.org/x/net v0.44.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
 )
 
 require (
@@ -15,5 +22,5 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6 // indirect
-	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
 )

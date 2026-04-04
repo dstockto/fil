@@ -172,8 +172,8 @@ var planCheckCmd = &cobra.Command{
 		})
 
 		printerLocs := make(map[string]bool)
-		for _, locs := range Cfg.Printers {
-			for _, loc := range locs {
+		for _, pCfg := range Cfg.Printers {
+			for _, loc := range pCfg.Locations {
 				printerLocs[loc] = true
 			}
 		}
