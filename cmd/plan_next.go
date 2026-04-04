@@ -588,66 +588,40 @@ var planNextCmd = &cobra.Command{
 				}
 
 				fmt.Printf("→ UNLOAD #%d (%s) from %s\n", spoolToUnload.Id, models.Sanitize(spoolToUnload.Filament.Name), models.Sanitize(targetLoc))
-				fmt.Printf("  Where are you putting it? (Leave blank to keep in Spoolman as-is): ")
-				var input string
-				_, _ = fmt.Scanln(&input)
-				if input != "" {
-					dspec, err := ParseDestSpec(input)
-					if err != nil {
-						fmt.Printf("  Error parsing location: %v. Moving to %s instead.\n", err, input)
-						_ = apiClient.MoveSpool(ctx, spoolToUnload.Id, input)
-					} else {
-						newLoc := dspec.Location
-						_ = apiClient.MoveSpool(ctx, spoolToUnload.Id, newLoc)
 
-						// Also update locations_spoolorders if possible
-						orders, err := LoadLocationOrders(ctx, apiClient)
-						if err == nil {
-							orders = RemoveFromAllOrders(orders, spoolToUnload.Id)
-							list := orders[newLoc]
-							if IsPrinterLocation(newLoc) {
-								if dspec.hasPos {
-									idx := dspec.pos - 1
-									if idx < 0 {
-										idx = 0
-									}
-									for len(list) <= idx {
-										list = append(list, EmptySlot)
-									}
-									if list[idx] == EmptySlot {
-										list[idx] = spoolToUnload.Id
-									} else {
-										displaced := list[idx]
-										list[idx] = spoolToUnload.Id
-										list = append(list, displaced)
-									}
-								} else {
-									emptyIdx := FirstEmptySlot(list)
-									if emptyIdx >= 0 {
-										list[emptyIdx] = spoolToUnload.Id
-									} else {
-										list = append(list, spoolToUnload.Id)
-									}
-								}
-							} else {
-								if dspec.hasPos {
-									p := dspec.pos
-									if p < 1 {
-										p = 1
-									}
-									if p > len(list)+1 {
-										p = len(list) + 1
-									}
-									idx := p - 1
-									list = InsertAt(list, idx, spoolToUnload.Id)
-								} else {
-									list = append(list, spoolToUnload.Id)
-								}
-							}
-							orders[newLoc] = list
-							_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
-						}
+				// Interactive location picker for unload destination
+				orders, _ = LoadLocationOrders(ctx, apiClient)
+				allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+				spoolCounts := map[string]int{}
+				for _, s := range allSpools {
+					if s.Location != "" {
+						spoolCounts[s.Location]++
 					}
+				}
+
+				fmt.Printf("  Select where to put it (or press Ctrl+C to keep as-is):\n")
+				newLoc, canceled, selErr := selectLocationInteractively(orders, spoolCounts, false)
+				if selErr != nil || canceled {
+					fmt.Println("  Keeping spool location as-is in Spoolman.")
+				} else {
+					_ = apiClient.MoveSpool(ctx, spoolToUnload.Id, newLoc)
+
+					// Update locations_spoolorders
+					orders = RemoveFromAllOrders(orders, spoolToUnload.Id)
+					list := orders[newLoc]
+					if IsPrinterLocation(newLoc) {
+						emptyIdx := FirstEmptySlot(list)
+						if emptyIdx >= 0 {
+							list[emptyIdx] = spoolToUnload.Id
+						} else {
+							list = append(list, spoolToUnload.Id)
+						}
+					} else {
+						list = append(list, spoolToUnload.Id)
+					}
+					orders[newLoc] = list
+					_ = apiClient.PostSettingObject(ctx, "locations_spoolorders", orders)
+					fmt.Printf("  Moved to %s\n", newLoc)
 				}
 				// Remove from our local tracking of what's loaded
 				for loc, s := range loadedSpools {
