@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +78,16 @@ var planStatusCmd = &cobra.Command{
 
 		for _, name := range active {
 			info := printerMap[name]
-			line := fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			line := ""
+
+			// Show color swatch if live data has active tray color
+			if live, ok := liveStatus[name]; ok {
+				if swatch := activeTrayColorSwatch(live); swatch != "" {
+					line += swatch + " "
+				}
+			}
+
+			line += fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
 
 			// Prefer live printer data over fil's time estimate
 			if live, ok := liveStatus[name]; ok && live.State == "printing" {
@@ -97,6 +109,34 @@ var planStatusCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func activeTrayColorSwatch(status api.PrinterStatus) string {
+	if color.NoColor || len(status.Trays) == 0 || status.ActiveTray < 0 {
+		return ""
+	}
+
+	// Find the active tray — active_tray is a global index across AMS units
+	// AMS 0 trays 0-3 = indices 0-3, AMS 1 trays 0-3 = indices 4-7, etc.
+	amsID := status.ActiveTray / 4
+	trayID := status.ActiveTray % 4
+
+	for _, tray := range status.Trays {
+		if tray.AmsID == amsID && tray.TrayID == trayID {
+			if tray.Color == "" {
+				return ""
+			}
+			hex := strings.TrimPrefix(tray.Color, "#")
+			if len(hex) < 6 {
+				return ""
+			}
+			r, _ := strconv.ParseInt(hex[0:2], 16, 16)
+			g, _ := strconv.ParseInt(hex[2:4], 16, 16)
+			b, _ := strconv.ParseInt(hex[4:6], 16, 16)
+			return color.RGB(int(r), int(g), int(b)).Sprintf("██")
+		}
+	}
+	return ""
 }
 
 func formatLiveStatus(status api.PrinterStatus) string {

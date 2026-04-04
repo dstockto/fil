@@ -27,12 +27,15 @@ type PlanSummary struct {
 	HasAssembly bool   `json:"has_assembly"`
 }
 
+// versionWarnOnce ensures the version mismatch warning is only printed once per process,
+// regardless of how many PlanServerClient instances are created.
+var versionWarnOnce sync.Once
+
 // PlanServerClient communicates with the fil plan storage server.
 type PlanServerClient struct {
 	base       string
 	version    string
 	httpClient http.Client
-	warnOnce   sync.Once
 }
 
 // NewPlanServerClient creates a new client for the plan server API.
@@ -67,7 +70,7 @@ func (c *PlanServerClient) checkVersionMismatch(resp *http.Response) {
 	if serverVersion == "" || serverVersion == c.version {
 		return
 	}
-	c.warnOnce.Do(func() {
+	versionWarnOnce.Do(func() {
 		warn := color.New(color.FgRed, color.Bold).FprintfFunc()
 		if compareSemver(serverVersion, c.version) > 0 {
 			warn(os.Stderr, "Note: server is running fil %s (you have %s). Consider updating your client.\n", serverVersion, c.version)
@@ -411,16 +414,26 @@ func (c *PlanServerClient) CleanAssemblies(ctx context.Context, dryRun bool) (*C
 	return &result, nil
 }
 
+// PrinterTrayStatus represents a single tray/slot on a printer.
+type PrinterTrayStatus struct {
+	AmsID  int    `json:"ams_id"`
+	TrayID int    `json:"tray_id"`
+	Color  string `json:"color,omitempty"`
+	Type   string `json:"type,omitempty"`
+}
+
 // PrinterStatus represents a printer's current state as returned by the server.
 type PrinterStatus struct {
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	State         string `json:"state"`
-	Progress      int    `json:"progress,omitempty"`
-	RemainingMins int    `json:"remaining_mins,omitempty"`
-	CurrentFile   string `json:"current_file,omitempty"`
-	Layer         int    `json:"layer,omitempty"`
-	TotalLayers   int    `json:"total_layers,omitempty"`
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	State         string              `json:"state"`
+	Progress      int                 `json:"progress,omitempty"`
+	RemainingMins int                 `json:"remaining_mins,omitempty"`
+	CurrentFile   string              `json:"current_file,omitempty"`
+	Layer         int                 `json:"layer,omitempty"`
+	TotalLayers   int                 `json:"total_layers,omitempty"`
+	ActiveTray    int                 `json:"active_tray,omitempty"`
+	Trays         []PrinterTrayStatus `json:"trays,omitempty"`
 }
 
 // GetPrinterStatus fetches the current status of all printers from the server.
