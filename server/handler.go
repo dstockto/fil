@@ -26,6 +26,7 @@ type PlanServer struct {
 	AssembliesDir string
 	Version       string
 	Watcher       *ETAWatcher
+	Printers      *PrinterManager
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -53,6 +54,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("POST /api/v1/plans/clean-assemblies", s.handleCleanAssemblies)
+	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	return s.versionMiddleware(mux)
 }
@@ -65,6 +67,22 @@ func (s *PlanServer) versionMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *PlanServer) handleListPrinters(w http.ResponseWriter, r *http.Request) {
+	if s.Printers == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+		return
+	}
+
+	states := s.Printers.AllStatus()
+	if states == nil {
+		states = []PrinterState{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(states)
 }
 
 func (s *PlanServer) handleVersion(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/dstockto/fil/server"
 	"github.com/spf13/cobra"
@@ -62,6 +63,36 @@ var serveCmd = &cobra.Command{
 			Version:       version,
 		}
 
+		// Start printer connections
+		if len(Cfg.Printers) > 0 {
+			pm := server.NewPrinterManager()
+			s.Printers = pm
+			defer pm.Close()
+
+			for name, pCfg := range Cfg.Printers {
+				if pCfg.Type == "" || pCfg.IP == "" {
+					continue
+				}
+
+				var adapter server.PrinterAdapter
+				switch pCfg.Type {
+				case "bambu":
+					adapter = server.NewBambuAdapter(name, pCfg.IP, pCfg.Serial, pCfg.AccessCode)
+				case "prusa":
+					adapter = server.NewPrusaAdapter(name, pCfg.IP, pCfg.Username, pCfg.Password)
+				default:
+					fmt.Printf("  Printer %s: unknown type %q, skipping\n", name, pCfg.Type)
+					continue
+				}
+
+				if err := pm.AddAdapter(name, adapter); err != nil {
+					fmt.Printf("  Printer %s: connection failed: %v\n", name, err)
+				} else {
+					fmt.Printf("  Printer %s: connected (%s)\n", name, pCfg.Type)
+				}
+			}
+		}
+
 		// Start ETA notification watcher if notifications are configured
 		if Cfg.Notifications != nil {
 			notifyCfg := server.NotificationConfig{
@@ -81,6 +112,45 @@ var serveCmd = &cobra.Command{
 			}
 		} else {
 			fmt.Println("  Notifications: disabled")
+		}
+
+		// Wire up printer state change notifications
+		if s.Printers != nil && s.Watcher != nil {
+			notifyCfg := server.NotificationConfig{
+				PushoverAPIKey:  Cfg.Notifications.PushoverAPIKey,
+				PushoverUserKey: Cfg.Notifications.PushoverUserKey,
+				NtfyTopic:       Cfg.Notifications.NtfyTopic,
+				NtfyServer:      Cfg.Notifications.NtfyServer,
+			}
+			notifier := server.NewNotifier(notifyCfg)
+
+			for name := range Cfg.Printers {
+				adapter, ok := s.Printers.Adapter(name)
+				if !ok {
+					continue
+				}
+				printerName := name
+				adapter.OnStateChange(func(oldState, newState string) {
+					var title, msg string
+					switch newState {
+					case "finished":
+						title = "Print finished"
+						msg = fmt.Sprintf("%s: print finished", printerName)
+					case "paused":
+						title = "Print paused"
+						msg = fmt.Sprintf("%s: print paused — check printer", printerName)
+					case "failed":
+						title = "Print failed"
+						msg = fmt.Sprintf("%s: print failed", printerName)
+					default:
+						return
+					}
+					if notifier.IsQuietHours(time.Now()) {
+						return
+					}
+					notifier.Send(title, msg)
+				})
+			}
 		}
 
 		addr := fmt.Sprintf("%s:%d", bind, port)
