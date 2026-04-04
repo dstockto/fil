@@ -112,6 +112,21 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		orders = RemoveFromAllOrders(orders, s.Id)
 	}
 
+	// Trim trailing empty slots on printer locations that exceed capacity
+	for loc, ids := range orders {
+		if !IsPrinterLocation(loc) {
+			continue
+		}
+		if Cfg != nil && Cfg.LocationCapacity != nil {
+			if lc, ok := Cfg.LocationCapacity[loc]; ok && lc.Capacity > 0 {
+				for len(ids) > lc.Capacity && ids[len(ids)-1] == EmptySlot {
+					ids = ids[:len(ids)-1]
+				}
+				orders[loc] = ids
+			}
+		}
+	}
+
 	if dryRun {
 		for _, s := range spools {
 			fmt.Printf("Would archive %s and remove it from locations_spoolorders.\n", s)

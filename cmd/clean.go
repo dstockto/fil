@@ -163,7 +163,35 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	if removedTotal == 0 && addedTotal == 0 && paddedTotal == 0 {
+	// Trim trailing empty slots on printer locations that exceed capacity
+	trimmedTotal := 0
+	for loc, ids := range cleaned {
+		if !IsPrinterLocation(loc) {
+			continue
+		}
+		cap := 0
+		if Cfg != nil && Cfg.LocationCapacity != nil {
+			if lc, ok := Cfg.LocationCapacity[loc]; ok {
+				cap = lc.Capacity
+			}
+		}
+		if cap <= 0 || len(ids) <= cap {
+			continue
+		}
+		// Only trim if the trailing entries are all EmptySlot
+		trimTo := len(ids)
+		for trimTo > cap && ids[trimTo-1] == EmptySlot {
+			trimTo--
+		}
+		if trimTo < len(ids) {
+			trimCount := len(ids) - trimTo
+			trimmedTotal += trimCount
+			fmt.Printf("%s: trimming %d trailing empty slot(s) (exceeded capacity %d)\n", locLabel(loc), trimCount, cap)
+			cleaned[loc] = ids[:trimTo]
+		}
+	}
+
+	if removedTotal == 0 && addedTotal == 0 && paddedTotal == 0 && trimmedTotal == 0 {
 		fmt.Println("No changes needed; nothing to clean or add.")
 		return nil
 	}
@@ -178,6 +206,9 @@ func runClean(cmd *cobra.Command, _ []string) error {
 		}
 		if paddedTotal > 0 {
 			parts = append(parts, fmt.Sprintf("pad %d empty slot(s)", paddedTotal))
+		}
+		if trimmedTotal > 0 {
+			parts = append(parts, fmt.Sprintf("trim %d trailing empty slot(s)", trimmedTotal))
 		}
 		fmt.Printf("Dry run: would %s. Use --write to apply changes.\n", strings.Join(parts, ", "))
 		return nil
@@ -197,6 +228,9 @@ func runClean(cmd *cobra.Command, _ []string) error {
 	}
 	if paddedTotal > 0 {
 		parts = append(parts, fmt.Sprintf("padded %d empty slot(s)", paddedTotal))
+	}
+	if trimmedTotal > 0 {
+		parts = append(parts, fmt.Sprintf("trimmed %d trailing empty slot(s)", trimmedTotal))
 	}
 	fmt.Printf("Updated locations_spoolorders; %s.\n", strings.Join(parts, ", "))
 	return nil
