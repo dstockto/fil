@@ -10,7 +10,9 @@
       "Bash(go get:*)",
       "Bash(./fil f:*)",
       "Bash(go run:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(fil f:*)"
     ]
   }
 }

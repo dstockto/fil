@@ -1,6 +1,9 @@
 package server
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // PrinterState represents the current state of a printer.
 type PrinterState struct {
@@ -52,23 +55,51 @@ type StateChangeEvent struct {
 	PrevHMSCodes []HMSCode // HMS codes before the change
 }
 
-// IsLikelyUserPause returns true if the pause appears to be user-initiated
-// (no new HMS codes appeared with the state change).
+// IsLikelyUserPause returns true if the pause appears to be user-initiated.
+// If any HMS codes are present at all, it's likely printer-caused.
 func (e StateChangeEvent) IsLikelyUserPause() bool {
 	if e.NewState != "paused" {
 		return false
 	}
-	// If new HMS codes appeared that weren't in the previous set, it's printer-caused
-	prevSet := make(map[int]bool)
-	for _, h := range e.PrevHMSCodes {
-		prevSet[h.Code] = true
-	}
-	for _, h := range e.HMSCodes {
-		if !prevSet[h.Code] {
-			return false // new HMS code appeared — printer-caused
-		}
-	}
-	return true
+	return len(e.HMSCodes) == 0
+}
+
+// HMSCodeString returns a human-readable hex representation of an HMS code,
+// formatted to match the Bambu wiki convention (e.g. 0C00-0300-0003-0008).
+func (h HMSCode) HMSCodeString() string {
+	return fmt.Sprintf("%04X-%04X-%04X-%04X",
+		(h.Attr>>16)&0xFFFF, h.Attr&0xFFFF,
+		(h.Code>>16)&0xFFFF, h.Code&0xFFFF)
+}
+
+// hmsDescriptions maps known HMS codes to human-friendly descriptions.
+// Verified against https://wiki.bambulab.com/en/hms/home
+// Add new codes as they are encountered in practice.
+var hmsDescriptions = map[string]string{
+	// Spaghetti / First layer
+	"0C00-0300-0003-0007": "possible first layer defects",
+	"0C00-0300-0003-0008": "possible spaghetti defects",
+
+	// Lidar
+	"0C00-0100-0001-0004": "micro lidar lens dirty",
+
+	// Toolhead
+	"0300-1200-0002-0001": "toolhead front cover fell off",
+
+	// Build plate
+	"0300-0D00-0001-0003": "build plate not properly placed",
+
+	// AMS filament ran out (07XX-7000-0002-0007, XX = AMS number)
+	"0700-7000-0002-0007": "AMS 1 filament ran out",
+	"0701-7000-0002-0007": "AMS 2 filament ran out",
+	"0702-7000-0002-0007": "AMS 3 filament ran out",
+	"0703-7000-0002-0007": "AMS 4 filament ran out",
+}
+
+// HMSDescription returns a human-friendly description for an HMS code,
+// or an empty string if the code is not recognized.
+func (h HMSCode) HMSDescription() string {
+	return hmsDescriptions[h.HMSCodeString()]
 }
 
 // PrinterAdapter defines the interface for communicating with a printer.

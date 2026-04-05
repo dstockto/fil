@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -162,9 +163,20 @@ var serveCmd = &cobra.Command{
 										msg = fmt.Sprintf("%s: paused by printer, check it", printerName)
 									}
 								}
-								// Log HMS codes for investigation
+								// Log HMS codes and include description in notification if available
 								if len(event.HMSCodes) > 0 {
-									fmt.Printf("[notify] %s paused — HMS codes: %v (prev: %v)\n", printerName, event.HMSCodes, event.PrevHMSCodes)
+									var codes []string
+									var reasons []string
+									for _, h := range event.HMSCodes {
+										codes = append(codes, h.HMSCodeString())
+										if desc := h.HMSDescription(); desc != "" {
+											reasons = append(reasons, desc)
+										}
+									}
+									fmt.Printf("[notify] %s paused — HMS: %s\n", printerName, strings.Join(codes, ", "))
+									if len(reasons) > 0 {
+										msg += "\n" + strings.Join(reasons, ", ")
+									}
 								}
 							case "failed":
 								title = "Print failed"
@@ -174,7 +186,18 @@ var serveCmd = &cobra.Command{
 									msg = fmt.Sprintf("%s: print failed", printerName)
 								}
 								if len(event.HMSCodes) > 0 {
-									fmt.Printf("[notify] %s failed — HMS codes: %v\n", printerName, event.HMSCodes)
+									var codes []string
+									var reasons []string
+									for _, h := range event.HMSCodes {
+										codes = append(codes, h.HMSCodeString())
+										if desc := h.HMSDescription(); desc != "" {
+											reasons = append(reasons, desc)
+										}
+									}
+									fmt.Printf("[notify] %s failed — HMS: %s\n", printerName, strings.Join(codes, ", "))
+									if len(reasons) > 0 {
+										msg += "\n" + strings.Join(reasons, ", ")
+									}
 								}
 							default:
 								return
