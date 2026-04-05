@@ -258,7 +258,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if hasPrinterLoc && len(spools) > 0 {
+		if hasPrinterLoc && len(spools) > 0 && !lruSort && !mruSort {
 			// Group spools by location
 			spoolsByLoc := map[string]map[int]models.FindSpool{}
 			locOrder := []string{}
