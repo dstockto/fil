@@ -501,6 +501,69 @@ type TrayPushRequest struct {
 	InfoIdx string `json:"info_idx,omitempty"`
 }
 
+// HistoryEntry represents a completed plate from the print history.
+type HistoryEntry struct {
+	Timestamp         string           `json:"timestamp"`
+	Plan              string           `json:"plan"`
+	Project           string           `json:"project"`
+	Plate             string           `json:"plate"`
+	Printer           string           `json:"printer,omitempty"`
+	StartedAt         string           `json:"started_at,omitempty"`
+	EstimatedDuration string           `json:"estimated_duration,omitempty"`
+	Filament          []HistoryFilament `json:"filament,omitempty"`
+}
+
+// HistoryFilament represents filament used in a history entry.
+type HistoryFilament struct {
+	Name       string  `json:"name,omitempty"`
+	FilamentID int     `json:"filament_id,omitempty"`
+	Material   string  `json:"material,omitempty"`
+	Amount     float64 `json:"amount"`
+}
+
+// GetHistory fetches print history from the server with optional filters.
+func (c *PlanServerClient) GetHistory(ctx context.Context, since, until, printer string, limit int) ([]HistoryEntry, error) {
+	endpoint := c.base + "/api/v1/history"
+
+	params := []string{}
+	if since != "" {
+		params = append(params, "since="+since)
+	}
+	if until != "" {
+		params = append(params, "until="+until)
+	}
+	if printer != "" {
+		params = append(params, "printer="+printer)
+	}
+	if limit > 0 {
+		params = append(params, fmt.Sprintf("limit=%d", limit))
+	}
+	if len(params) > 0 {
+		endpoint += "?" + strings.Join(params, "&")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var entries []HistoryEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("failed to decode history: %w", err)
+	}
+	return entries, nil
+}
+
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
 	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
 

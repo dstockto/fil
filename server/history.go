@@ -1,9 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dstockto/fil/models"
@@ -116,4 +120,79 @@ func (s *PlanServer) logCompletions(planName string, oldPlan, newPlan *models.Pl
 	for _, entry := range entries {
 		_ = enc.Encode(entry)
 	}
+}
+
+// handleHistory serves the print history with optional filters.
+func (s *PlanServer) handleHistory(w http.ResponseWriter, r *http.Request) {
+	historyPath := filepath.Join(s.PlansDir, "print-history.jsonl")
+
+	f, err := os.Open(historyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
+		http.Error(w, "failed to read history", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	// Parse query filters
+	since := r.URL.Query().Get("since")
+	until := r.URL.Query().Get("until")
+	printer := r.URL.Query().Get("printer")
+	limitStr := r.URL.Query().Get("limit")
+
+	var sinceTime, untilTime time.Time
+	if since != "" {
+		sinceTime, _ = time.Parse("2006-01-02", since)
+	}
+	if until != "" {
+		untilTime, _ = time.Parse("2006-01-02", until)
+		// Include the entire "until" day
+		untilTime = untilTime.Add(24*time.Hour - time.Second)
+	}
+
+	limit := 0
+	if limitStr != "" {
+		limit, _ = strconv.Atoi(limitStr)
+	}
+
+	var entries []HistoryEntry
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var entry HistoryEntry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+
+		// Apply filters
+		if printer != "" && !strings.EqualFold(entry.Printer, printer) {
+			continue
+		}
+
+		if !sinceTime.IsZero() || !untilTime.IsZero() {
+			ts, err := time.Parse(time.RFC3339, entry.Timestamp)
+			if err != nil {
+				continue
+			}
+			if !sinceTime.IsZero() && ts.Before(sinceTime) {
+				continue
+			}
+			if !untilTime.IsZero() && ts.After(untilTime) {
+				continue
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	// Apply limit (from the end — most recent)
+	if limit > 0 && len(entries) > limit {
+		entries = entries[len(entries)-limit:]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entries)
 }
