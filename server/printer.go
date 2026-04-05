@@ -38,6 +38,39 @@ type TrayUpdate struct {
 	TempMax int    `json:"temp_max"`
 }
 
+// HMSCode represents a Bambu Health Management System code.
+type HMSCode struct {
+	Attr int `json:"attr"`
+	Code int `json:"code"`
+}
+
+// StateChangeEvent carries context about a printer state transition.
+type StateChangeEvent struct {
+	OldState     string
+	NewState     string
+	HMSCodes     []HMSCode // current HMS codes at time of change
+	PrevHMSCodes []HMSCode // HMS codes before the change
+}
+
+// IsLikelyUserPause returns true if the pause appears to be user-initiated
+// (no new HMS codes appeared with the state change).
+func (e StateChangeEvent) IsLikelyUserPause() bool {
+	if e.NewState != "paused" {
+		return false
+	}
+	// If new HMS codes appeared that weren't in the previous set, it's printer-caused
+	prevSet := make(map[int]bool)
+	for _, h := range e.PrevHMSCodes {
+		prevSet[h.Code] = true
+	}
+	for _, h := range e.HMSCodes {
+		if !prevSet[h.Code] {
+			return false // new HMS code appeared — printer-caused
+		}
+	}
+	return true
+}
+
 // PrinterAdapter defines the interface for communicating with a printer.
 // Each printer type (Bambu, Prusa) implements this interface.
 type PrinterAdapter interface {
@@ -55,6 +88,5 @@ type PrinterAdapter interface {
 	PushTray(update TrayUpdate) error
 
 	// OnStateChange registers a callback for state transitions.
-	// The callback receives the old and new state strings.
-	OnStateChange(func(oldState, newState string))
+	OnStateChange(func(event StateChangeEvent))
 }

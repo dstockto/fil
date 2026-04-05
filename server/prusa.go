@@ -19,7 +19,7 @@ type PrusaAdapter struct {
 
 	mu             sync.RWMutex
 	state          PrinterState
-	stateCallbacks []func(string, string)
+	stateCallbacks []func(StateChangeEvent)
 	stopCh         chan struct{}
 }
 
@@ -71,7 +71,7 @@ func (p *PrusaAdapter) PushTray(update TrayUpdate) error {
 }
 
 // OnStateChange registers a callback for printer state transitions.
-func (p *PrusaAdapter) OnStateChange(cb func(oldState, newState string)) {
+func (p *PrusaAdapter) OnStateChange(cb func(event StateChangeEvent)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.stateCallbacks = append(p.stateCallbacks, cb)
@@ -139,8 +139,12 @@ func (p *PrusaAdapter) poll() error {
 	p.mu.RUnlock()
 
 	if newState != oldState && oldState != "" {
+		event := StateChangeEvent{
+			OldState: oldState,
+			NewState: newState,
+		}
 		for _, cb := range callbacks {
-			go cb(oldState, newState)
+			go cb(event)
 		}
 	}
 

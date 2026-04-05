@@ -21,7 +21,8 @@ type BambuAdapter struct {
 	mu              sync.RWMutex
 	client          mqtt.Client
 	state           PrinterState
-	stateCallbacks  []func(string, string)
+	hmsCodes        []HMSCode
+	stateCallbacks  []func(StateChangeEvent)
 }
 
 // NewBambuAdapter creates a new Bambu printer adapter.
@@ -124,7 +125,7 @@ func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 }
 
 // OnStateChange registers a callback for printer state transitions.
-func (b *BambuAdapter) OnStateChange(cb func(oldState, newState string)) {
+func (b *BambuAdapter) OnStateChange(cb func(event StateChangeEvent)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.stateCallbacks = append(b.stateCallbacks, cb)
@@ -244,10 +245,33 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 		}
 	}
 
+	// Parse HMS codes
+	prevHMS := make([]HMSCode, len(b.hmsCodes))
+	copy(prevHMS, b.hmsCodes)
+	if hmsList, ok := printData["hms"].([]interface{}); ok {
+		var codes []HMSCode
+		for _, h := range hmsList {
+			hm, ok := h.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			attr, _ := hm["attr"].(float64)
+			code, _ := hm["code"].(float64)
+			codes = append(codes, HMSCode{Attr: int(attr), Code: int(code)})
+		}
+		b.hmsCodes = codes
+	}
+
 	// Fire state change callbacks
 	if b.state.State != oldState && oldState != "" {
+		event := StateChangeEvent{
+			OldState:     oldState,
+			NewState:     b.state.State,
+			HMSCodes:     b.hmsCodes,
+			PrevHMSCodes: prevHMS,
+		}
 		for _, cb := range b.stateCallbacks {
-			go cb(oldState, b.state.State)
+			go cb(event)
 		}
 	}
 }

@@ -129,7 +129,7 @@ var serveCmd = &cobra.Command{
 							continue
 						}
 						printerName := name
-						adapter.OnStateChange(func(oldState, newState string) {
+						adapter.OnStateChange(func(event server.StateChangeEvent) {
 							// Look up what's printing on this printer
 							projName, plateName := server.LookupInProgressPlate(plansDir, printerName)
 							plateInfo := ""
@@ -138,7 +138,7 @@ var serveCmd = &cobra.Command{
 							}
 
 							var title, msg string
-							switch newState {
+							switch event.NewState {
 							case "finished":
 								title = "Print finished"
 								if plateInfo != "" {
@@ -147,11 +147,24 @@ var serveCmd = &cobra.Command{
 									msg = fmt.Sprintf("%s: print finished", printerName)
 								}
 							case "paused":
-								title = "Print paused"
-								if plateInfo != "" {
-									msg = fmt.Sprintf("%s: %s — paused, check printer", printerName, plateInfo)
+								if event.IsLikelyUserPause() {
+									title = "Print paused (user)"
+									if plateInfo != "" {
+										msg = fmt.Sprintf("%s: %s — paused by user", printerName, plateInfo)
+									} else {
+										msg = fmt.Sprintf("%s: paused by user", printerName)
+									}
 								} else {
-									msg = fmt.Sprintf("%s: print paused — check printer", printerName)
+									title = "Print paused (printer)"
+									if plateInfo != "" {
+										msg = fmt.Sprintf("%s: %s — paused by printer, check it", printerName, plateInfo)
+									} else {
+										msg = fmt.Sprintf("%s: paused by printer, check it", printerName)
+									}
+								}
+								// Log HMS codes for investigation
+								if len(event.HMSCodes) > 0 {
+									fmt.Printf("[notify] %s paused — HMS codes: %v (prev: %v)\n", printerName, event.HMSCodes, event.PrevHMSCodes)
 								}
 							case "failed":
 								title = "Print failed"
@@ -159,6 +172,9 @@ var serveCmd = &cobra.Command{
 									msg = fmt.Sprintf("%s: %s — print failed", printerName, plateInfo)
 								} else {
 									msg = fmt.Sprintf("%s: print failed", printerName)
+								}
+								if len(event.HMSCodes) > 0 {
+									fmt.Printf("[notify] %s failed — HMS codes: %v\n", printerName, event.HMSCodes)
 								}
 							default:
 								return
