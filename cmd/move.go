@@ -461,14 +461,27 @@ func pushTrayUpdate(m move, orders map[string][]int) {
 		colorHex += "FF"
 	}
 
+	// Look up the filament profile for accurate tray_info_idx
+	trayType := m.spool.Filament.Material
+	profile := LookupFilamentProfile(m.spool.Filament.Vendor.Name, m.spool.Filament.Name, m.spool.Filament.Material)
+	if profile != nil {
+		trayType = profile.TrayType
+	}
+
+	infoIdx := ""
+	if profile != nil {
+		infoIdx = profile.InfoIdx
+	}
+
 	client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 	err := client.PushTray(context.Background(), mapping.PrinterName, api.TrayPushRequest{
 		AmsID:   mapping.AmsID,
 		TrayID:  mapping.TrayID,
 		Color:   strings.ToUpper(colorHex),
-		Type:    m.spool.Filament.Material,
+		Type:    trayType,
 		TempMin: 190,
 		TempMax: 240,
+		InfoIdx: infoIdx,
 	})
 	if err != nil {
 		fmt.Printf("  Note: could not update printer tray: %v\n", err)

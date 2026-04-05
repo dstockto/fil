@@ -99,6 +99,11 @@ func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 		return fmt.Errorf("not connected to %s", b.name)
 	}
 
+	infoIdx := update.InfoIdx
+	if infoIdx == "" {
+		infoIdx = "GFL99" // fallback to generic PLA
+	}
+
 	cmd := map[string]interface{}{
 		"print": map[string]interface{}{
 			"command":         "ams_filament_setting",
@@ -109,7 +114,7 @@ func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 			"tray_type":       update.Type,
 			"nozzle_temp_min": update.TempMin,
 			"nozzle_temp_max": update.TempMax,
-			"tray_info_idx":   "GFL01",
+			"tray_info_idx":   infoIdx,
 		},
 	}
 

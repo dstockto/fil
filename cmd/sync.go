@@ -127,13 +127,21 @@ var syncCmd = &cobra.Command{
 						continue
 					}
 
+					trayType := spool.Filament.Material
+					infoIdx := ""
+					if profile := LookupFilamentProfile(spool.Filament.Vendor.Name, spool.Filament.Name, spool.Filament.Material); profile != nil {
+						trayType = profile.TrayType
+						infoIdx = profile.InfoIdx
+					}
+
 					err := planClient.PushTray(context.Background(), printerName, api.TrayPushRequest{
 						AmsID:   locIdx,
 						TrayID:  trayIdx,
 						Color:   strings.ToUpper(colorHex),
-						Type:    spool.Filament.Material,
+						Type:    trayType,
 						TempMin: 190,
 						TempMax: 240,
+						InfoIdx: infoIdx,
 					})
 					if err != nil {
 						fmt.Printf("  %s — error: %v\n", slotLabel, err)

@@ -160,6 +160,16 @@ var verifyCmd = &cobra.Command{
 		}
 
 		verbose, _ := cmd.Flags().GetBool("verbose")
+		profiles, _ := cmd.Flags().GetBool("profiles")
+
+		if profiles {
+			return printProfileMappings(cmd.Context())
+		}
+
+		if Cfg.PlansServer == "" {
+			return fmt.Errorf("plans_server must be configured")
+		}
+
 		ctx := cmd.Context()
 		planClient := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 
@@ -347,7 +357,70 @@ func hexSwatch(hex string) string {
 	return color.RGB(int(r), int(g), int(b)).Sprintf("██")
 }
 
+func printProfileMappings(ctx context.Context) error {
+	if Cfg == nil || Cfg.ApiBase == "" {
+		return fmt.Errorf("api_base must be configured")
+	}
+
+	spoolmanClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+	allSpools, err := spoolmanClient.FindSpoolsByName(ctx, "*", nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to fetch spools: %w", err)
+	}
+
+	// Deduplicate by filament ID (many spools share the same filament)
+	type filamentKey struct {
+		vendor   string
+		name     string
+		material string
+	}
+	seen := make(map[filamentKey]bool)
+
+	good := color.New(color.FgGreen).SprintFunc()
+	warn := color.New(color.FgYellow).SprintFunc()
+
+	matched := 0
+	unmatched := 0
+
+	for _, spool := range allSpools {
+		key := filamentKey{spool.Filament.Vendor.Name, spool.Filament.Name, spool.Filament.Material}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		profile := LookupFilamentProfile(spool.Filament.Vendor.Name, spool.Filament.Name, spool.Filament.Material)
+		if profile != nil {
+			pName := ProfileName(profile.InfoIdx)
+			if pName == "" {
+				pName = profile.TrayType
+			}
+			fmt.Printf("  %s  %-20s %-40s %-15s → %-10s %s\n",
+				good("✓"),
+				spool.Filament.Vendor.Name,
+				spool.Filament.Name,
+				spool.Filament.Material,
+				profile.InfoIdx,
+				pName,
+			)
+			matched++
+		} else {
+			fmt.Printf("  %s  %-20s %-40s %-15s → (no match)\n",
+				warn("?"),
+				spool.Filament.Vendor.Name,
+				spool.Filament.Name,
+				spool.Filament.Material,
+			)
+			unmatched++
+		}
+	}
+
+	fmt.Printf("\n%d matched, %d unmatched\n", matched, unmatched)
+	return nil
+}
+
 func init() {
 	rootCmd.AddCommand(verifyCmd)
 	verifyCmd.Flags().BoolP("verbose", "v", false, "show full tray comparison for all printers")
+	verifyCmd.Flags().Bool("profiles", false, "show filament profile mapping for all filaments")
 }

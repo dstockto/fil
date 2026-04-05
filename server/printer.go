@@ -35,10 +35,11 @@ type TrayInfo struct {
 type TrayUpdate struct {
 	AmsID   int    `json:"ams_id"`
 	TrayID  int    `json:"tray_id"`
-	Color   string `json:"color"`    // hex RRGGBBAA
-	Type    string `json:"type"`     // e.g. "PLA", "Matte PLA"
+	Color   string `json:"color"`              // hex RRGGBBAA
+	Type    string `json:"type"`               // e.g. "PLA", "Matte PLA"
 	TempMin int    `json:"temp_min"`
 	TempMax int    `json:"temp_max"`
+	InfoIdx string `json:"info_idx,omitempty"` // e.g. "GFL01"
 }
 
 // HMSCode represents a Bambu Health Management System code.

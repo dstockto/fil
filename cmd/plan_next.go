@@ -682,14 +682,21 @@ var planNextCmd = &cobra.Command{
 						if len(colorHex) == 6 {
 							colorHex += "FF"
 						}
+						trayType := bestSpool.Filament.Material
+						infoIdx := ""
+						if profile := LookupFilamentProfile(bestSpool.Filament.Vendor.Name, bestSpool.Filament.Name, bestSpool.Filament.Material); profile != nil {
+							trayType = profile.TrayType
+							infoIdx = profile.InfoIdx
+						}
 						planClient := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 						if err := planClient.PushTray(ctx, mapping.PrinterName, api.TrayPushRequest{
 							AmsID:   mapping.AmsID,
 							TrayID:  mapping.TrayID,
 							Color:   strings.ToUpper(colorHex),
-							Type:    bestSpool.Filament.Material,
+							Type:    trayType,
 							TempMin: 190,
 							TempMax: 240,
+							InfoIdx: infoIdx,
 						}); err != nil {
 							fmt.Printf("  Note: could not update printer tray: %v\n", err)
 						} else {

@@ -498,6 +498,7 @@ type TrayPushRequest struct {
 	Type    string `json:"type"`
 	TempMin int    `json:"temp_min"`
 	TempMax int    `json:"temp_max"`
+	InfoIdx string `json:"info_idx,omitempty"`
 }
 
 func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
