@@ -55,8 +55,10 @@ var planHistoryCmd = &cobra.Command{
 			return nil
 		}
 
-		if detail {
-			printDetailedHistory(entries)
+		verbose, _ := cmd.Flags().GetBool("verbose")
+
+		if detail || verbose {
+			printDetailedHistory(entries, verbose)
 		} else {
 			printDailySummary(entries)
 		}
@@ -65,7 +67,7 @@ var planHistoryCmd = &cobra.Command{
 	},
 }
 
-func printDetailedHistory(entries []api.HistoryEntry) {
+func printDetailedHistory(entries []api.HistoryEntry, verbose bool) {
 	totalPrints := 0
 	var totalDuration time.Duration
 	totalFilament := 0.0
@@ -97,6 +99,16 @@ func printDetailedHistory(entries []api.HistoryEntry) {
 			durStr,
 			filSummary,
 		)
+
+		if verbose && len(e.Filament) > 0 {
+			for _, f := range e.Filament {
+				name := f.Name
+				if name == "" {
+					name = f.Material
+				}
+				fmt.Printf("             %.0fg %s\n", f.Amount, name)
+			}
+		}
 
 		totalPrints++
 		totalDuration += dur
@@ -221,4 +233,5 @@ func init() {
 	planHistoryCmd.Flags().StringP("filament", "f", "", "filter by filament name or material")
 	planHistoryCmd.Flags().IntP("limit", "l", 0, "show only the last N entries")
 	planHistoryCmd.Flags().BoolP("detail", "d", false, "show per-plate detail instead of daily summary")
+	planHistoryCmd.Flags().BoolP("verbose", "v", false, "show per-plate detail with filament breakdown")
 }
