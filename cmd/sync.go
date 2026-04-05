@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,7 @@ var syncCmd = &cobra.Command{
 		}
 
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		printerFilter, _ := cmd.Flags().GetString("printer")
 		ctx := cmd.Context()
 
 		spoolmanClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
@@ -44,11 +47,52 @@ var syncCmd = &cobra.Command{
 			spoolByID[allSpools[i].Id] = &allSpools[i]
 		}
 
+		// Determine which printers to sync
+		// Only consider printers that support tray sync
+		var syncablePrinters []string
+		for name, pCfg := range Cfg.Printers {
+			if pCfg.Type == "bambu" && pCfg.IP != "" {
+				syncablePrinters = append(syncablePrinters, name)
+			}
+		}
+		sort.Strings(syncablePrinters)
+
+		if len(syncablePrinters) == 0 {
+			fmt.Println("No printers support tray sync.")
+			return nil
+		}
+
+		if printerFilter == "" && len(syncablePrinters) > 1 {
+			// Interactive selection: all or pick one
+			printerNames := syncablePrinters
+			sort.Strings(printerNames)
+			items := append([]string{"All printers"}, printerNames...)
+			prompt := promptui.Select{
+				Label:  "Which printer to sync?",
+				Items:  items,
+				Stdout: NoBellStdout,
+			}
+			idx, _, err := prompt.Run()
+			if err != nil {
+				return err
+			}
+			if idx > 0 {
+				printerFilter = items[idx]
+			}
+		}
+
 		pushed := 0
 		skipped := 0
 
 		for printerName, pCfg := range Cfg.Printers {
 			if pCfg.Type == "" || pCfg.IP == "" {
+				continue
+			}
+			if printerFilter != "" && printerName != printerFilter {
+				continue
+			}
+			if pCfg.Type != "bambu" {
+				fmt.Printf("%s: skipped (tray sync not supported for %s printers)\n", printerName, pCfg.Type)
 				continue
 			}
 
@@ -120,4 +164,5 @@ var syncCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.Flags().Bool("dry-run", false, "show what would be pushed without pushing")
+	syncCmd.Flags().StringP("printer", "p", "", "sync only the specified printer")
 }
