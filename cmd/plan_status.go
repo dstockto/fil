@@ -94,9 +94,11 @@ func printStatus() error {
 
 	// Fetch live printer status from server if available
 	liveStatus := make(map[string]api.PrinterStatus)
+	var liveStatuses []api.PrinterStatus
 	if Cfg.PlansServer != "" {
 		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 		if statuses, err := client.GetPrinterStatus(context.Background()); err == nil {
+			liveStatuses = statuses
 			for _, s := range statuses {
 				liveStatus[s.Name] = s
 			}
@@ -145,6 +147,19 @@ func printStatus() error {
 			fmt.Printf("%s: (%s)\n", name, live.State)
 		} else {
 			fmt.Printf("%s: (idle)\n", name)
+		}
+	}
+
+	// Check for tray mismatches if we have live data
+	if len(liveStatuses) > 0 {
+		mismatches := detectMismatches(context.Background(), liveStatuses)
+		if len(mismatches) > 0 {
+			fmt.Println()
+			warn := color.New(color.FgYellow).SprintFunc()
+			fmt.Printf("%s %d tray mismatch(es):\n", warn("⚠"), len(mismatches))
+			for _, m := range mismatches {
+				fmt.Println(m)
+			}
 		}
 	}
 
