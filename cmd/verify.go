@@ -245,6 +245,19 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 			continue
 		}
 
+		// First pass: collect row data and find max widths
+		type rowData struct {
+			match        string
+			slotLabel    string
+			filSwatch    string
+			filInfo      string
+			printerSwatch string
+			printerInfo  string
+		}
+		var rows []rowData
+		maxSlot := 0
+		maxFil := 0
+
 		for locIdx, loc := range pCfg.Locations {
 			ids := orders[loc]
 
@@ -253,7 +266,6 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 				slotLabel := fmt.Sprintf("%s:%d", loc, trayIdx+1)
 				printerTray, hasPrinter := trays[trayKey{locIdx, trayIdx}]
 
-				// Fil side
 				filInfo := "(empty)"
 				filColor := ""
 				if spoolID != EmptySlot {
@@ -263,7 +275,6 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 					}
 				}
 
-				// Printer side
 				printerInfo := "(no data)"
 				printerColor := ""
 				if hasPrinter {
@@ -275,7 +286,6 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 					}
 				}
 
-				// Match indicator
 				match := " "
 				if spoolID == EmptySlot {
 					match = dim("·")
@@ -287,7 +297,6 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 					}
 				}
 
-				// Color swatches
 				filSwatch := "  "
 				printerSwatch := "  "
 				if !color.NoColor {
@@ -299,13 +308,27 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 					}
 				}
 
-				fmt.Printf("  %s %-8s %s %-45s  %s %s %s\n",
-					match, slotLabel,
-					filSwatch, filInfo,
-					dim("│"),
-					printerSwatch, printerInfo,
-				)
+				if len(slotLabel) > maxSlot {
+					maxSlot = len(slotLabel)
+				}
+				if len(filInfo) > maxFil {
+					maxFil = len(filInfo)
+				}
+
+				rows = append(rows, rowData{match, slotLabel, filSwatch, filInfo, printerSwatch, printerInfo})
 			}
+		}
+
+		// Second pass: print with consistent alignment
+		filFmt := fmt.Sprintf("%%-%ds", maxFil)
+		slotFmt := fmt.Sprintf("%%-%ds", maxSlot)
+		for _, r := range rows {
+			fmt.Printf("  %s "+slotFmt+"  %s "+filFmt+"  %s %s %s\n",
+				r.match, r.slotLabel,
+				r.filSwatch, r.filInfo,
+				dim("│"),
+				r.printerSwatch, r.printerInfo,
+			)
 		}
 		fmt.Println()
 	}
