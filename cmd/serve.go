@@ -148,12 +148,20 @@ var serveCmd = &cobra.Command{
 									msg = fmt.Sprintf("%s: print finished", printerName)
 								}
 							case "paused":
+								isUpdate := event.OldState == "paused"
 								if event.IsLikelyUserPause() {
 									title = "Print paused (user)"
 									if plateInfo != "" {
 										msg = fmt.Sprintf("%s: %s — paused by user", printerName, plateInfo)
 									} else {
 										msg = fmt.Sprintf("%s: paused by user", printerName)
+									}
+								} else if isUpdate {
+									title = "Additional printer fault"
+									if plateInfo != "" {
+										msg = fmt.Sprintf("%s: %s — additional fault detected", printerName, plateInfo)
+									} else {
+										msg = fmt.Sprintf("%s: additional fault detected", printerName)
 									}
 								} else {
 									title = "Print paused (printer)"
@@ -163,7 +171,7 @@ var serveCmd = &cobra.Command{
 										msg = fmt.Sprintf("%s: paused by printer, check it", printerName)
 									}
 								}
-								// Log HMS codes and include description in notification if available
+								// Log HMS codes and include description in notification
 								if len(event.HMSCodes) > 0 {
 									var codes []string
 									var reasons []string
@@ -171,6 +179,8 @@ var serveCmd = &cobra.Command{
 										codes = append(codes, h.HMSCodeString())
 										if desc := h.HMSDescription(); desc != "" {
 											reasons = append(reasons, desc)
+										} else {
+											reasons = append(reasons, h.HMSCodeString())
 										}
 									}
 									fmt.Printf("[notify] %s paused — HMS: %s\n", printerName, strings.Join(codes, ", "))
@@ -192,6 +202,8 @@ var serveCmd = &cobra.Command{
 										codes = append(codes, h.HMSCodeString())
 										if desc := h.HMSDescription(); desc != "" {
 											reasons = append(reasons, desc)
+										} else {
+											reasons = append(reasons, h.HMSCodeString())
 										}
 									}
 									fmt.Printf("[notify] %s failed — HMS: %s\n", printerName, strings.Join(codes, ", "))

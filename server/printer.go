@@ -90,6 +90,9 @@ var hmsDescriptions = map[string]string{
 	// Build plate
 	"0300-0D00-0001-0003": "build plate not properly placed",
 
+	// AMS assist motor
+	"0700-8010-0012-0805": "AMS assist motor overloaded",
+
 	// AMS filament ran out (07XX-7000-0002-0007, XX = AMS number)
 	"0700-7000-0002-0007": "AMS 1 filament ran out",
 	"0701-7000-0002-0007": "AMS 2 filament ran out",

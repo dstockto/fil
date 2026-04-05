@@ -268,7 +268,16 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 	}
 
 	// Fire state change callbacks
+	fireCallbacks := false
 	if b.state.State != oldState && oldState != "" {
+		// State changed — always fire
+		fireCallbacks = true
+	} else if b.state.State == "paused" && hasNewHMSCodes(prevHMS, b.hmsCodes) {
+		// Already paused but new HMS codes appeared — fire to notify about additional faults
+		fireCallbacks = true
+	}
+
+	if fireCallbacks {
 		event := StateChangeEvent{
 			OldState:     oldState,
 			NewState:     b.state.State,
@@ -279,6 +288,20 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 			go cb(event)
 		}
 	}
+}
+
+// hasNewHMSCodes returns true if current contains any codes not in prev.
+func hasNewHMSCodes(prev, current []HMSCode) bool {
+	prevSet := make(map[string]bool)
+	for _, h := range prev {
+		prevSet[h.HMSCodeString()] = true
+	}
+	for _, h := range current {
+		if !prevSet[h.HMSCodeString()] {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeState converts Bambu gcode_state values to normalized states.
