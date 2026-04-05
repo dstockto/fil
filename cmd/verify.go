@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dstockto/fil/api"
@@ -152,17 +153,23 @@ func typesMatch(a, b string) bool {
 var verifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Check for mismatches between fil and printer tray data",
+	Long:  "Compares fil's filament data against what each printer reports. Use -v to show all trays side by side.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.PlansServer == "" {
 			return fmt.Errorf("plans_server must be configured")
 		}
 
+		verbose, _ := cmd.Flags().GetBool("verbose")
 		ctx := cmd.Context()
 		planClient := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 
 		statuses, err := planClient.GetPrinterStatus(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to fetch printer status: %w", err)
+		}
+
+		if verbose {
+			return printFullTrayView(ctx, statuses)
 		}
 
 		mismatches := detectMismatches(ctx, statuses)
@@ -186,6 +193,138 @@ var verifyCmd = &cobra.Command{
 	},
 }
 
+func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus) error {
+	if Cfg == nil || Cfg.ApiBase == "" {
+		return fmt.Errorf("api_base must be configured")
+	}
+
+	spoolmanClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+
+	orders, err := LoadLocationOrders(ctx, spoolmanClient)
+	if err != nil {
+		return fmt.Errorf("failed to load location orders: %w", err)
+	}
+
+	allSpools, err := spoolmanClient.FindSpoolsByName(ctx, "*", nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to fetch spools: %w", err)
+	}
+	spoolByID := make(map[int]*models.FindSpool)
+	for i := range allSpools {
+		spoolByID[allSpools[i].Id] = &allSpools[i]
+	}
+
+	type trayKey struct {
+		amsID  int
+		trayID int
+	}
+	printerTrays := make(map[string]map[trayKey]api.PrinterTrayStatus)
+	for _, ps := range printerStatuses {
+		trays := make(map[trayKey]api.PrinterTrayStatus)
+		for _, t := range ps.Trays {
+			trays[trayKey{t.AmsID, t.TrayID}] = t
+		}
+		printerTrays[ps.Name] = trays
+	}
+
+	good := color.New(color.FgGreen).SprintFunc()
+	warn := color.New(color.FgYellow).SprintFunc()
+	dim := color.New(color.FgHiBlack).SprintFunc()
+
+	for printerName, pCfg := range Cfg.Printers {
+		if pCfg.Type == "" {
+			continue
+		}
+		trays, hasTrayData := printerTrays[printerName]
+
+		fmt.Printf("%s:\n", printerName)
+
+		if !hasTrayData {
+			fmt.Println("  (no live data available)")
+			fmt.Println()
+			continue
+		}
+
+		for locIdx, loc := range pCfg.Locations {
+			ids := orders[loc]
+
+			for trayIdx := range ids {
+				spoolID := ids[trayIdx]
+				slotLabel := fmt.Sprintf("%s:%d", loc, trayIdx+1)
+				printerTray, hasPrinter := trays[trayKey{locIdx, trayIdx}]
+
+				// Fil side
+				filInfo := "(empty)"
+				filColor := ""
+				if spoolID != EmptySlot {
+					if spool, ok := spoolByID[spoolID]; ok {
+						filColor = normalizeHex(spool.Filament.ColorHex)
+						filInfo = fmt.Sprintf("#%d %s (%s #%s)", spool.Id, spool.Filament.Name, spool.Filament.Material, filColor)
+					}
+				}
+
+				// Printer side
+				printerInfo := "(no data)"
+				printerColor := ""
+				if hasPrinter {
+					printerColor = normalizeHex(printerTray.Color)
+					if printerTray.Color != "" {
+						printerInfo = fmt.Sprintf("%s #%s", printerTray.Type, printerColor)
+					} else {
+						printerInfo = "(empty)"
+					}
+				}
+
+				// Match indicator
+				match := " "
+				if spoolID == EmptySlot {
+					match = dim("·")
+				} else if filColor != "" && printerColor != "" {
+					if colorsMatch(filColor, printerColor) {
+						match = good("✓")
+					} else {
+						match = warn("✗")
+					}
+				}
+
+				// Color swatches
+				filSwatch := "  "
+				printerSwatch := "  "
+				if !color.NoColor {
+					if filColor != "" {
+						filSwatch = hexSwatch(filColor)
+					}
+					if printerColor != "" {
+						printerSwatch = hexSwatch(printerColor)
+					}
+				}
+
+				fmt.Printf("  %s %-8s %s %-45s  %s %s %s\n",
+					match, slotLabel,
+					filSwatch, filInfo,
+					dim("│"),
+					printerSwatch, printerInfo,
+				)
+			}
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func hexSwatch(hex string) string {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) < 6 {
+		return "  "
+	}
+	r, _ := strconv.ParseInt(hex[0:2], 16, 16)
+	g, _ := strconv.ParseInt(hex[2:4], 16, 16)
+	b, _ := strconv.ParseInt(hex[4:6], 16, 16)
+	return color.RGB(int(r), int(g), int(b)).Sprintf("██")
+}
+
 func init() {
 	rootCmd.AddCommand(verifyCmd)
+	verifyCmd.Flags().BoolP("verbose", "v", false, "show full tray comparison for all printers")
 }
