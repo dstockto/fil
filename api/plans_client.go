@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -525,21 +526,21 @@ type HistoryFilament struct {
 func (c *PlanServerClient) GetHistory(ctx context.Context, since, until, printer string, limit int) ([]HistoryEntry, error) {
 	endpoint := c.base + "/api/v1/history"
 
-	params := []string{}
+	q := url.Values{}
 	if since != "" {
-		params = append(params, "since="+since)
+		q.Set("since", since)
 	}
 	if until != "" {
-		params = append(params, "until="+until)
+		q.Set("until", until)
 	}
 	if printer != "" {
-		params = append(params, "printer="+printer)
+		q.Set("printer", printer)
 	}
 	if limit > 0 {
-		params = append(params, fmt.Sprintf("limit=%d", limit))
+		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
-	if len(params) > 0 {
-		endpoint += "?" + strings.Join(params, "&")
+	if len(q) > 0 {
+		endpoint += "?" + q.Encode()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
