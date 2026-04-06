@@ -29,6 +29,11 @@ func (m TrayMismatch) String() string {
 	warn := color.New(color.FgYellow).SprintFunc()
 	slot := fmt.Sprintf("%s:%d", m.Location, m.SlotPos)
 
+	printerEmpty := m.PrinterColor == "" && m.PrinterType == ""
+	if printerEmpty {
+		return warn(fmt.Sprintf("  %s #%d %s — printer reports tray empty", slot, m.SpoolID, m.FilName))
+	}
+
 	parts := []string{}
 	if !colorsMatch(m.FilColor, m.PrinterColor) {
 		parts = append(parts, fmt.Sprintf("color: fil=#%s printer=#%s", normalizeHex(m.FilColor), normalizeHex(m.PrinterColor)))
