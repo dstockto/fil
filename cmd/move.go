@@ -451,7 +451,7 @@ func pushTrayUpdate(m move, orders map[string][]int) {
 	}
 
 	mapping := MapLocationToTray(destLoc, slotPos)
-	if mapping == nil {
+	if !mapping.SupportsTrayPush() {
 		return
 	}
 

@@ -677,7 +677,7 @@ var planNextCmd = &cobra.Command{
 					}
 				}
 				if slotPos > 0 {
-					if mapping := MapLocationToTray(targetLoc, slotPos); mapping != nil {
+					if mapping := MapLocationToTray(targetLoc, slotPos); mapping.SupportsTrayPush() {
 						colorHex := strings.TrimPrefix(bestSpool.Filament.ColorHex, "#")
 						if len(colorHex) == 6 {
 							colorHex += "FF"

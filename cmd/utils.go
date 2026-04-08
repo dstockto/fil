@@ -39,6 +39,17 @@ type PrinterTrayMapping struct {
 	TrayID      int // 0-based slot index within the location
 }
 
+// SupportsTrayPush reports whether this printer type accepts pushed tray
+// metadata updates (filament color/type/etc). Currently only Bambu printers
+// support this; Prusa and any unknown types do not. Update this single
+// function when adding a new printer type that supports tray pushes.
+func (m *PrinterTrayMapping) SupportsTrayPush() bool {
+	if m == nil {
+		return false
+	}
+	return m.PrinterType == "bambu"
+}
+
 // MapLocationToTray maps a location name and 1-based slot position to a printer tray.
 // Returns nil if the location is not a printer location or printer has no type configured.
 func MapLocationToTray(location string, slotPos int) *PrinterTrayMapping {
