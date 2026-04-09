@@ -17,19 +17,43 @@ import (
 var planReprintCmd = &cobra.Command{
 	Use:     "reprint",
 	Aliases: []string{"rp"},
-	Short:   "Reprint an archived project",
+	Short:   "Create a fresh copy of a plan for reprinting",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || (Cfg.ArchiveDir == "" && Cfg.PlansServer == "") || (Cfg.PlansDir == "" && Cfg.PlansServer == "") {
-			return fmt.Errorf("archive_dir and plans_dir (or plans_server) must be configured in config.json")
+		if Cfg == nil || (Cfg.PlansDir == "" && Cfg.PlansServer == "") {
+			return fmt.Errorf("plans_dir or plans_server must be configured in config.json")
 		}
 
-		type archiveEntry struct {
+		type reprintEntry struct {
 			path        string // local path (empty for remote)
 			remoteName  string // remote filename (empty for local)
 			displayName string
 			remote      bool
+			status      string // "active", "paused", or "archived"
 		}
-		var entries []archiveEntry
+		var entries []reprintEntry
+
+		// Active and paused plans (from discoverPlansWithFilter)
+		activePlans, _ := discoverPlansWithFilter(true, false)
+		for _, dp := range activePlans {
+			label := "active"
+			if Cfg.PauseDir != "" {
+				absPauseDir, _ := filepath.Abs(Cfg.PauseDir)
+				if dp.Path != "" && strings.HasPrefix(dp.Path, absPauseDir) {
+					label = "paused"
+				}
+				if dp.Remote && strings.Contains(dp.DisplayName, "<paused>") {
+					label = "paused"
+				}
+			}
+			e := reprintEntry{
+				path:        dp.Path,
+				remoteName:  dp.RemoteName,
+				displayName: fmt.Sprintf("%s (%s)", FormatDiscoveredPlan(dp), label),
+				remote:      dp.Remote,
+				status:      label,
+			}
+			entries = append(entries, e)
+		}
 
 		// Local archived plans
 		if Cfg.ArchiveDir != "" {
@@ -38,9 +62,10 @@ var planReprintCmd = &cobra.Command{
 				files2, _ := filepath.Glob(filepath.Join(Cfg.ArchiveDir, "*.yml"))
 				files = append(files, files2...)
 				for _, f := range files {
-					entries = append(entries, archiveEntry{
+					entries = append(entries, reprintEntry{
 						path:        f,
-						displayName: FormatPlanPath(f),
+						displayName: fmt.Sprintf("%s (archived)", FormatPlanPath(f)),
+						status:      "archived",
 					})
 				}
 			}
@@ -54,20 +79,21 @@ var planReprintCmd = &cobra.Command{
 				fmt.Printf("Warning: could not fetch archived plans from server: %v\n", err)
 			} else {
 				for _, s := range summaries {
-					entries = append(entries, archiveEntry{
+					entries = append(entries, reprintEntry{
 						remoteName:  s.Name,
-						displayName: "<server:archive>/" + s.Name,
+						displayName: fmt.Sprintf("<server:archive>/%s (archived)", s.Name),
 						remote:      true,
+						status:      "archived",
 					})
 				}
 			}
 		}
 
 		if len(entries) == 0 {
-			return fmt.Errorf("no archived plans found")
+			return fmt.Errorf("no plans found to reprint")
 		}
 
-		var selected archiveEntry
+		var selected reprintEntry
 		if len(entries) == 1 {
 			selected = entries[0]
 		} else {
@@ -76,7 +102,7 @@ var planReprintCmd = &cobra.Command{
 				displayNames = append(displayNames, e.displayName)
 			}
 			prompt := promptui.Select{
-				Label:             "Select archived plan to reprint",
+				Label:             "Select plan to reprint",
 				Items:             displayNames,
 				Stdout:            NoBellStdout,
 				StartInSearchMode: true,
@@ -98,12 +124,18 @@ var planReprintCmd = &cobra.Command{
 		var err error
 		if selected.remote {
 			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			data, err = client.GetPlan(context.Background(), selected.remoteName, "archived")
+			if selected.status == "archived" {
+				data, err = client.GetPlan(context.Background(), selected.remoteName, "archived")
+			} else if selected.status == "paused" {
+				data, err = client.GetPlan(context.Background(), selected.remoteName, "paused")
+			} else {
+				data, err = client.GetPlan(context.Background(), selected.remoteName)
+			}
 		} else {
 			data, err = os.ReadFile(selected.path)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read archived plan: %w", err)
+			return fmt.Errorf("failed to read plan: %w", err)
 		}
 
 		var plan models.PlanFile
@@ -169,6 +201,21 @@ var planReprintCmd = &cobra.Command{
 
 		if Cfg.PlansServer != "" {
 			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+
+			// Check for filename collision on server
+			existing, listErr := client.ListPlans(context.Background(), "")
+			if listErr == nil {
+				existingNames := make(map[string]bool)
+				for _, s := range existing {
+					existingNames[s.Name] = true
+				}
+				counter := 1
+				for existingNames[newFilename] {
+					newFilename = fmt.Sprintf("%s-%d%s", base, counter, ext)
+					counter++
+				}
+			}
+
 			if err := client.PutPlan(context.Background(), newFilename, updatedData); err != nil {
 				return fmt.Errorf("failed to upload reprinted plan: %w", err)
 			}
