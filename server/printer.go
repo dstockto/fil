@@ -80,6 +80,9 @@ var hmsDescriptions = map[string]string{
 	// Spaghetti / First layer
 	"0C00-0300-0003-0007": "possible first layer defects",
 	"0C00-0300-0003-0008": "possible spaghetti defects",
+	"0C00-0300-0003-000B": "inspecting first layer",
+	"0C00-0300-0002-0001": "filament exposure metering failed",
+	"0C00-0300-0002-0002": "first layer inspection terminated due to abnormal lidar data",
 
 	// Lidar
 	"0C00-0100-0001-0004": "micro lidar lens dirty",
@@ -87,8 +90,9 @@ var hmsDescriptions = map[string]string{
 	// Toolhead
 	"0300-1200-0002-0001": "toolhead front cover fell off",
 
-	// Build plate
+	// Build plate / heatbed
 	"0300-0D00-0001-0003": "build plate not properly placed",
+	"0300-0D00-0002-0001": "heatbed homing abnormal: possible bulge on heatbed or dirty nozzle tip",
 
 	// AMS assist motor
 	"0700-8010-0012-0805": "AMS assist motor overloaded",
