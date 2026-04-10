@@ -119,22 +119,28 @@ func printStatus() error {
 
 	for _, name := range active {
 		infos := printerMap[name]
+		// Calculate the visible prefix length: swatch (if any) + "PrinterName: "
+		// so subsequent lines can align the project/plate column.
+		prefixLen := len(name) + 2 // "Name: "
+		if live, ok := liveStatus[name]; ok {
+			if activeTrayColorSwatch(live) != "" {
+				prefixLen += 3 // "██ " is 2 visible chars + 1 space, but ██ is 2 runes
+			}
+		}
+
 		for i, info := range infos {
 			line := ""
 
-			// Show color swatch if live data has active tray color (only on first line)
 			if i == 0 {
+				// Show color swatch if live data has active tray color
 				if live, ok := liveStatus[name]; ok {
 					if swatch := activeTrayColorSwatch(live); swatch != "" {
 						line += swatch + " "
 					}
 				}
-			}
-
-			if i == 0 {
 				line += fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
 			} else {
-				line += fmt.Sprintf("%s  %s / %s", strings.Repeat(" ", len(name)), models.Sanitize(info.Project), models.Sanitize(info.Plate))
+				line += fmt.Sprintf("%s%s / %s", strings.Repeat(" ", prefixLen), models.Sanitize(info.Project), models.Sanitize(info.Plate))
 			}
 
 			// Prefer live printer data over fil's time estimate (only on first line)
