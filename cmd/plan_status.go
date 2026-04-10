@@ -143,15 +143,11 @@ func printStatus() error {
 				line += fmt.Sprintf("%s%s / %s", strings.Repeat(" ", prefixLen), models.Sanitize(info.Project), models.Sanitize(info.Plate))
 			}
 
-			// Prefer live printer data over fil's time estimate (only on first line)
-			if i == 0 {
-				if live, ok := liveStatus[name]; ok && live.State == "printing" {
-					line += formatLiveStatus(live)
-				} else if live, ok := liveStatus[name]; ok && live.State != "idle" && live.State != "offline" {
-					line += fmt.Sprintf(" (%s)", live.State)
-				} else {
-					line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
-				}
+			// Prefer live printer data over fil's time estimate
+			if live, ok := liveStatus[name]; ok && live.State == "printing" {
+				line += formatLiveStatus(live)
+			} else if live, ok := liveStatus[name]; ok && live.State != "idle" && live.State != "offline" {
+				line += fmt.Sprintf(" (%s)", live.State)
 			} else {
 				line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
 			}
