@@ -72,7 +72,7 @@ var planNextCmd = &cobra.Command{
 
 						actionPrompt := promptui.Select{
 							Label:  "What would you like to do?",
-							Items:  []string{"Mark as completed", "Cancel (back to todo)", "Quit"},
+							Items:  []string{"Mark as completed", "Cancel (back to todo)", "Keep printing (start another plate)", "Quit"},
 							Stdout: NoBellStdout,
 						}
 						actionIdx, _, err := actionPrompt.Run()
@@ -108,7 +108,9 @@ var planNextCmd = &cobra.Command{
 								return fmt.Errorf("failed to save plan: %w", err)
 							}
 							fmt.Printf("Cancelled %s — set back to todo\n\n", models.Sanitize(plate.Name))
-						case 2: // Quit
+						case 2: // Keep printing
+							fmt.Printf("Keeping %s in-progress\n\n", models.Sanitize(plate.Name))
+						case 3: // Quit
 							return nil
 						}
 					}

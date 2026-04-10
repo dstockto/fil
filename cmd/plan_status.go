@@ -75,18 +75,18 @@ func printStatus() error {
 		StartedAt         string
 		EstimatedDuration string
 	}
-	printerMap := make(map[string]printingInfo)
+	printerMap := make(map[string][]printingInfo)
 
 	for _, p := range plans {
 		for _, proj := range p.Plan.Projects {
 			for _, plate := range proj.Plates {
 				if plate.Status == "in-progress" && plate.Printer != "" {
-					printerMap[plate.Printer] = printingInfo{
+					printerMap[plate.Printer] = append(printerMap[plate.Printer], printingInfo{
 						Project:           proj.Name,
 						Plate:             plate.Name,
 						StartedAt:         plate.StartedAt,
 						EstimatedDuration: plate.EstimatedDuration,
-					}
+					})
 				}
 			}
 		}
@@ -108,7 +108,7 @@ func printStatus() error {
 	// Split into active and idle, each sorted alphabetically
 	var active, idle []string
 	for name := range Cfg.Printers {
-		if _, ok := printerMap[name]; ok {
+		if infos, ok := printerMap[name]; ok && len(infos) > 0 {
 			active = append(active, name)
 		} else {
 			idle = append(idle, name)
@@ -118,27 +118,39 @@ func printStatus() error {
 	sort.Strings(idle)
 
 	for _, name := range active {
-		info := printerMap[name]
-		line := ""
+		infos := printerMap[name]
+		for i, info := range infos {
+			line := ""
 
-		// Show color swatch if live data has active tray color
-		if live, ok := liveStatus[name]; ok {
-			if swatch := activeTrayColorSwatch(live); swatch != "" {
-				line += swatch + " "
+			// Show color swatch if live data has active tray color (only on first line)
+			if i == 0 {
+				if live, ok := liveStatus[name]; ok {
+					if swatch := activeTrayColorSwatch(live); swatch != "" {
+						line += swatch + " "
+					}
+				}
 			}
-		}
 
-		line += fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			if i == 0 {
+				line += fmt.Sprintf("%s: %s / %s", name, models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			} else {
+				line += fmt.Sprintf("%s  %s / %s", strings.Repeat(" ", len(name)), models.Sanitize(info.Project), models.Sanitize(info.Plate))
+			}
 
-		// Prefer live printer data over fil's time estimate
-		if live, ok := liveStatus[name]; ok && live.State == "printing" {
-			line += formatLiveStatus(live)
-		} else if live, ok := liveStatus[name]; ok && live.State != "idle" && live.State != "offline" {
-			line += fmt.Sprintf(" (%s)", live.State)
-		} else {
-			line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+			// Prefer live printer data over fil's time estimate (only on first line)
+			if i == 0 {
+				if live, ok := liveStatus[name]; ok && live.State == "printing" {
+					line += formatLiveStatus(live)
+				} else if live, ok := liveStatus[name]; ok && live.State != "idle" && live.State != "offline" {
+					line += fmt.Sprintf(" (%s)", live.State)
+				} else {
+					line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+				}
+			} else {
+				line += formatTimeInfo(info.StartedAt, info.EstimatedDuration)
+			}
+			fmt.Println(line)
 		}
-		fmt.Println(line)
 	}
 
 	for _, name := range idle {
