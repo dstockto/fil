@@ -136,16 +136,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		headerHeight := 0 // viewport uses full height; footer baked into content
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight)
-			m.viewport.SetContent(m.renderContent())
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - headerHeight
-			m.viewport.SetContent(m.renderContent())
-		}
+		m = resizeViewport(m)
 
 	case tuiTickMsg:
 		cmds = append(cmds, fetchTUIData, tickCmd(m.refreshInterval))
@@ -162,14 +153,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activePlanCount = msg.activePlanCount
 		m.lastRefresh = time.Now()
 		m.err = nil
-		if m.ready {
-			m.viewport.SetContent(m.renderContent())
-		}
+		m = resizeViewport(m) // header height may have changed with new data
+		m.viewport.SetContent(m.renderScrollable())
 
 	case tuiErrMsg:
 		m.err = msg
 		if m.ready {
-			m.viewport.SetContent(m.renderContent())
+			m.viewport.SetContent(m.renderScrollable())
 		}
 	}
 
@@ -184,6 +174,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tuiTickMsg(t) })
+}
+
+// resizeViewport recalculates the viewport height based on the current header
+// and footer sizes, then updates or creates the viewport.
+func resizeViewport(m tuiModel) tuiModel {
+	vpHeight := m.height - m.headerHeight() - m.footerHeight()
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+	if !m.ready {
+		m.viewport = viewport.New(m.width, vpHeight)
+		m.viewport.SetContent(m.renderScrollable())
+		m.ready = true
+	} else {
+		m.viewport.Width = m.width
+		m.viewport.Height = vpHeight
+	}
+	return m
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -315,10 +323,15 @@ func (m tuiModel) View() string {
 	if !m.ready {
 		return "Loading..."
 	}
-	return m.viewport.View()
+	// Three-zone layout:
+	// 1. Top (pinned): printers + mismatches
+	// 2. Middle (scrollable): up-next plate list
+	// 3. Bottom (pinned): summary + keybinds
+	return m.renderHeader() + m.viewport.View() + "\n" + m.renderFooter()
 }
 
-func (m tuiModel) renderContent() string {
+// renderHeader returns the pinned top section (printers + mismatches).
+func (m tuiModel) renderHeader() string {
 	w := m.width
 	if w == 0 {
 		w = 80
@@ -329,16 +342,19 @@ func (m tuiModel) renderContent() string {
 	// Error banner
 	if m.err != nil {
 		b.WriteString(tuiWarnStyle.Render(fmt.Sprintf("  Error: %v", m.err)))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 	}
 
-	// Printers section
 	b.WriteString(tuiHeaderStyle.Render("Printers"))
 	b.WriteString("\n")
 	b.WriteString(tuiDividerStyle.Render(strings.Repeat("─", w)))
 	b.WriteString("\n")
 
-	if len(m.activePrinters) == 0 && len(m.idlePrinters) == 0 {
+	hasData := len(m.activePrinters) > 0 || len(m.idlePrinters) > 0
+	if !hasData && m.lastRefresh.IsZero() {
+		b.WriteString(tuiDimStyle.Render("  Loading..."))
+		b.WriteString("\n")
+	} else if !hasData {
 		b.WriteString(tuiDimStyle.Render("  No printers configured"))
 		b.WriteString("\n")
 	}
@@ -352,47 +368,66 @@ func (m tuiModel) renderContent() string {
 		m.renderIdlePrinter(&b, name)
 	}
 
-	// Mismatches
 	if len(m.mismatches) > 0 {
-		b.WriteString("\n")
 		b.WriteString(tuiWarnStyle.Render(fmt.Sprintf("  ⚠ %d tray mismatch(es) — run: fil verify", len(m.mismatches))))
 		b.WriteString("\n")
 	}
 
-	// Up next section
-	if len(m.todoPlates) > 0 {
-		b.WriteString("\n")
-		b.WriteString(tuiHeaderStyle.Render("Up next"))
-		b.WriteString("\n")
-		b.WriteString(tuiDividerStyle.Render(strings.Repeat("─", w)))
-		b.WriteString("\n")
-
-		limit := len(m.todoPlates)
-		if limit > 10 {
-			limit = 10
-		}
-		for _, tp := range m.todoPlates[:limit] {
-			b.WriteString(fmt.Sprintf("  %s / %s",
-				models.Sanitize(tp.ProjectName),
-				models.Sanitize(tp.PlateName)))
-			b.WriteString("\n")
-		}
-		if len(m.todoPlates) > 10 {
-			b.WriteString(tuiDimStyle.Render(fmt.Sprintf("  ... and %d more", len(m.todoPlates)-10)))
-			b.WriteString("\n")
-		}
-	}
-
-	// Summary
+	// Up next section header (pinned with printers, list scrolls below)
+	b.WriteString("\n")
+	b.WriteString(tuiHeaderStyle.Render("Up next"))
 	b.WriteString("\n")
 	b.WriteString(tuiDividerStyle.Render(strings.Repeat("─", w)))
 	b.WriteString("\n")
 
-	summary := fmt.Sprintf("%d active plan(s) · %d plates remaining", m.activePlanCount, m.totalTodo)
+	return b.String()
+}
+
+// headerHeight counts the lines in the header so the viewport gets the remaining space.
+func (m tuiModel) headerHeight() int {
+	return strings.Count(m.renderHeader(), "\n")
+}
+
+// footerHeight returns the number of terminal lines the pinned footer occupies,
+// including the newline separator between the viewport and footer.
+func (m tuiModel) footerHeight() int {
+	return 4 // separator + divider + summary + keybinds
+}
+
+// renderScrollable returns only the up-next plate list for the viewport.
+func (m tuiModel) renderScrollable() string {
+	if len(m.todoPlates) == 0 {
+		return tuiDimStyle.Render("  No plates remaining") + "\n"
+	}
+
+	var b strings.Builder
+	for _, tp := range m.todoPlates {
+		b.WriteString(fmt.Sprintf("  %s / %s",
+			models.Sanitize(tp.ProjectName),
+			models.Sanitize(tp.PlateName)))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// renderFooter returns the always-visible pinned footer (summary + keybinds).
+func (m tuiModel) renderFooter() string {
+	w := m.width
+	if w == 0 {
+		w = 80
+	}
+
+	var b strings.Builder
+	b.WriteString(tuiDividerStyle.Render(strings.Repeat("─", w)))
+	b.WriteString("\n")
+
+	summary := ""
+	if !m.lastRefresh.IsZero() {
+		summary = fmt.Sprintf("%d active plan(s) · %d plates remaining", m.activePlanCount, m.totalTodo)
+	}
 	refreshInfo := ""
 	if !m.lastRefresh.IsZero() {
-		ago := time.Since(m.lastRefresh).Truncate(time.Second)
-		refreshInfo = fmt.Sprintf("Updated %s ago", ago)
+		refreshInfo = fmt.Sprintf("Updated at %s", m.lastRefresh.Format("3:04:05pm"))
 	}
 	gap := w - len(summary) - len(refreshInfo)
 	if gap < 2 {
@@ -400,10 +435,7 @@ func (m tuiModel) renderContent() string {
 	}
 	b.WriteString(tuiDimStyle.Render(summary + strings.Repeat(" ", gap) + refreshInfo))
 	b.WriteString("\n")
-
-	// Footer
 	b.WriteString(tuiFooterStyle.Render("[q]uit  [r]efresh  [↑/↓]scroll"))
-	b.WriteString("\n")
 
 	return b.String()
 }
