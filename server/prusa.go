@@ -201,7 +201,9 @@ func normalizePrusaState(state string) string {
 		return "paused"
 	case "FINISHED":
 		return "finished"
-	case "ERROR", "ATTENTION":
+	case "ATTENTION":
+		return "paused"
+	case "ERROR":
 		return "failed"
 	default:
 		return "idle"
