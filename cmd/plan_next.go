@@ -139,7 +139,7 @@ var planNextCmd = &cobra.Command{
 		var busyElsewhere []inProgressElsewhere
 
 		// Get current inventory & loaded spools
-		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
 		loadedSpools := make(map[string]models.FindSpool)
 		for _, s := range allSpools {
 			if s.Location != "" {
@@ -305,59 +305,95 @@ var planNextCmd = &cobra.Command{
 
 		swapsPerformed := false
 		for _, req := range choice.plate.Needs {
-			// Is it already loaded?
-			loadedLoc := ""
+			// Collect all matching loaded spools in this printer
+			var loadedMatches []models.FindSpool
+			var loadedTotal float64
 			for _, loc := range printerLocations {
-				// We need to check all spools in this Location
 				for _, s := range loadedSpools {
 					if s.Location == loc && s.Filament.Id == req.FilamentID {
-						loadedLoc = loc
-						break
+						loadedMatches = append(loadedMatches, s)
+						loadedTotal += s.RemainingWeight
 					}
-				}
-				if loadedLoc != "" {
-					break
 				}
 			}
 
 			var bestSpool *models.FindSpool
-			if loadedLoc != "" {
-				// Check if enough is remaining
-				var loadedSpool models.FindSpool
-				for _, s := range loadedSpools {
-					if s.Location == loadedLoc && s.Filament.Id == req.FilamentID {
-						loadedSpool = s
-						break
+			if len(loadedMatches) > 0 {
+				if loadedTotal >= req.Amount {
+					// Enough filament already loaded (possibly across multiple slots)
+					if len(loadedMatches) == 1 {
+						fmt.Printf("✓ %s is already loaded in %s (%.1fg remaining)\n",
+							models.Sanitize(req.Name),
+							models.Sanitize(loadedMatches[0].Location),
+							loadedMatches[0].RemainingWeight)
+					} else {
+						var locs []string
+						for _, s := range loadedMatches {
+							locs = append(locs, fmt.Sprintf("%s #%d: %.1fg",
+								models.Sanitize(s.Location), s.Id, s.RemainingWeight))
+						}
+						fmt.Printf("✓ %s is already loaded across %d slots (%.1fg total) — %s\n",
+							models.Sanitize(req.Name), len(loadedMatches), loadedTotal,
+							strings.Join(locs, ", "))
+
+						// Recommend starting with the spool that has the least remaining,
+						// so the (near-)empty spool finishes mid-print and the fuller one takes over.
+						leastRemaining := loadedMatches[0]
+						for _, s := range loadedMatches[1:] {
+							if s.RemainingWeight < leastRemaining.RemainingWeight {
+								leastRemaining = s
+							}
+						}
+						fmt.Printf("  → Start with spool #%d in %s (%.1fg remaining) first so it finishes before the fuller spool takes over\n",
+							leastRemaining.Id,
+							models.Sanitize(leastRemaining.Location),
+							leastRemaining.RemainingWeight)
+					}
+					continue
+				}
+
+				// Short on filament even when summing all matching loaded spools
+				fmt.Printf("! WARNING: Loaded %s has %.1fg remaining across %d slot(s), but this plate requires %.1fg\n",
+					models.Sanitize(req.Name), loadedTotal, len(loadedMatches), req.Amount)
+
+				// Build set of loaded spool IDs and printer location set to exclude
+				loadedIDs := make(map[int]bool, len(loadedMatches))
+				for _, s := range loadedMatches {
+					loadedIDs[s.Id] = true
+				}
+				inThisPrinter := make(map[string]bool, len(printerLocations))
+				for _, loc := range printerLocations {
+					inThisPrinter[loc] = true
+				}
+
+				var nextBest *models.FindSpool
+				for _, s := range allSpools {
+					if s.Archived || s.Filament.Id != req.FilamentID {
+						continue
+					}
+					if loadedIDs[s.Id] {
+						continue
+					}
+					if inThisPrinter[s.Location] {
+						continue // already in this printer — would have been in loadedMatches
+					}
+					if nextBest == nil || s.RemainingWeight > nextBest.RemainingWeight {
+						sc := s
+						nextBest = &sc
 					}
 				}
 
-				if loadedSpool.RemainingWeight < req.Amount {
-					fmt.Printf("! WARNING: Loaded spool #%d (%s) only has %.1fg remaining, but this plate requires %.1fg\n", loadedSpool.Id, models.Sanitize(req.Name), loadedSpool.RemainingWeight, req.Amount)
-
-					// Suggest next spool to load
-					var nextBest *models.FindSpool
-					for _, s := range allSpools {
-						if !s.Archived && s.Filament.Id == req.FilamentID && s.Id != loadedSpool.Id {
-							if nextBest == nil || s.RemainingWeight > nextBest.RemainingWeight {
-								nextBest = &s
-							}
-						}
+				if nextBest != nil {
+					fmt.Printf("  Suggestion: Load spool #%d (%.1fg remaining) into another slot for automatic swap.\n", nextBest.Id, nextBest.RemainingWeight)
+					prompt := promptui.Prompt{
+						Label:     "Do you want to load this spool now?",
+						IsConfirm: true,
+						Stdout:    NoBellStdout,
 					}
-					if nextBest != nil {
-						fmt.Printf("  Suggestion: Load spool #%d (%.1fg remaining) into another slot for automatic swap.\n", nextBest.Id, nextBest.RemainingWeight)
-						prompt := promptui.Prompt{
-							Label:     "Do you want to load this spool now?",
-							IsConfirm: true,
-							Stdout:    NoBellStdout,
-						}
-						_, err := prompt.Run()
-						if err == nil {
-							// Proceed to find a slot and load it
-							bestSpool = nextBest
-						}
+					if _, err := prompt.Run(); err == nil {
+						// Proceed to find a slot and load it
+						bestSpool = nextBest
 					}
-				} else {
-					fmt.Printf("✓ %s is already loaded in %s (%.1fg remaining)\n", models.Sanitize(req.Name), models.Sanitize(loadedLoc), loadedSpool.RemainingWeight)
 				}
 
 				if bestSpool == nil {

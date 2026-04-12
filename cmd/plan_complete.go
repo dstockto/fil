@@ -185,7 +185,7 @@ var planCompleteCmd = &cobra.Command{
 
 					// 1. Try to find matching spools in the printer
 					if len(printerLocations) > 0 {
-						allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+						allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
 						var candidates []models.FindSpool
 						for _, s := range allSpools {
 							inPrinter := false

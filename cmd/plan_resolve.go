@@ -62,7 +62,7 @@ var planResolveCmd = &cobra.Command{
 						if need.Material != "" {
 							query["material"] = need.Material
 						}
-						spools, err := apiClient.FindSpoolsByName(ctx, need.Name, nil, query)
+						spools, err := apiClient.FindSpoolsByName(ctx, need.Name, onlyStandardFilament, query)
 						if err != nil {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", models.Sanitize(need.Name), models.Sanitize(need.Material), path)
 							fmt.Printf("  Error searching Spoolman: %v\n", err)
@@ -72,7 +72,7 @@ var planResolveCmd = &cobra.Command{
 						if len(spools) == 0 {
 							fmt.Printf("Resolving filament for: %s %s (%s)\n", models.Sanitize(need.Name), models.Sanitize(need.Material), path)
 							fmt.Printf("  No matches found for '%s' '%s'. Choosing from full list...\n", models.Sanitize(need.Name), models.Sanitize(need.Material))
-							spools, err = apiClient.FindSpoolsByName(ctx, "*", nil, query)
+							spools, err = apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, query)
 							if err != nil {
 								fmt.Printf("  Error fetching all filaments: %v\n", err)
 								continue

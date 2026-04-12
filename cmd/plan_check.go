@@ -154,7 +154,7 @@ var planCheckCmd = &cobra.Command{
 		byProject, _ := cmd.Flags().GetBool("by-project")
 
 		// Get all spools from Spoolman
-		allSpools, err := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+		allSpools, err := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
 		if err != nil {
 			return err
 		}

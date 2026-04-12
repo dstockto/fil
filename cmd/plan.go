@@ -351,7 +351,7 @@ func GetNeededFilamentIDs(ctx context.Context, apiClient *api.Client) (map[int]b
 	}
 
 	// Get all spools from Spoolman to check what is loaded
-	allSpools, err := apiClient.FindSpoolsByName(ctx, "*", nil, nil)
+	allSpools, err := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
 	if err != nil {
 		return nil, err
 	}
