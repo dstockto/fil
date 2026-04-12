@@ -79,6 +79,9 @@ type tuiTodoPlate struct {
 	PlanName    string
 	ProjectName string
 	PlateName   string
+	BestPrinter string // printer with lowest swap cost
+	SwapCost    int    // swaps needed on BestPrinter
+	IsReady     bool   // sufficient filament inventory
 }
 
 func newTUIModel(refresh time.Duration) tuiModel {
@@ -205,11 +208,18 @@ func fetchTUIData() tea.Msg {
 		printerMap:      make(map[string][]tuiPrintingInfo),
 	}
 
-	// Discover plans and build printer map
+	// Discover plans and build printer map + collect todo plates
 	plans, err := discoverPlans()
 	if err != nil {
 		return tuiErrMsg(err)
 	}
+
+	type rawTodo struct {
+		planName    string
+		projectName string
+		plate       models.Plate
+	}
+	var rawTodos []rawTodo
 
 	for _, p := range plans {
 		planDisplay := p.DisplayName
@@ -225,10 +235,10 @@ func fetchTUIData() tea.Msg {
 					})
 				}
 				if plate.Status == "todo" {
-					data.todoPlates = append(data.todoPlates, tuiTodoPlate{
-						PlanName:    planDisplay,
-						ProjectName: proj.Name,
-						PlateName:   plate.Name,
+					rawTodos = append(rawTodos, rawTodo{
+						planName:    planDisplay,
+						projectName: proj.Name,
+						plate:       plate,
 					})
 					data.totalTodo++
 				}
@@ -241,6 +251,90 @@ func fetchTUIData() tea.Msg {
 			data.activePlanCount++
 		}
 	}
+
+	// Compute swap cost per plate per printer.
+	// Load spools from Spoolman (best-effort; if it fails, show plates without cost).
+	var allSpools []models.FindSpool
+	if Cfg.ApiBase != "" {
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		allSpools, _ = apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
+	}
+
+	// Build loaded-spool lookup by location
+	type spoolByLoc struct {
+		Location   string
+		FilamentID int
+	}
+	loadedSet := make(map[spoolByLoc]bool)
+	for _, s := range allSpools {
+		if s.Location != "" {
+			loadedSet[spoolByLoc{s.Location, s.Filament.Id}] = true
+		}
+	}
+
+	// Inventory totals by filament ID (for readiness check)
+	inventoryByFilament := make(map[int]float64)
+	for _, s := range allSpools {
+		if !s.Archived {
+			inventoryByFilament[s.Filament.Id] += s.RemainingWeight
+		}
+	}
+
+	for _, rt := range rawTodos {
+		tp := tuiTodoPlate{
+			PlanName:    rt.planName,
+			ProjectName: rt.projectName,
+			PlateName:   rt.plate.Name,
+			SwapCost:    -1, // unknown
+			IsReady:     true,
+		}
+
+		// Check readiness
+		for _, req := range rt.plate.Needs {
+			if inventoryByFilament[req.FilamentID] < req.Amount {
+				tp.IsReady = false
+			}
+		}
+
+		// Find best printer(s) (lowest swap cost)
+		if len(allSpools) > 0 {
+			bestCost := 999
+			var bestPrinters []string
+			for printerName, pCfg := range Cfg.Printers {
+				cost := 0
+				for _, req := range rt.plate.Needs {
+					found := false
+					for _, loc := range pCfg.Locations {
+						if loadedSet[spoolByLoc{loc, req.FilamentID}] {
+							found = true
+							break
+						}
+					}
+					if !found {
+						cost++
+					}
+				}
+				if cost < bestCost {
+					bestCost = cost
+					bestPrinters = []string{printerName}
+				} else if cost == bestCost {
+					bestPrinters = append(bestPrinters, printerName)
+				}
+			}
+			sortStrings(bestPrinters)
+			tp.SwapCost = bestCost
+			if len(bestPrinters) == len(Cfg.Printers) {
+				tp.BestPrinter = "any printer"
+			} else {
+				tp.BestPrinter = strings.Join(bestPrinters, " or ")
+			}
+		}
+
+		data.todoPlates = append(data.todoPlates, tp)
+	}
+
+	// Sort todo plates: ready first, then by swap cost
+	sortTodoPlates(data.todoPlates)
 
 	// Fetch live printer status
 	if Cfg.PlansServer != "" {
@@ -279,6 +373,22 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// sortTodoPlates sorts plates: ready first, then by swap cost ascending.
+func sortTodoPlates(plates []tuiTodoPlate) {
+	for i := 1; i < len(plates); i++ {
+		for j := i; j > 0 && todoLess(plates[j], plates[j-1]); j-- {
+			plates[j], plates[j-1] = plates[j-1], plates[j]
+		}
+	}
+}
+
+func todoLess(a, b tuiTodoPlate) bool {
+	if a.IsReady != b.IsReady {
+		return a.IsReady // ready plates sort first
+	}
+	return a.SwapCost < b.SwapCost
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -402,9 +512,21 @@ func (m tuiModel) renderScrollable() string {
 
 	var b strings.Builder
 	for _, tp := range m.todoPlates {
-		b.WriteString(fmt.Sprintf("  %s / %s",
+		line := fmt.Sprintf("  %s / %s",
 			models.Sanitize(tp.ProjectName),
-			models.Sanitize(tp.PlateName)))
+			models.Sanitize(tp.PlateName))
+
+		if !tp.IsReady {
+			line += tuiWarnStyle.Render("  (insufficient filament)")
+		} else if tp.SwapCost >= 0 && tp.BestPrinter != "" {
+			swapInfo := fmt.Sprintf("  %d swaps on %s", tp.SwapCost, tp.BestPrinter)
+			if tp.SwapCost == 0 {
+				swapInfo = fmt.Sprintf("  0 swaps on %s", tp.BestPrinter)
+			}
+			line += tuiDimStyle.Render(swapInfo)
+		}
+
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 	return b.String()
