@@ -60,7 +60,15 @@ var planNextCmd = &cobra.Command{
 			discovered, _ = discoverPlans()
 		}
 
-		// 2b. Check if this printer already has a plate in-progress
+		// 2b. Check if this printer already has plates in-progress
+		type inProgressPlate struct {
+			discoveredIdx int
+			projectIdx    int
+			plateIdx      int
+			projectName   string
+			plateName     string
+		}
+		var inProgressOnPrinter []inProgressPlate
 		for di, dp := range discovered {
 			for pi, proj := range dp.Plan.Projects {
 				if proj.Status == "completed" {
@@ -68,53 +76,89 @@ var planNextCmd = &cobra.Command{
 				}
 				for pli, plate := range proj.Plates {
 					if plate.Status == "in-progress" && plate.Printer == printerName {
-						fmt.Printf("\n%s - %s is currently printing on %s\n", models.Sanitize(proj.Name), models.Sanitize(plate.Name), models.Sanitize(printerName))
-
-						actionPrompt := promptui.Select{
-							Label:  "What would you like to do?",
-							Items:  []string{"Mark as completed", "Cancel (back to todo)", "Keep printing (start another plate)", "Quit"},
-							Stdout: NoBellStdout,
-						}
-						actionIdx, _, err := actionPrompt.Run()
-						if err != nil {
-							return err
-						}
-
-						switch actionIdx {
-						case 0: // Complete
-							discovered[di].Plan.Projects[pi].Plates[pli].Status = "completed"
-							discovered[di].Plan.Projects[pi].Plates[pli].Printer = ""
-							// Auto-complete project if all plates done
-							allDone := true
-							for _, pl := range discovered[di].Plan.Projects[pi].Plates {
-								if pl.Status != "completed" {
-									allDone = false
-									break
-								}
-							}
-							if allDone {
-								discovered[di].Plan.Projects[pi].Status = "completed"
-								fmt.Printf("All plates complete — project %s marked completed\n", models.Sanitize(proj.Name))
-							}
-							if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
-								return fmt.Errorf("failed to save plan: %w", err)
-							}
-							fmt.Printf("Marked %s as completed\n\n", models.Sanitize(plate.Name))
-						case 1: // Cancel
-							discovered[di].Plan.Projects[pi].Plates[pli].Status = "todo"
-							discovered[di].Plan.Projects[pi].Plates[pli].Printer = ""
-							discovered[di].Plan.Projects[pi].Plates[pli].StartedAt = ""
-							if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
-								return fmt.Errorf("failed to save plan: %w", err)
-							}
-							fmt.Printf("Cancelled %s — set back to todo\n\n", models.Sanitize(plate.Name))
-						case 2: // Keep printing
-							fmt.Printf("Keeping %s in-progress\n\n", models.Sanitize(plate.Name))
-						case 3: // Quit
-							return nil
-						}
+						inProgressOnPrinter = append(inProgressOnPrinter, inProgressPlate{
+							discoveredIdx: di,
+							projectIdx:    pi,
+							plateIdx:      pli,
+							projectName:   proj.Name,
+							plateName:     plate.Name,
+						})
 					}
 				}
+			}
+		}
+
+		if len(inProgressOnPrinter) > 0 {
+			if len(inProgressOnPrinter) == 1 {
+				ip := inProgressOnPrinter[0]
+				fmt.Printf("\n%s - %s is currently printing on %s\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName), models.Sanitize(printerName))
+			} else {
+				fmt.Printf("\n%d plates in progress on %s:\n", len(inProgressOnPrinter), models.Sanitize(printerName))
+				for _, ip := range inProgressOnPrinter {
+					fmt.Printf("  - %s - %s\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
+				}
+			}
+
+			actionPrompt := promptui.Select{
+				Label:  "What would you like to do?",
+				Items:  []string{"Mark as completed", "Cancel (back to todo)", "Keep printing (start another plate)", "Quit"},
+				Stdout: NoBellStdout,
+			}
+			actionIdx, _, err := actionPrompt.Run()
+			if err != nil {
+				return err
+			}
+
+			switch actionIdx {
+			case 0: // Complete all
+				savedPlans := make(map[int]bool)
+				for _, ip := range inProgressOnPrinter {
+					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Status = "completed"
+					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Printer = ""
+					// Auto-complete project if all plates done
+					allDone := true
+					for _, pl := range discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates {
+						if pl.Status != "completed" {
+							allDone = false
+							break
+						}
+					}
+					if allDone {
+						discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Status = "completed"
+						fmt.Printf("All plates complete — project %s marked completed\n", models.Sanitize(ip.projectName))
+					}
+					savedPlans[ip.discoveredIdx] = true
+					fmt.Printf("Marked %s - %s as completed\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
+				}
+				for di := range savedPlans {
+					if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
+						return fmt.Errorf("failed to save plan: %w", err)
+					}
+				}
+				fmt.Println()
+			case 1: // Cancel all
+				savedPlans := make(map[int]bool)
+				for _, ip := range inProgressOnPrinter {
+					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Status = "todo"
+					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Printer = ""
+					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].StartedAt = ""
+					savedPlans[ip.discoveredIdx] = true
+					fmt.Printf("Cancelled %s - %s — set back to todo\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
+				}
+				for di := range savedPlans {
+					if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
+						return fmt.Errorf("failed to save plan: %w", err)
+					}
+				}
+				fmt.Println()
+			case 2: // Keep printing
+				if len(inProgressOnPrinter) == 1 {
+					fmt.Printf("Keeping %s - %s in-progress\n\n", models.Sanitize(inProgressOnPrinter[0].projectName), models.Sanitize(inProgressOnPrinter[0].plateName))
+				} else {
+					fmt.Printf("Keeping %d plates in-progress\n\n", len(inProgressOnPrinter))
+				}
+			case 3: // Quit
+				return nil
 			}
 		}
 
