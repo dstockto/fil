@@ -56,15 +56,16 @@ var serveCmd = &cobra.Command{
 		defer stop()
 
 		s := &server.PlanServer{
-			PlansDir:      Cfg.PlansDir,
-			PauseDir:      Cfg.PauseDir,
-			ArchiveDir:    Cfg.ArchiveDir,
-			ConfigDir:     configDir,
-			AssembliesDir: assembliesDir,
-			Version:       version,
-			ApiBase:       Cfg.ApiBase,
-			TLSSkipVerify: Cfg.TLSSkipVerify,
-			StartedAt:     time.Now(),
+			PlansDir:        Cfg.PlansDir,
+			PauseDir:        Cfg.PauseDir,
+			ArchiveDir:      Cfg.ArchiveDir,
+			ConfigDir:       configDir,
+			AssembliesDir:   assembliesDir,
+			Version:         version,
+			ApiBase:         Cfg.ApiBase,
+			ApiBaseInternal: Cfg.ApiBaseInternal,
+			TLSSkipVerify:   Cfg.TLSSkipVerify,
+			StartedAt:       time.Now(),
 		}
 
 		// Start printer connections

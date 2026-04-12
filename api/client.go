@@ -23,9 +23,23 @@ type SpoolmanInfo struct {
 	Version string `json:"version"`
 }
 
-// GetInfo hits Spoolman's /api/v1/info endpoint and returns basic info.
-// Used for health checks and reachability probes.
+// GetInfo probes Spoolman for reachability. It prefers /api/v1/info (which
+// returns a version string), but falls back to /api/v1/spool?limit=1 if the
+// info endpoint is not routed (e.g. reverse proxies that only forward known
+// paths). On the fallback path, Version is left empty.
 func (c Client) GetInfo(ctx context.Context) (*SpoolmanInfo, error) {
+	info, err := c.tryInfoEndpoint(ctx)
+	if err == nil {
+		return info, nil
+	}
+	// Only fall back on 404; other errors are real failures.
+	if !strings.Contains(err.Error(), "status 404") {
+		return nil, err
+	}
+	return c.tryInfoFallback(ctx)
+}
+
+func (c Client) tryInfoEndpoint(ctx context.Context) (*SpoolmanInfo, error) {
 	endpoint := c.base + "/api/v1/info"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -49,6 +63,30 @@ func (c Client) GetInfo(ctx context.Context) (*SpoolmanInfo, error) {
 		return nil, fmt.Errorf("failed to decode spoolman info: %w", err)
 	}
 	return &info, nil
+}
+
+// tryInfoFallback proves reachability by listing a single spool. Returns an
+// empty SpoolmanInfo on success — we don't get a version string, but we know
+// Spoolman is alive and routing.
+func (c Client) tryInfoFallback(ctx context.Context) (*SpoolmanInfo, error) {
+	endpoint := c.base + "/api/v1/spool?limit=1"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fallback request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fallback request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("spoolman reachable but /info and /spool both failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return &SpoolmanInfo{}, nil
 }
 
 type SpoolmanAPI interface {

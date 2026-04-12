@@ -48,17 +48,22 @@ type Config struct {
 	LocationAliases  map[string]string           `json:"location_aliases"`
 	LocationCapacity map[string]LocationCapacity `json:"location_capacity"`
 	ApiBase          string                      `json:"api_base"`
-	LowThresholds    map[string]float64          `json:"low_thresholds"`
-	LowIgnore        []string                    `json:"low_ignore"`
-	Printers         map[string]PrinterConfig    `json:"printers"`
-	Notifications    *NotificationConfig         `json:"notifications,omitempty"`
-	PlansDir         string                      `json:"plans_dir"`
-	ArchiveDir       string                      `json:"archive_dir"`
-	PauseDir         string                      `json:"pause_dir"`
-	PlansServer      string                      `json:"plans_server"`
-	TLSSkipVerify    bool                        `json:"tls_skip_verify"`
-	SharedConfigDir  string                      `json:"shared_config_dir"`
-	AssembliesDir    string                      `json:"assemblies_dir"`
+	// ApiBaseInternal is an optional Spoolman URL the plan server uses for its
+	// own probes. Useful when the server's own hostname isn't resolvable from
+	// inside its network (e.g. mDNS .local names inside Docker). Local-only
+	// (not part of shared config) so each host can override independently.
+	ApiBaseInternal string                      `json:"api_base_internal,omitempty"`
+	LowThresholds   map[string]float64          `json:"low_thresholds"`
+	LowIgnore       []string                    `json:"low_ignore"`
+	Printers        map[string]PrinterConfig    `json:"printers"`
+	Notifications   *NotificationConfig         `json:"notifications,omitempty"`
+	PlansDir        string                      `json:"plans_dir"`
+	ArchiveDir      string                      `json:"archive_dir"`
+	PauseDir        string                      `json:"pause_dir"`
+	PlansServer     string                      `json:"plans_server"`
+	TLSSkipVerify   bool                        `json:"tls_skip_verify"`
+	SharedConfigDir string                      `json:"shared_config_dir"`
+	AssembliesDir   string                      `json:"assemblies_dir"`
 }
 
 // SharedConfig contains only the fields that are synced between machines via the server.
@@ -249,6 +254,9 @@ func mergeInto(dst, src *Config) {
 
 	if src.ApiBase != "" {
 		dst.ApiBase = src.ApiBase
+	}
+	if src.ApiBaseInternal != "" {
+		dst.ApiBaseInternal = src.ApiBaseInternal
 	}
 	// maps
 	if src.LocationAliases != nil {

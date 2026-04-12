@@ -25,8 +25,9 @@ type PlanServer struct {
 	ConfigDir     string
 	AssembliesDir string
 	Version       string
-	ApiBase       string // Spoolman base URL, used by health checks
-	TLSSkipVerify bool   // passed to health-check HTTP clients
+	ApiBase         string // Spoolman base URL, used by health checks
+	ApiBaseInternal string // optional alternate URL for server-side probes (e.g. http://localhost:8000)
+	TLSSkipVerify   bool   // passed to health-check HTTP clients
 	StartedAt     time.Time
 	Watcher       *ETAWatcher
 	Printers      *PrinterManager

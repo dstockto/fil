@@ -220,6 +220,9 @@ func diskFree(path string) (int64, error) {
 }
 
 // spoolmanCheck probes the Spoolman /info endpoint from the server.
+// It prefers ApiBaseInternal when set (useful when the server can't resolve
+// its own public hostname — e.g. a pi running Caddy in a container where the
+// external .local name isn't routable through upstream DNS).
 func (s *PlanServer) spoolmanCheck(ctx context.Context) api.Check {
 	start := time.Now()
 	c := api.Check{
@@ -227,28 +230,37 @@ func (s *PlanServer) spoolmanCheck(ctx context.Context) api.Check {
 		Name:  "reachable",
 	}
 
-	if s.ApiBase == "" {
+	url := s.ApiBaseInternal
+	if url == "" {
+		url = s.ApiBase
+	}
+
+	if url == "" {
 		c.Status = api.StatusSkip
 		c.Message = "api_base not configured"
 		c.DurationMs = time.Since(start).Milliseconds()
 		return c
 	}
 
-	client := api.NewClient(s.ApiBase, s.TLSSkipVerify)
+	client := api.NewClient(url, s.TLSSkipVerify)
 	info, err := client.GetInfo(ctx)
 	c.DurationMs = time.Since(start).Milliseconds()
 
 	if err != nil {
 		c.Status = api.StatusFail
-		c.Message = fmt.Sprintf("%s: %v", s.ApiBase, err)
-		c.Detail = rawJSON(map[string]any{"url": s.ApiBase})
+		c.Message = fmt.Sprintf("%s: %v", url, err)
+		c.Detail = rawJSON(map[string]any{"url": url})
 		return c
 	}
 
 	c.Status = api.StatusOK
-	c.Message = fmt.Sprintf("version %s", info.Version)
+	if info.Version != "" {
+		c.Message = fmt.Sprintf("version %s", info.Version)
+	} else {
+		c.Message = "reachable"
+	}
 	c.Detail = rawJSON(map[string]any{
-		"url":     s.ApiBase,
+		"url":     url,
 		"version": info.Version,
 	})
 	return c

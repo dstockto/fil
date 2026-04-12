@@ -399,7 +399,11 @@ func clientSpoolmanCheck(ctx context.Context, perCheckTimeout time.Duration) api
 		return c
 	}
 	c.Status = api.StatusOK
-	c.Message = fmt.Sprintf("version %s", info.Version)
+	if info.Version != "" {
+		c.Message = fmt.Sprintf("version %s", info.Version)
+	} else {
+		c.Message = "reachable"
+	}
 	detail, _ := json.Marshal(map[string]any{
 		"url":     Cfg.ApiBase,
 		"version": info.Version,
