@@ -45,6 +45,13 @@ func init() {
 // Model
 // ─────────────────────────────────────────────────────────────────────────────
 
+type tuiViewMode int
+
+const (
+	viewDashboard tuiViewMode = iota
+	viewPlans
+)
+
 type tuiModel struct {
 	// data
 	printerStatuses map[string]api.PrinterStatus
@@ -56,8 +63,10 @@ type tuiModel struct {
 	mismatches      []TrayMismatch
 	totalTodo       int
 	activePlanCount int
+	plans           []tuiPlanSummary
 
 	// ui
+	view            tuiViewMode
 	viewport        viewport.Model
 	width           int
 	height          int
@@ -66,6 +75,28 @@ type tuiModel struct {
 	refreshInterval time.Duration
 	err             error
 	quitting        bool
+
+	// plans view state
+	planCursor  int            // which plan the cursor is on
+	planExpanded map[int]bool  // which plans are expanded
+}
+
+// tuiPlanSummary holds the display data for a single plan in the plans view.
+type tuiPlanSummary struct {
+	Name     string
+	Projects []tuiProjectSummary
+}
+
+type tuiProjectSummary struct {
+	Name   string
+	Status string
+	Plates []tuiPlateSummary
+}
+
+type tuiPlateSummary struct {
+	Name    string
+	Status  string // "todo", "in-progress", "completed"
+	Printer string // set when in-progress
 }
 
 type tuiPrintingInfo struct {
@@ -89,6 +120,7 @@ func newTUIModel(refresh time.Duration) tuiModel {
 		refreshInterval: refresh,
 		printerStatuses: make(map[string]api.PrinterStatus),
 		printerMap:      make(map[string][]tuiPrintingInfo),
+		planExpanded:    make(map[int]bool),
 	}
 }
 
@@ -108,6 +140,7 @@ type tuiDataMsg struct {
 	mismatches      []TrayMismatch
 	totalTodo       int
 	activePlanCount int
+	plans           []tuiPlanSummary
 }
 
 type tuiErrMsg error
@@ -130,10 +163,57 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if m.view == viewPlans {
+				m.view = viewDashboard
+				m = resizeViewport(m)
+				m.viewport.SetContent(m.renderScrollable())
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			m.quitting = true
 			return m, tea.Quit
 		case "r":
 			return m, fetchTUIData
+		case "p":
+			if m.view == viewDashboard {
+				m.view = viewPlans
+			} else {
+				m.view = viewDashboard
+			}
+			m = resizeViewport(m)
+			m.viewport.SetContent(m.renderScrollable())
+			m.viewport.GotoTop()
+			return m, nil
+		case "esc":
+			if m.view == viewPlans {
+				m.view = viewDashboard
+				m = resizeViewport(m)
+				m.viewport.SetContent(m.renderScrollable())
+				m.viewport.GotoTop()
+				return m, nil
+			}
+		case "enter":
+			if m.view == viewPlans && len(m.plans) > 0 {
+				m.planExpanded[m.planCursor] = !m.planExpanded[m.planCursor]
+				m.viewport.SetContent(m.renderScrollable())
+				return m, nil
+			}
+		case "j", "down":
+			if m.view == viewPlans && len(m.plans) > 0 {
+				if m.planCursor < len(m.plans)-1 {
+					m.planCursor++
+				}
+				m.viewport.SetContent(m.renderScrollable())
+				return m, nil
+			}
+		case "k", "up":
+			if m.view == viewPlans && len(m.plans) > 0 {
+				if m.planCursor > 0 {
+					m.planCursor--
+				}
+				m.viewport.SetContent(m.renderScrollable())
+				return m, nil
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -154,10 +234,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mismatches = msg.mismatches
 		m.totalTodo = msg.totalTodo
 		m.activePlanCount = msg.activePlanCount
+		m.plans = msg.plans
 		m.lastRefresh = time.Now()
 		m.err = nil
 		m = resizeViewport(m) // header height may have changed with new data
 		m.viewport.SetContent(m.renderScrollable())
+		// Clamp plan cursor if plans list shrank
+		if m.planCursor >= len(m.plans) && len(m.plans) > 0 {
+			m.planCursor = len(m.plans) - 1
+		}
 
 	case tuiErrMsg:
 		m.err = msg
@@ -224,7 +309,15 @@ func fetchTUIData() tea.Msg {
 	for _, p := range plans {
 		planDisplay := p.DisplayName
 		hasIncomplete := false
+
+		planSummary := tuiPlanSummary{Name: planDisplay}
+
 		for _, proj := range p.Plan.Projects {
+			projSummary := tuiProjectSummary{
+				Name:   proj.Name,
+				Status: proj.Status,
+			}
+
 			for _, plate := range proj.Plates {
 				if plate.Status == "in-progress" && plate.Printer != "" {
 					data.printerMap[plate.Printer] = append(data.printerMap[plate.Printer], tuiPrintingInfo{
@@ -245,8 +338,17 @@ func fetchTUIData() tea.Msg {
 				if plate.Status != "completed" {
 					hasIncomplete = true
 				}
+
+				projSummary.Plates = append(projSummary.Plates, tuiPlateSummary{
+					Name:    plate.Name,
+					Status:  plate.Status,
+					Printer: plate.Printer,
+				})
 			}
+			planSummary.Projects = append(planSummary.Projects, projSummary)
 		}
+		data.plans = append(data.plans, planSummary)
+
 		if hasIncomplete {
 			data.activePlanCount++
 		}
@@ -440,8 +542,15 @@ func (m tuiModel) View() string {
 	return m.renderHeader() + m.viewport.View() + "\n" + m.renderFooter()
 }
 
-// renderHeader returns the pinned top section (printers + mismatches).
+// renderHeader returns the pinned top section, adapting to the current view.
 func (m tuiModel) renderHeader() string {
+	if m.view == viewPlans {
+		return m.renderPlansHeader()
+	}
+	return m.renderDashboardHeader()
+}
+
+func (m tuiModel) renderDashboardHeader() string {
 	w := m.width
 	if w == 0 {
 		w = 80
@@ -493,6 +602,21 @@ func (m tuiModel) renderHeader() string {
 	return b.String()
 }
 
+func (m tuiModel) renderPlansHeader() string {
+	w := m.width
+	if w == 0 {
+		w = 80
+	}
+
+	var b strings.Builder
+	b.WriteString(tuiHeaderStyle.Render("Plans"))
+	b.WriteString(tuiDimStyle.Render(fmt.Sprintf("  (%d)", len(m.plans))))
+	b.WriteString("\n")
+	b.WriteString(tuiDividerStyle.Render(strings.Repeat("─", w)))
+	b.WriteString("\n")
+	return b.String()
+}
+
 // headerHeight counts the lines in the header so the viewport gets the remaining space.
 func (m tuiModel) headerHeight() int {
 	return strings.Count(m.renderHeader(), "\n")
@@ -504,8 +628,15 @@ func (m tuiModel) footerHeight() int {
 	return 4 // separator + divider + summary + keybinds
 }
 
-// renderScrollable returns only the up-next plate list for the viewport.
+// renderScrollable returns the viewport content for the current view.
 func (m tuiModel) renderScrollable() string {
+	if m.view == viewPlans {
+		return m.renderPlansScrollable()
+	}
+	return m.renderDashboardScrollable()
+}
+
+func (m tuiModel) renderDashboardScrollable() string {
 	if len(m.todoPlates) == 0 {
 		return tuiDimStyle.Render("  No plates remaining") + "\n"
 	}
@@ -528,6 +659,79 @@ func (m tuiModel) renderScrollable() string {
 
 		b.WriteString(line)
 		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (m tuiModel) renderPlansScrollable() string {
+	if len(m.plans) == 0 {
+		return tuiDimStyle.Render("  No plans found") + "\n"
+	}
+
+	var b strings.Builder
+	for i, plan := range m.plans {
+		// Cursor indicator
+		cursor := "  "
+		if i == m.planCursor {
+			cursor = "> "
+		}
+
+		// Expand/collapse indicator
+		expandIcon := "▶"
+		if m.planExpanded[i] {
+			expandIcon = "▼"
+		}
+
+		// Count plates by status
+		done, total := 0, 0
+		for _, proj := range plan.Projects {
+			for _, plate := range proj.Plates {
+				total++
+				if plate.Status == "completed" {
+					done++
+				}
+			}
+		}
+
+		planLine := fmt.Sprintf("%s%s %s", cursor, expandIcon, models.Sanitize(plan.Name))
+		progress := tuiDimStyle.Render(fmt.Sprintf("  %d/%d plates done", done, total))
+
+		if i == m.planCursor {
+			b.WriteString(tuiPrinterNameStyle.Render(planLine))
+		} else {
+			b.WriteString(planLine)
+		}
+		b.WriteString(progress)
+		b.WriteString("\n")
+
+		// Expanded detail
+		if m.planExpanded[i] {
+			for _, proj := range plan.Projects {
+				b.WriteString(tuiDimStyle.Render(fmt.Sprintf("    %s", models.Sanitize(proj.Name))))
+				b.WriteString("\n")
+
+				for _, plate := range proj.Plates {
+					icon := "○"
+					style := tuiDimStyle
+					switch plate.Status {
+					case "completed":
+						icon = "✓"
+					case "in-progress":
+						icon = "●"
+						style = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+					}
+
+					plateLine := fmt.Sprintf("      %s %s", icon, models.Sanitize(plate.Name))
+					b.WriteString(style.Render(plateLine))
+
+					if plate.Printer != "" && plate.Status == "in-progress" {
+						b.WriteString(tuiDimStyle.Render(fmt.Sprintf("  on %s", plate.Printer)))
+					}
+					b.WriteString("\n")
+				}
+			}
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }
@@ -557,7 +761,12 @@ func (m tuiModel) renderFooter() string {
 	}
 	b.WriteString(tuiDimStyle.Render(summary + strings.Repeat(" ", gap) + refreshInfo))
 	b.WriteString("\n")
-	b.WriteString(tuiFooterStyle.Render("[q]uit  [r]efresh  [↑/↓]scroll"))
+	switch m.view {
+	case viewPlans:
+		b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [r]efresh  [q]uit"))
+	default:
+		b.WriteString(tuiFooterStyle.Render("[p]lans  [↑/↓]scroll  [r]efresh  [q]uit"))
+	}
 
 	return b.String()
 }
