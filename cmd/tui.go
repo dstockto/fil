@@ -92,6 +92,8 @@ type tuiModel struct {
 type tuiPlanSummary struct {
 	Name        string
 	RemoteName  string // server-side filename (empty for local-only plans)
+	Path        string // filesystem path (empty for remote-only plans)
+	Remote      bool
 	HasAssembly bool
 	Projects    []tuiProjectSummary
 }
@@ -244,6 +246,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusError = false
 				return m, openInstructions(plan)
 			}
+		case "a":
+			if m.view == viewPlans && len(m.plans) > 0 {
+				plan := m.plans[m.planCursor]
+				allDone := true
+				for _, proj := range plan.Projects {
+					for _, plate := range proj.Plates {
+						if plate.Status != "completed" {
+							allDone = false
+							break
+						}
+					}
+					if !allDone {
+						break
+					}
+				}
+				if !allDone {
+					m.statusMsg = "Cannot archive — not all plates are completed"
+					m.statusError = true
+					return m, clearStatusAfter(5 * time.Second)
+				}
+				m.statusMsg = "Archiving..."
+				m.statusError = false
+				return m, archivePlanTUI(plan)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -292,6 +318,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiClearStatusMsg:
 		m.statusMsg = ""
 		m.statusError = false
+
+	case tuiArchiveDoneMsg:
+		m.statusMsg = fmt.Sprintf("Archived %s", msg.name)
+		m.statusError = false
+		cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
+		// Clamp cursor in case the archived plan was the last one
+		if m.planCursor > 0 && m.planCursor >= len(m.plans)-1 {
+			m.planCursor--
+		}
 	}
 
 	if m.ready {
@@ -356,6 +391,8 @@ func fetchTUIData() tea.Msg {
 		planSummary := tuiPlanSummary{
 			Name:        planDisplay,
 			RemoteName:  p.RemoteName,
+			Path:        p.Path,
+			Remote:      p.Remote,
 			HasAssembly: p.Plan.Assembly != "",
 		}
 
@@ -604,6 +641,22 @@ func openInstructions(plan tuiPlanSummary) tea.Cmd {
 
 		return tuiStatusMsg{text: fmt.Sprintf("Opened %s", filename), isError: false}
 	}
+}
+
+func archivePlanTUI(plan tuiPlanSummary) tea.Cmd {
+	return func() tea.Msg {
+		dp := DiscoveredPlan{
+			Path:       plan.Path,
+			RemoteName: plan.RemoteName,
+			Remote:     plan.Remote,
+		}
+		archivePlan(dp)
+		return tuiArchiveDoneMsg{name: plan.Name}
+	}
+}
+
+type tuiArchiveDoneMsg struct {
+	name string
 }
 
 func clearStatusAfter(d time.Duration) tea.Cmd {
@@ -906,7 +959,7 @@ func (m tuiModel) renderFooter() string {
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [i]nstructions  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
 		default:
 			b.WriteString(tuiFooterStyle.Render("[p]lans  [↑/↓]scroll  [r]efresh  [q]uit"))
 		}
