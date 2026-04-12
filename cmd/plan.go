@@ -255,6 +255,14 @@ func loadPlanYAML(data []byte, plan *models.PlanFile) error {
 
 // savePlan writes the plan back to its source — either local file or remote server.
 func savePlan(dp DiscoveredPlan, plan models.PlanFile) error {
+	// Best-effort backfill of missing colors before saving.
+	if Cfg != nil && Cfg.ApiBase != "" {
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		if spools, err := apiClient.FindSpoolsByName(context.Background(), "*", nil, nil); err == nil {
+			backfillPlanColors(&plan, spools)
+		}
+	}
+
 	out, err := yaml.Marshal(plan)
 	if err != nil {
 		return err
@@ -264,6 +272,35 @@ func savePlan(dp DiscoveredPlan, plan models.PlanFile) error {
 		return client.PutPlan(context.Background(), dp.RemoteName, out)
 	}
 	return os.WriteFile(dp.Path, out, 0644)
+}
+
+// backfillPlanColors fills in missing Color fields on PlateRequirements
+// by looking up the FilamentID in the provided spool list and extracting color_hex.
+// Returns true if any colors were added.
+func backfillPlanColors(plan *models.PlanFile, spools []models.FindSpool) bool {
+	// Build filament ID → color hex lookup
+	colorByFilament := make(map[int]string)
+	for _, s := range spools {
+		if s.Filament.Id != 0 && s.Filament.ColorHex != "" {
+			colorByFilament[s.Filament.Id] = s.Filament.ColorHex
+		}
+	}
+
+	changed := false
+	for i := range plan.Projects {
+		for j := range plan.Projects[i].Plates {
+			for k := range plan.Projects[i].Plates[j].Needs {
+				need := &plan.Projects[i].Plates[j].Needs[k]
+				if need.Color == "" && need.FilamentID != 0 {
+					if hex, ok := colorByFilament[need.FilamentID]; ok {
+						need.Color = hex
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	return changed
 }
 
 // selectPlan prompts the user to select a plan from a list of discovered plans.

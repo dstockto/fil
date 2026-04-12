@@ -14,7 +14,8 @@
       "Bash(python3 -m json.tool)",
       "Bash(fil f:*)",
       "Bash(/tmp/fil doctor:*)",
-      "Bash(/tmp/fil tui:*)"
+      "Bash(/tmp/fil tui:*)",
+      "Bash(/tmp/fil plan:*)"
     ]
   }
 }

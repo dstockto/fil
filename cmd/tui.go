@@ -95,8 +95,9 @@ type tuiProjectSummary struct {
 
 type tuiPlateSummary struct {
 	Name    string
-	Status  string // "todo", "in-progress", "completed"
-	Printer string // set when in-progress
+	Status  string   // "todo", "in-progress", "completed"
+	Printer string   // set when in-progress
+	Colors  []string // hex colors from plate needs
 }
 
 type tuiPrintingInfo struct {
@@ -110,9 +111,10 @@ type tuiTodoPlate struct {
 	PlanName    string
 	ProjectName string
 	PlateName   string
-	BestPrinter string // printer with lowest swap cost
-	SwapCost    int    // swaps needed on BestPrinter
-	IsReady     bool   // sufficient filament inventory
+	BestPrinter string   // printer with lowest swap cost
+	SwapCost    int      // swaps needed on BestPrinter
+	IsReady     bool     // sufficient filament inventory
+	Colors      []string // hex colors from plate needs (for swatches)
 }
 
 func newTUIModel(refresh time.Duration) tuiModel {
@@ -339,10 +341,17 @@ func fetchTUIData() tea.Msg {
 					hasIncomplete = true
 				}
 
+				var plateColors []string
+				for _, need := range plate.Needs {
+					if need.Color != "" {
+						plateColors = append(plateColors, need.Color)
+					}
+				}
 				projSummary.Plates = append(projSummary.Plates, tuiPlateSummary{
 					Name:    plate.Name,
 					Status:  plate.Status,
 					Printer: plate.Printer,
+					Colors:  plateColors,
 				})
 			}
 			planSummary.Projects = append(planSummary.Projects, projSummary)
@@ -383,12 +392,19 @@ func fetchTUIData() tea.Msg {
 	}
 
 	for _, rt := range rawTodos {
+		var colors []string
+		for _, need := range rt.plate.Needs {
+			if need.Color != "" {
+				colors = append(colors, need.Color)
+			}
+		}
 		tp := tuiTodoPlate{
 			PlanName:    rt.planName,
 			ProjectName: rt.projectName,
 			PlateName:   rt.plate.Name,
 			SwapCost:    -1, // unknown
 			IsReady:     true,
+			Colors:      colors,
 		}
 
 		// Check readiness
@@ -519,10 +535,19 @@ var (
 			Foreground(lipgloss.Color("240"))
 
 	tuiProgressFullStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("34"))
+				Foreground(lipgloss.Color("34")) // green
+
+	tuiProgressPausedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")) // yellow/orange
+
+	tuiProgressFailedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("196")) // red
 
 	tuiProgressEmptyStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("240"))
+
+	tuiCompletedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("34")) // green
 
 	tuiFooterStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240"))
@@ -643,18 +668,21 @@ func (m tuiModel) renderDashboardScrollable() string {
 
 	var b strings.Builder
 	for _, tp := range m.todoPlates {
-		line := fmt.Sprintf("  %s / %s",
+		// Color swatches
+		swatch := tuiColorSwatches(tp.Colors)
+		if swatch != "" {
+			swatch += " "
+		}
+
+		line := fmt.Sprintf("  %s%s / %s",
+			swatch,
 			models.Sanitize(tp.ProjectName),
 			models.Sanitize(tp.PlateName))
 
 		if !tp.IsReady {
 			line += tuiWarnStyle.Render("  (insufficient filament)")
 		} else if tp.SwapCost >= 0 && tp.BestPrinter != "" {
-			swapInfo := fmt.Sprintf("  %d swaps on %s", tp.SwapCost, tp.BestPrinter)
-			if tp.SwapCost == 0 {
-				swapInfo = fmt.Sprintf("  0 swaps on %s", tp.BestPrinter)
-			}
-			line += tuiDimStyle.Render(swapInfo)
+			line += tuiDimStyle.Render(fmt.Sprintf("  %d swaps on %s", tp.SwapCost, tp.BestPrinter))
 		}
 
 		b.WriteString(line)
@@ -716,12 +744,19 @@ func (m tuiModel) renderPlansScrollable() string {
 					switch plate.Status {
 					case "completed":
 						icon = "✓"
+						style = tuiCompletedStyle
 					case "in-progress":
 						icon = "●"
 						style = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
 					}
 
-					plateLine := fmt.Sprintf("      %s %s", icon, models.Sanitize(plate.Name))
+					// Color swatches for this plate's filament needs
+					swatch := tuiColorSwatches(plate.Colors)
+					if swatch != "" {
+						swatch += " "
+					}
+
+					plateLine := fmt.Sprintf("      %s %s%s", icon, swatch, models.Sanitize(plate.Name))
 					b.WriteString(style.Render(plateLine))
 
 					if plate.Printer != "" && plate.Status == "in-progress" {
@@ -775,14 +810,27 @@ func (m tuiModel) renderActivePrinter(b *strings.Builder, name string, width int
 	infos := m.printerMap[name]
 	live, hasLive := m.printerStatuses[name]
 
-	// Progress bar on the first line if printing with live data
-	if hasLive && live.State == "printing" && live.Progress > 0 {
+	// Progress bar when we have live data with progress
+	if hasLive && live.Progress > 0 && (live.State == "printing" || live.State == "paused" || live.State == "failed") {
 		b.WriteString(m.renderProgressLine(name, live, width))
+		switch live.State {
+		case "paused":
+			b.WriteString("  " + tuiProgressPausedStyle.Render("PAUSED"))
+		case "failed":
+			b.WriteString("  " + tuiProgressFailedStyle.Render("FAILED"))
+		}
 		b.WriteString("\n")
 	} else {
 		b.WriteString(tuiPrinterNameStyle.Render(name))
 		if hasLive && live.State != "" && live.State != "idle" && live.State != "printing" {
-			b.WriteString(tuiDimStyle.Render(fmt.Sprintf("  %s", live.State)))
+			stateStyle := tuiDimStyle
+			switch live.State {
+			case "paused":
+				stateStyle = tuiProgressPausedStyle
+			case "failed":
+				stateStyle = tuiProgressFailedStyle
+			}
+			b.WriteString(stateStyle.Render(fmt.Sprintf("  %s", live.State)))
 		}
 		b.WriteString("\n")
 	}
@@ -829,7 +877,16 @@ func (m tuiModel) renderProgressLine(name string, live api.PrinterStatus, width 
 	filled := barSpace * live.Progress / 100
 	empty := barSpace - filled
 
-	bar := tuiProgressFullStyle.Render(strings.Repeat("█", filled)) +
+	// Color based on printer state
+	fillStyle := tuiProgressFullStyle
+	switch live.State {
+	case "paused":
+		fillStyle = tuiProgressPausedStyle
+	case "failed":
+		fillStyle = tuiProgressFailedStyle
+	}
+
+	bar := fillStyle.Render(strings.Repeat("█", filled)) +
 		tuiProgressEmptyStyle.Render(strings.Repeat("░", empty))
 
 	return fmt.Sprintf("%s  %s%s", label, bar, tuiDimStyle.Render(right))
@@ -857,6 +914,28 @@ func (m tuiModel) renderIdlePrinter(b *strings.Builder, name string) {
 			tuiPrinterNameStyle.Render(name),
 			tuiIdleStyle.Render("(idle)"))
 	}
+}
+
+// tuiColorSwatches renders a row of ██ blocks from a list of hex color strings.
+// Each color gets one block, separated by no space (they visually merge into a stripe).
+func tuiColorSwatches(colors []string) string {
+	if len(colors) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	for _, hex := range colors {
+		hex = strings.TrimPrefix(hex, "#")
+		if len(hex) < 6 {
+			continue
+		}
+		r, _ := strconv.ParseInt(hex[0:2], 16, 16)
+		g, _ := strconv.ParseInt(hex[2:4], 16, 16)
+		b, _ := strconv.ParseInt(hex[4:6], 16, 16)
+		style := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", r, g, b)))
+		out.WriteString(style.Render("█"))
+	}
+	return out.String()
 }
 
 // tuiActiveTrayColor returns a lipgloss-styled color swatch for the active tray.
