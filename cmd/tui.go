@@ -3,6 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -77,14 +80,20 @@ type tuiModel struct {
 	quitting        bool
 
 	// plans view state
-	planCursor  int            // which plan the cursor is on
-	planExpanded map[int]bool  // which plans are expanded
+	planCursor   int          // which plan the cursor is on
+	planExpanded map[int]bool // which plans are expanded
+
+	// transient status message (shown in footer briefly)
+	statusMsg   string
+	statusError bool
 }
 
 // tuiPlanSummary holds the display data for a single plan in the plans view.
 type tuiPlanSummary struct {
-	Name     string
-	Projects []tuiProjectSummary
+	Name        string
+	RemoteName  string // server-side filename (empty for local-only plans)
+	HasAssembly bool
+	Projects    []tuiProjectSummary
 }
 
 type tuiProjectSummary struct {
@@ -146,6 +155,13 @@ type tuiDataMsg struct {
 }
 
 type tuiErrMsg error
+
+type tuiStatusMsg struct {
+	text    string
+	isError bool
+}
+
+type tuiClearStatusMsg struct{}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init / Update
@@ -216,6 +232,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderScrollable())
 				return m, nil
 			}
+		case "i":
+			if m.view == viewPlans && len(m.plans) > 0 {
+				plan := m.plans[m.planCursor]
+				if !plan.HasAssembly {
+					m.statusMsg = "No assembly instructions for this plan"
+					m.statusError = false
+					return m, clearStatusAfter(3 * time.Second)
+				}
+				m.statusMsg = "Opening instructions..."
+				m.statusError = false
+				return m, openInstructions(plan)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -251,6 +279,19 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ready {
 			m.viewport.SetContent(m.renderScrollable())
 		}
+
+	case tuiStatusMsg:
+		m.statusMsg = msg.text
+		m.statusError = msg.isError
+		if msg.isError {
+			cmds = append(cmds, clearStatusAfter(5*time.Second))
+		} else {
+			cmds = append(cmds, clearStatusAfter(3*time.Second))
+		}
+
+	case tuiClearStatusMsg:
+		m.statusMsg = ""
+		m.statusError = false
 	}
 
 	if m.ready {
@@ -312,7 +353,11 @@ func fetchTUIData() tea.Msg {
 		planDisplay := p.DisplayName
 		hasIncomplete := false
 
-		planSummary := tuiPlanSummary{Name: planDisplay}
+		planSummary := tuiPlanSummary{
+			Name:        planDisplay,
+			RemoteName:  p.RemoteName,
+			HasAssembly: p.Plan.Assembly != "",
+		}
 
 		for _, proj := range p.Plan.Projects {
 			projSummary := tuiProjectSummary{
@@ -507,6 +552,62 @@ func todoLess(a, b tuiTodoPlate) bool {
 		return a.IsReady // ready plates sort first
 	}
 	return a.SwapCost < b.SwapCost
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Commands (async actions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func openInstructions(plan tuiPlanSummary) tea.Cmd {
+	return func() tea.Msg {
+		if Cfg == nil || Cfg.PlansServer == "" {
+			return tuiStatusMsg{text: "plans_server not configured", isError: true}
+		}
+
+		planName := plan.RemoteName
+		if planName == "" {
+			return tuiStatusMsg{text: "No remote name for plan", isError: true}
+		}
+
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+		data, filename, err := client.GetAssembly(context.Background(), planName)
+		if err != nil {
+			return tuiStatusMsg{text: fmt.Sprintf("Failed to download: %v", err), isError: true}
+		}
+
+		if filename == "" {
+			filename = planName + "-assembly.pdf"
+		}
+
+		tmpFile, err := os.CreateTemp("", "fil-assembly-*.pdf")
+		if err != nil {
+			return tuiStatusMsg{text: fmt.Sprintf("Failed to create temp file: %v", err), isError: true}
+		}
+
+		if _, err := tmpFile.Write(data); err != nil {
+			_ = tmpFile.Close()
+			return tuiStatusMsg{text: fmt.Sprintf("Failed to write PDF: %v", err), isError: true}
+		}
+		_ = tmpFile.Close()
+
+		var openCmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			openCmd = exec.Command("open", tmpFile.Name())
+		default:
+			openCmd = exec.Command("xdg-open", tmpFile.Name())
+		}
+
+		if err := openCmd.Start(); err != nil {
+			return tuiStatusMsg{text: fmt.Sprintf("Saved at: %s", tmpFile.Name()), isError: false}
+		}
+
+		return tuiStatusMsg{text: fmt.Sprintf("Opened %s", filename), isError: false}
+	}
+}
+
+func clearStatusAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return tuiClearStatusMsg{} })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -796,11 +897,19 @@ func (m tuiModel) renderFooter() string {
 	}
 	b.WriteString(tuiDimStyle.Render(summary + strings.Repeat(" ", gap) + refreshInfo))
 	b.WriteString("\n")
-	switch m.view {
-	case viewPlans:
-		b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [r]efresh  [q]uit"))
-	default:
-		b.WriteString(tuiFooterStyle.Render("[p]lans  [↑/↓]scroll  [r]efresh  [q]uit"))
+	if m.statusMsg != "" {
+		style := tuiDimStyle
+		if m.statusError {
+			style = tuiWarnStyle
+		}
+		b.WriteString(style.Render(m.statusMsg))
+	} else {
+		switch m.view {
+		case viewPlans:
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [i]nstructions  [r]efresh  [q]uit"))
+		default:
+			b.WriteString(tuiFooterStyle.Render("[p]lans  [↑/↓]scroll  [r]efresh  [q]uit"))
+		}
 	}
 
 	return b.String()
