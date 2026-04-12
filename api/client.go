@@ -18,6 +18,39 @@ import (
 
 var ErrSpoolNotFound = errors.New("no spool found")
 
+// SpoolmanInfo is a subset of Spoolman's /api/v1/info response.
+type SpoolmanInfo struct {
+	Version string `json:"version"`
+}
+
+// GetInfo hits Spoolman's /api/v1/info endpoint and returns basic info.
+// Used for health checks and reachability probes.
+func (c Client) GetInfo(ctx context.Context) (*SpoolmanInfo, error) {
+	endpoint := c.base + "/api/v1/info"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("spoolman info error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var info SpoolmanInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("failed to decode spoolman info: %w", err)
+	}
+	return &info, nil
+}
+
 type SpoolmanAPI interface {
 	FindSpoolsByName(ctx context.Context, name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error)
 	GetFilamentById(ctx context.Context, id int) (*models.FindSpool, error)

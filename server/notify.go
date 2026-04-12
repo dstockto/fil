@@ -90,6 +90,32 @@ func (n *Notifier) QuietEndTime(t time.Time) time.Time {
 	return endToday.Add(24 * time.Hour)
 }
 
+// ValidatePushover verifies the configured Pushover token + user keys by calling
+// the validate endpoint. Returns nil if credentials are valid, or an error if
+// they are missing, rejected, or the request fails.
+func (n *Notifier) ValidatePushover() error {
+	if n.config.PushoverAPIKey == "" || n.config.PushoverUserKey == "" {
+		return fmt.Errorf("pushover credentials not configured")
+	}
+
+	data := url.Values{
+		"token": {n.config.PushoverAPIKey},
+		"user":  {n.config.PushoverUserKey},
+	}
+
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.PostForm("https://api.pushover.net/1/users/validate.json", data)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("pushover rejected credentials: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (n *Notifier) sendPushover(title, message string) error {
 	data := url.Values{
 		"token":   {n.config.PushoverAPIKey},

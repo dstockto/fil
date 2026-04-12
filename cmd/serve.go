@@ -62,6 +62,9 @@ var serveCmd = &cobra.Command{
 			ConfigDir:     configDir,
 			AssembliesDir: assembliesDir,
 			Version:       version,
+			ApiBase:       Cfg.ApiBase,
+			TLSSkipVerify: Cfg.TLSSkipVerify,
+			StartedAt:     time.Now(),
 		}
 
 		// Start printer connections
@@ -115,6 +118,7 @@ var serveCmd = &cobra.Command{
 				QuietEnd:        Cfg.Notifications.QuietEnd,
 			}
 			notifier := server.NewNotifier(notifyCfg)
+			s.Notifier = notifier
 			if notifier.Enabled() {
 				watcher := server.NewETAWatcher(ctx, Cfg.PlansDir, notifier, livePrinters)
 				s.Watcher = watcher

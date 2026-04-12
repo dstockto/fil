@@ -25,8 +25,12 @@ type PlanServer struct {
 	ConfigDir     string
 	AssembliesDir string
 	Version       string
+	ApiBase       string // Spoolman base URL, used by health checks
+	TLSSkipVerify bool   // passed to health-check HTTP clients
+	StartedAt     time.Time
 	Watcher       *ETAWatcher
 	Printers      *PrinterManager
+	Notifier      *Notifier
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -58,6 +62,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)
 	mux.HandleFunc("POST /api/v1/printers/{name}/push-tray", s.handlePushTray)
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
+	mux.HandleFunc("GET /api/v1/doctor", s.handleHealth)
 	return s.versionMiddleware(mux)
 }
 
@@ -116,6 +121,12 @@ func (s *PlanServer) handlePushTray(w http.ResponseWriter, r *http.Request) {
 func (s *PlanServer) handleVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"version": s.Version})
+}
+
+func (s *PlanServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	report := s.RunHealthChecks(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(report)
 }
 
 func (s *PlanServer) handleListPlans(w http.ResponseWriter, r *http.Request) {
