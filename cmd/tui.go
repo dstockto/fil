@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -83,6 +84,12 @@ type tuiModel struct {
 	planCursor   int          // which plan the cursor is on
 	planExpanded map[int]bool // which plans are expanded
 
+	// filter mode
+	filtering        bool
+	filterInput      textinput.Model
+	filteredIdxs     []int // indices into m.plans matching the filter
+	filteredTodoIdxs []int // indices into m.todoPlates matching the filter
+
 	// transient status message (shown in footer briefly)
 	statusMsg   string
 	statusError bool
@@ -129,11 +136,16 @@ type tuiTodoPlate struct {
 }
 
 func newTUIModel(refresh time.Duration) tuiModel {
+	ti := textinput.New()
+	ti.Prompt = "/ "
+	ti.CharLimit = 64
+
 	return tuiModel{
 		refreshInterval: refresh,
 		printerStatuses: make(map[string]api.PrinterStatus),
 		printerMap:      make(map[string][]tuiPrintingInfo),
 		planExpanded:    make(map[int]bool),
+		filterInput:     ti,
 	}
 }
 
@@ -181,10 +193,50 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Filter mode: send keys to text input
+		if m.filtering {
+			switch msg.String() {
+			case "esc":
+				// Cancel filter, clear text, show all
+				m.filtering = false
+				m.filterInput.Reset()
+				m.filteredIdxs = nil
+				m.filteredTodoIdxs = nil
+				m.planCursor = 0
+				m.filterInput.Blur()
+				m = resizeViewport(m)
+				m.viewport.SetContent(m.renderScrollable())
+				m.viewport.GotoTop()
+				return m, nil
+			case "enter":
+				// Accept filter and return to normal navigation
+				m.filtering = false
+				m.filterInput.Blur()
+				m = resizeViewport(m)
+				m.viewport.SetContent(m.renderScrollable())
+				return m, nil
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			default:
+				var cmd tea.Cmd
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				m.applyFilter()
+				m.viewport.SetContent(m.renderScrollable())
+				m.viewport.GotoTop()
+				return m, cmd
+			}
+		}
+
+		visible := m.visiblePlans()
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if m.view == viewPlans {
 				m.view = viewDashboard
+				m.filteredIdxs = nil
+				m.filteredTodoIdxs = nil
+				m.filterInput.Reset()
 				m = resizeViewport(m)
 				m.viewport.SetContent(m.renderScrollable())
 				m.viewport.GotoTop()
@@ -200,11 +252,25 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.view = viewDashboard
 			}
+			m.filteredIdxs = nil
+			m.filteredTodoIdxs = nil
+			m.filterInput.Reset()
+			m.planCursor = 0
 			m = resizeViewport(m)
 			m.viewport.SetContent(m.renderScrollable())
 			m.viewport.GotoTop()
 			return m, nil
 		case "esc":
+			// Clear active filter first, then navigate back
+			if m.filteredIdxs != nil || m.filteredTodoIdxs != nil {
+				m.filteredIdxs = nil
+				m.filteredTodoIdxs = nil
+				m.filterInput.Reset()
+				m.planCursor = 0
+				m.viewport.SetContent(m.renderScrollable())
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			if m.view == viewPlans {
 				m.view = viewDashboard
 				m = resizeViewport(m)
@@ -212,31 +278,48 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoTop()
 				return m, nil
 			}
+		case "/":
+			if m.view == viewPlans || m.view == viewDashboard {
+				m.filtering = true
+				m.filterInput.Focus()
+				m.planCursor = 0
+				m = resizeViewport(m)
+				return m, textinput.Blink
+			}
 		case "enter":
-			if m.view == viewPlans && len(m.plans) > 0 {
-				m.planExpanded[m.planCursor] = !m.planExpanded[m.planCursor]
+			if m.view == viewPlans && len(visible) > 0 {
+				idx := m.selectedPlanIdx()
+				if idx >= 0 {
+					m.planExpanded[idx] = !m.planExpanded[idx]
+				}
 				m.viewport.SetContent(m.renderScrollable())
+				m.ensureCursorVisible()
 				return m, nil
 			}
 		case "j", "down":
-			if m.view == viewPlans && len(m.plans) > 0 {
-				if m.planCursor < len(m.plans)-1 {
+			if m.view == viewPlans && len(visible) > 0 {
+				if m.planCursor < len(visible)-1 {
 					m.planCursor++
 				}
 				m.viewport.SetContent(m.renderScrollable())
+				m.ensureCursorVisible()
 				return m, nil
 			}
 		case "k", "up":
-			if m.view == viewPlans && len(m.plans) > 0 {
+			if m.view == viewPlans && len(visible) > 0 {
 				if m.planCursor > 0 {
 					m.planCursor--
 				}
 				m.viewport.SetContent(m.renderScrollable())
+				m.ensureCursorVisible()
 				return m, nil
 			}
 		case "i":
-			if m.view == viewPlans && len(m.plans) > 0 {
-				plan := m.plans[m.planCursor]
+			if m.view == viewPlans {
+				plan := m.selectedPlan()
+				if plan == nil {
+					return m, nil
+				}
 				if !plan.HasAssembly {
 					m.statusMsg = "No assembly instructions for this plan"
 					m.statusError = false
@@ -244,11 +327,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.statusMsg = "Opening instructions..."
 				m.statusError = false
-				return m, openInstructions(plan)
+				return m, openInstructions(*plan)
 			}
 		case "a":
-			if m.view == viewPlans && len(m.plans) > 0 {
-				plan := m.plans[m.planCursor]
+			if m.view == viewPlans {
+				plan := m.selectedPlan()
+				if plan == nil {
+					return m, nil
+				}
 				allDone := true
 				for _, proj := range plan.Projects {
 					for _, plate := range proj.Plates {
@@ -268,7 +354,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.statusMsg = "Archiving..."
 				m.statusError = false
-				return m, archivePlanTUI(plan)
+				return m, archivePlanTUI(*plan)
 			}
 		}
 
@@ -293,11 +379,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plans = msg.plans
 		m.lastRefresh = time.Now()
 		m.err = nil
+		// Re-apply filter if active
+		if m.filterInput.Value() != "" {
+			m.applyFilter()
+		}
 		m = resizeViewport(m) // header height may have changed with new data
 		m.viewport.SetContent(m.renderScrollable())
-		// Clamp plan cursor if plans list shrank
-		if m.planCursor >= len(m.plans) && len(m.plans) > 0 {
-			m.planCursor = len(m.plans) - 1
+		// Clamp plan cursor to visible plans
+		visible := m.visiblePlans()
+		if m.planCursor >= len(visible) && len(visible) > 0 {
+			m.planCursor = len(visible) - 1
 		}
 
 	case tuiErrMsg:
@@ -591,6 +682,132 @@ func todoLess(a, b tuiTodoPlate) bool {
 	return a.SwapCost < b.SwapCost
 }
 
+// ensureCursorVisible scrolls the viewport so the cursor line is visible.
+func (m *tuiModel) ensureCursorVisible() {
+	if m.view != viewPlans {
+		return
+	}
+	visible := m.visiblePlans()
+	if len(visible) == 0 {
+		return
+	}
+
+	// Count lines before the cursor position
+	line := 0
+	for vi, planIdx := range visible {
+		if vi == m.planCursor {
+			break
+		}
+		line++ // the plan line itself
+		if m.planExpanded[planIdx] {
+			for _, proj := range m.plans[planIdx].Projects {
+				line++ // project line
+				line += len(proj.Plates)
+			}
+			line++ // blank line after expanded plan
+		}
+	}
+
+	// Also count lines the cursor's own expanded content takes
+	cursorEnd := line + 1 // at minimum the plan header line
+	if m.planCursor < len(visible) {
+		planIdx := visible[m.planCursor]
+		if m.planExpanded[planIdx] {
+			for _, proj := range m.plans[planIdx].Projects {
+				cursorEnd++ // project line
+				cursorEnd += len(proj.Plates)
+			}
+			cursorEnd++ // blank line
+		}
+	}
+
+	// Scroll up if cursor is above viewport
+	if line < m.viewport.YOffset {
+		m.viewport.SetYOffset(line)
+	}
+	// Scroll down if cursor's content extends below viewport
+	if cursorEnd > m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(cursorEnd - m.viewport.Height)
+	}
+}
+
+// visibleTodoPlates returns the todo plate indices visible after filtering.
+func (m tuiModel) visibleTodoPlates() []int {
+	if m.filtering || len(m.filteredTodoIdxs) > 0 {
+		return m.filteredTodoIdxs
+	}
+	idxs := make([]int, len(m.todoPlates))
+	for i := range m.todoPlates {
+		idxs[i] = i
+	}
+	return idxs
+}
+
+// visiblePlans returns the plan indices visible after filtering.
+// When no filter is active, returns all indices.
+func (m tuiModel) visiblePlans() []int {
+	if m.filtering || len(m.filteredIdxs) > 0 {
+		return m.filteredIdxs
+	}
+	idxs := make([]int, len(m.plans))
+	for i := range m.plans {
+		idxs[i] = i
+	}
+	return idxs
+}
+
+// selectedPlan returns the plan at the current cursor position,
+// accounting for filtering. Returns nil if no plans are visible.
+func (m tuiModel) selectedPlan() *tuiPlanSummary {
+	visible := m.visiblePlans()
+	if len(visible) == 0 || m.planCursor >= len(visible) {
+		return nil
+	}
+	return &m.plans[visible[m.planCursor]]
+}
+
+// selectedPlanIdx returns the real index into m.plans for the cursor position.
+func (m tuiModel) selectedPlanIdx() int {
+	visible := m.visiblePlans()
+	if len(visible) == 0 || m.planCursor >= len(visible) {
+		return -1
+	}
+	return visible[m.planCursor]
+}
+
+// applyFilter updates filteredIdxs and filteredTodoIdxs based on the current filter text.
+func (m *tuiModel) applyFilter() {
+	query := strings.ToLower(m.filterInput.Value())
+	if query == "" {
+		m.filteredIdxs = nil
+		m.filteredTodoIdxs = nil
+		return
+	}
+	m.filteredIdxs = nil
+	for i, plan := range m.plans {
+		if strings.Contains(strings.ToLower(plan.Name), query) {
+			m.filteredIdxs = append(m.filteredIdxs, i)
+		}
+	}
+	m.filteredTodoIdxs = nil
+	for i, tp := range m.todoPlates {
+		if strings.Contains(strings.ToLower(tp.PlanName), query) ||
+			strings.Contains(strings.ToLower(tp.ProjectName), query) ||
+			strings.Contains(strings.ToLower(tp.PlateName), query) {
+			m.filteredTodoIdxs = append(m.filteredTodoIdxs, i)
+		}
+	}
+	// Clamp cursor (plans view)
+	visible := m.visiblePlans()
+	if m.planCursor >= len(visible) {
+		if len(visible) > 0 {
+			m.planCursor = len(visible) - 1
+		} else {
+			m.planCursor = 0
+		}
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Commands (async actions)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -816,12 +1033,17 @@ func (m tuiModel) renderScrollable() string {
 }
 
 func (m tuiModel) renderDashboardScrollable() string {
-	if len(m.todoPlates) == 0 {
-		return tuiDimStyle.Render("  No plates remaining") + "\n"
+	visible := m.visibleTodoPlates()
+	if len(visible) == 0 {
+		if len(m.filteredTodoIdxs) == 0 && len(m.todoPlates) == 0 {
+			return tuiDimStyle.Render("  No plates remaining") + "\n"
+		}
+		return tuiDimStyle.Render("  No matching plates") + "\n"
 	}
 
 	var b strings.Builder
-	for _, tp := range m.todoPlates {
+	for _, idx := range visible {
+		tp := m.todoPlates[idx]
 		// Color swatches
 		swatch := tuiColorSwatches(tp.Colors)
 		if swatch != "" {
@@ -846,21 +1068,27 @@ func (m tuiModel) renderDashboardScrollable() string {
 }
 
 func (m tuiModel) renderPlansScrollable() string {
-	if len(m.plans) == 0 {
-		return tuiDimStyle.Render("  No plans found") + "\n"
+	visible := m.visiblePlans()
+	if len(visible) == 0 {
+		if len(m.filteredIdxs) == 0 && len(m.plans) == 0 {
+			return tuiDimStyle.Render("  No plans found") + "\n"
+		}
+		return tuiDimStyle.Render("  No matching plans") + "\n"
 	}
 
 	var b strings.Builder
-	for i, plan := range m.plans {
+	for vi, planIdx := range visible {
+		plan := m.plans[planIdx]
+
 		// Cursor indicator
 		cursor := "  "
-		if i == m.planCursor {
+		if vi == m.planCursor {
 			cursor = "> "
 		}
 
 		// Expand/collapse indicator
 		expandIcon := "▶"
-		if m.planExpanded[i] {
+		if m.planExpanded[planIdx] {
 			expandIcon = "▼"
 		}
 
@@ -878,7 +1106,7 @@ func (m tuiModel) renderPlansScrollable() string {
 		planLine := fmt.Sprintf("%s%s %s", cursor, expandIcon, models.Sanitize(plan.Name))
 		progress := tuiDimStyle.Render(fmt.Sprintf("  %d/%d plates done", done, total))
 
-		if i == m.planCursor {
+		if vi == m.planCursor {
 			b.WriteString(tuiPrinterNameStyle.Render(planLine))
 		} else {
 			b.WriteString(planLine)
@@ -887,7 +1115,7 @@ func (m tuiModel) renderPlansScrollable() string {
 		b.WriteString("\n")
 
 		// Expanded detail
-		if m.planExpanded[i] {
+		if m.planExpanded[planIdx] {
 			for _, proj := range plan.Projects {
 				b.WriteString(tuiDimStyle.Render(fmt.Sprintf("    %s", models.Sanitize(proj.Name))))
 				b.WriteString("\n")
@@ -950,7 +1178,10 @@ func (m tuiModel) renderFooter() string {
 	}
 	b.WriteString(tuiDimStyle.Render(summary + strings.Repeat(" ", gap) + refreshInfo))
 	b.WriteString("\n")
-	if m.statusMsg != "" {
+	if m.filtering {
+		b.WriteString(m.filterInput.View())
+		b.WriteString(tuiFooterStyle.Render("  [enter]accept  [esc]cancel"))
+	} else if m.statusMsg != "" {
 		style := tuiDimStyle
 		if m.statusError {
 			style = tuiWarnStyle
@@ -959,9 +1190,9 @@ func (m tuiModel) renderFooter() string {
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [/]filter  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
 		default:
-			b.WriteString(tuiFooterStyle.Render("[p]lans  [↑/↓]scroll  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [r]efresh  [q]uit"))
 		}
 	}
 
