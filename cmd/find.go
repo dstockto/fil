@@ -275,6 +275,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 				}
 			}
 
+			// Pre-compute all location labels to find max width for alignment
+			type labeledSpool struct {
+				label string
+				spool models.FindSpool
+			}
+			var labeled []labeledSpool
+
 			for _, loc := range locOrder {
 				locSpools := spoolsByLoc[loc]
 				if IsPrinterLocation(loc) {
@@ -285,40 +292,70 @@ func runFind(cmd *cobra.Command, args []string) error {
 						slotNum := i + 1
 						if id == EmptySlot {
 							if showEmpties {
-								dimmed := color.New(color.Faint).SprintFunc()
-								fmt.Printf(" %s:%d %s\n", loc, slotNum, dimmed("(empty)"))
+								labeled = append(labeled, labeledSpool{
+									label: fmt.Sprintf("%s:%d", loc, slotNum),
+								})
 							}
 						} else if s, ok := locSpools[id]; ok {
-							fmt.Printf(" %s:%d %s\n", loc, slotNum, s.StringNoLocation())
-							if showPurchase {
-								fmt.Printf("    %s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
-							}
-							totalRemaining += s.RemainingWeight
-							totalUsed += s.UsedWeight
+							labeled = append(labeled, labeledSpool{
+								label: fmt.Sprintf("%s:%d", loc, slotNum),
+								spool: s,
+							})
 							delete(locSpools, id)
 						}
 					}
-					// Any spools not in the slot list (overflow)
 					for _, s := range locSpools {
-						fmt.Printf(" %s:? %s\n", loc, s.StringNoLocation())
-						totalRemaining += s.RemainingWeight
-						totalUsed += s.UsedWeight
+						labeled = append(labeled, labeledSpool{
+							label: fmt.Sprintf("%s:?", loc),
+							spool: s,
+						})
 					}
 				} else {
-					// Non-printer location — standard display
 					for _, s := range locSpools {
-						fmt.Printf(" - %s\n", s)
-						if showPurchase {
-							fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+						label := models.Sanitize(s.Location)
+						if label == "" {
+							label = "N/A"
 						}
-						totalRemaining += s.RemainingWeight
-						totalUsed += s.UsedWeight
+						labeled = append(labeled, labeledSpool{
+							label: label,
+							spool: s,
+						})
 					}
+				}
+			}
+
+			// Find max label width
+			maxLabel := 0
+			for _, ls := range labeled {
+				if len(ls.label) > maxLabel {
+					maxLabel = len(ls.label)
+				}
+			}
+
+			// Render with aligned columns
+			for _, ls := range labeled {
+				boldLabel := color.New(color.Bold).Sprintf("%-*s", maxLabel, ls.label)
+				if ls.spool.Id == 0 {
+					// Empty slot
+					dimmed := color.New(color.Faint).SprintFunc()
+					fmt.Printf(" %s %s\n", boldLabel, dimmed("(empty)"))
+				} else {
+					fmt.Printf(" %s %s\n", boldLabel, ls.spool.StringNoLocation())
+					if showPurchase {
+						fmt.Printf("    %s\n", amazonLink(ls.spool.Filament.Vendor.Name, ls.spool.Filament.Name))
+					}
+					totalRemaining += ls.spool.RemainingWeight
+					totalUsed += ls.spool.UsedWeight
 				}
 			}
 		} else {
 			for _, s := range spools {
-				fmt.Printf(" - %s\n", s)
+				loc := models.Sanitize(s.Location)
+				if loc == "" {
+					loc = "N/A"
+				}
+				boldLabel := color.New(color.Bold).Sprintf("%s", loc)
+				fmt.Printf(" %s %s\n", boldLabel, s.StringNoLocation())
 				if showPurchase {
 					fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
 				}
