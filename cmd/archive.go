@@ -11,6 +11,7 @@ import (
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 	"github.com/fatih/color"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
@@ -99,6 +100,27 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		}
 
 		spools = append(spools, foundSpools[0])
+	}
+
+	// Warn if any spool still has filament remaining
+	var confirmed bool
+	for _, s := range spools {
+		if s.RemainingWeight > 0 {
+			color.Yellow("Warning: Spool #%d (%s %s) still has %.1fg remaining",
+				s.Id, s.Filament.Vendor.Name, s.Filament.Name, s.RemainingWeight)
+			if !confirmed {
+				prompt := promptui.Prompt{
+					Label:     "Are you sure you want to archive?",
+					IsConfirm: true,
+					Stdout:    NoBellStdout,
+				}
+				if _, err := prompt.Run(); err != nil {
+					fmt.Println("Archive cancelled.")
+					return nil
+				}
+				confirmed = true
+			}
+		}
 	}
 
 	// Load current locations_spoolorders to compute removals for dry-run and updates
