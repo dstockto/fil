@@ -296,6 +296,26 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureCursorVisible()
 				return m, nil
 			}
+		case "right", "l":
+			if m.view == viewPlans && len(visible) > 0 {
+				idx := m.selectedPlanIdx()
+				if idx >= 0 {
+					m.planExpanded[idx] = true
+				}
+				m.viewport.SetContent(m.renderScrollable())
+				m.ensureCursorVisible()
+				return m, nil
+			}
+		case "left", "h":
+			if m.view == viewPlans && len(visible) > 0 {
+				idx := m.selectedPlanIdx()
+				if idx >= 0 {
+					m.planExpanded[idx] = false
+				}
+				m.viewport.SetContent(m.renderScrollable())
+				m.ensureCursorVisible()
+				return m, nil
+			}
 		case "j", "down":
 			if m.view == viewPlans && len(visible) > 0 {
 				if m.planCursor < len(visible)-1 {
@@ -1190,7 +1210,7 @@ func (m tuiModel) renderFooter() string {
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [enter]expand  [/]filter  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
 		default:
 			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [r]efresh  [q]uit"))
 		}
