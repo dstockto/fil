@@ -205,7 +205,6 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 		for _, status := range statuses {
 			summaries, err := client.ListPlans(ctx, status)
 			if err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not reach plan server: %v\n", err)
 				continue
 			}
 
@@ -217,13 +216,11 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 
 				data, err := client.GetPlan(ctx, summary.Name, status)
 				if err != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to fetch remote plan %s: %v\n", summary.Name, err)
 					continue
 				}
 
 				var plan models.PlanFile
 				if err := yaml.Unmarshal(data, &plan); err != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to parse remote plan %s: %v\n", summary.Name, err)
 					continue
 				}
 				plan.DefaultStatus()
