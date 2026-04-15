@@ -85,6 +85,25 @@ func buildFindQuery(cmd *cobra.Command) (map[string]string, []api.SpoolFilter, e
 		query["location"] = location
 	}
 
+	if material, err := cmd.Flags().GetString("material"); err == nil && material != "" {
+		// Support comma-separated list of material substrings, case-insensitive
+		var needles []string
+		for _, m := range strings.Split(material, ",") {
+			if trimmed := strings.ToLower(strings.TrimSpace(m)); trimmed != "" {
+				needles = append(needles, trimmed)
+			}
+		}
+		filters = append(filters, func(s models.FindSpool) bool {
+			haystack := strings.ToLower(s.Filament.Material)
+			for _, n := range needles {
+				if strings.Contains(haystack, n) {
+					return true
+				}
+			}
+			return false
+		})
+	}
+
 	if needed, err := cmd.Flags().GetBool("needed"); err == nil && needed {
 		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 		neededIDs, err := GetNeededFilamentIDs(cmd.Context(), apiClient)
@@ -446,4 +465,5 @@ func init() {
 	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
 	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
 	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
+	findCmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
 }
