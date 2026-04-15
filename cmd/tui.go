@@ -93,6 +93,10 @@ type tuiModel struct {
 	// transient status message (shown in footer briefly)
 	statusMsg   string
 	statusError bool
+
+	// modal state (nil when no modal is active)
+	modal     tuiModalKind
+	stopModal *tuiStopModal
 }
 
 // tuiPlanSummary holds the display data for a single plan in the plans view.
@@ -193,6 +197,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Modal mode: route keys to the active modal before anything else
+		if m.modal != modalNone {
+			return m.updateModal(msg)
+		}
 		// Filter mode: send keys to text input
 		if m.filtering {
 			switch msg.String() {
@@ -376,6 +384,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusError = false
 				return m, archivePlanTUI(*plan)
 			}
+		case "s":
+			// Stop in-progress plate(s)
+			refs, _, err := collectInProgressPlates()
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("Error loading plans: %v", err)
+				m.statusError = true
+				return m, clearStatusAfter(5 * time.Second)
+			}
+			if len(refs) == 0 {
+				m.statusMsg = "No in-progress plates to stop"
+				m.statusError = false
+				return m, clearStatusAfter(3 * time.Second)
+			}
+			stage := stagePicker
+			if len(refs) == 1 {
+				stage = stageConfirm
+			}
+			m.modal = modalStop
+			m.stopModal = &tuiStopModal{plates: refs, cursor: 0, stage: stage}
+			m.viewport.SetContent(m.renderStopModal())
+			m.viewport.GotoTop()
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -438,6 +468,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.planCursor > 0 && m.planCursor >= len(m.plans)-1 {
 			m.planCursor--
 		}
+
+	case tuiStopDoneMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Stop failed: %v", msg.err)
+			m.statusError = true
+			cmds = append(cmds, clearStatusAfter(5*time.Second))
+		} else {
+			m.statusMsg = fmt.Sprintf("Stopped %s - %s", msg.projectName, msg.plateName)
+			m.statusError = false
+			cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
+		}
 	}
 
 	if m.ready {
@@ -451,6 +492,82 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tuiTickMsg(t) })
+}
+
+// updateModal handles key input when a modal is active.
+func (m tuiModel) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.modal {
+	case modalStop:
+		return m.updateStopModal(msg)
+	}
+	return m, nil
+}
+
+// updateStopModal handles key input for the stop modal.
+func (m tuiModel) updateStopModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	sm := m.stopModal
+	if sm == nil {
+		m.modal = modalNone
+		return m, nil
+	}
+
+	switch sm.stage {
+	case stagePicker:
+		switch msg.String() {
+		case "esc", "q", "ctrl+c":
+			m.modal = modalNone
+			m.stopModal = nil
+			m.viewport.SetContent(m.renderScrollable())
+			return m, nil
+		case "j", "down":
+			if sm.cursor < len(sm.plates)-1 {
+				sm.cursor++
+			}
+			m.viewport.SetContent(m.renderStopModal())
+			return m, nil
+		case "k", "up":
+			if sm.cursor > 0 {
+				sm.cursor--
+			}
+			m.viewport.SetContent(m.renderStopModal())
+			return m, nil
+		case "enter":
+			sm.stage = stageConfirm
+			m.viewport.SetContent(m.renderStopModal())
+			return m, nil
+		}
+	case stageConfirm:
+		switch msg.String() {
+		case "esc", "n", "q":
+			// Cancel — return to picker if we had one, otherwise close
+			if len(sm.plates) > 1 {
+				sm.stage = stagePicker
+				m.viewport.SetContent(m.renderStopModal())
+				return m, nil
+			}
+			m.modal = modalNone
+			m.stopModal = nil
+			m.viewport.SetContent(m.renderScrollable())
+			return m, nil
+		case "y", "enter":
+			// Execute the stop
+			ref := sm.plates[sm.cursor]
+			m.modal = modalNone
+			m.stopModal = nil
+			m.viewport.SetContent(m.renderScrollable())
+			return m, func() tea.Msg {
+				_, plans, err := collectInProgressPlates()
+				if err != nil {
+					return tuiStopDoneMsg{err: err}
+				}
+				return stopSelectedPlate(ref, plans)
+			}
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
 }
 
 // resizeViewport recalculates the viewport height based on the current header
@@ -1046,6 +1163,9 @@ func (m tuiModel) footerHeight() int {
 
 // renderScrollable returns the viewport content for the current view.
 func (m tuiModel) renderScrollable() string {
+	if m.modal == modalStop {
+		return m.renderStopModal()
+	}
 	if m.view == viewPlans {
 		return m.renderPlansScrollable()
 	}
@@ -1207,12 +1327,14 @@ func (m tuiModel) renderFooter() string {
 			style = tuiWarnStyle
 		}
 		b.WriteString(style.Render(m.statusMsg))
+	} else if m.modal == modalStop {
+		b.WriteString(tuiFooterStyle.Render("Stop plate — [esc]cancel"))
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [s]top  [r]efresh  [q]uit"))
 		default:
-			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [s]top  [r]efresh  [q]uit"))
 		}
 	}
 
