@@ -199,9 +199,11 @@ var planCompleteCmd = &cobra.Command{
 								continue
 							}
 
-							// Check if it matches the requirement (either by ID or by name)
-							if req.FilamentID != 0 && s.Filament.Id == req.FilamentID {
-								candidates = append(candidates, s)
+							// Check if it matches the requirement: prefer filament_id when available, fall back to name
+							if req.FilamentID != 0 {
+								if s.Filament.Id == req.FilamentID {
+									candidates = append(candidates, s)
+								}
 							} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
 								candidates = append(candidates, s)
 							}
