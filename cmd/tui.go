@@ -95,8 +95,9 @@ type tuiModel struct {
 	statusError bool
 
 	// modal state (nil when no modal is active)
-	modal     tuiModalKind
-	stopModal *tuiStopModal
+	modal         tuiModalKind
+	stopModal     *tuiStopModal
+	completeModal *tuiCompleteModal
 }
 
 // tuiPlanSummary holds the display data for a single plan in the plans view.
@@ -406,6 +407,33 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(m.renderStopModal())
 			m.viewport.GotoTop()
 			return m, nil
+		case "c":
+			// Complete a plate
+			refs, _, err := collectCompletablePlates()
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("Error loading plans: %v", err)
+				m.statusError = true
+				return m, clearStatusAfter(5 * time.Second)
+			}
+			if len(refs) == 0 {
+				m.statusMsg = "Nothing to complete"
+				m.statusError = false
+				return m, clearStatusAfter(3 * time.Second)
+			}
+			m.modal = modalComplete
+			m.completeModal = &tuiCompleteModal{plates: refs, cursor: 0, stage: stagePicker}
+			// If only one plate, jump straight to preview
+			if len(refs) == 1 {
+				ref := refs[0]
+				m.completeModal.selected = &ref
+				m.completeModal.stage = stageLoading
+				m.viewport.SetContent(m.renderCompleteModal())
+				m.viewport.GotoTop()
+				return m, buildCompletePreviewCmd(ref)
+			}
+			m.viewport.SetContent(m.renderCompleteModal())
+			m.viewport.GotoTop()
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -479,6 +507,37 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusError = false
 			cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
 		}
+
+	case tuiCompletePreviewReadyMsg:
+		if m.completeModal != nil {
+			if msg.err != nil {
+				m.completeModal.issues = []completeIssue{{needName: "—", reason: msg.err.Error()}}
+				m.completeModal.stage = stageNeedsManual
+			} else {
+				m.completeModal.deductions = msg.deductions
+				m.completeModal.issues = msg.issues
+				if len(msg.issues) > 0 {
+					m.completeModal.stage = stageNeedsManual
+				} else if len(msg.deductions) == 0 {
+					m.completeModal.issues = []completeIssue{{needName: "—", reason: "No filament needs found for this plate"}}
+					m.completeModal.stage = stageNeedsManual
+				} else {
+					m.completeModal.stage = stagePreview
+				}
+			}
+			m.viewport.SetContent(m.renderCompleteModal())
+		}
+
+	case tuiCompleteDoneMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Complete failed: %v", msg.err)
+			m.statusError = true
+			cmds = append(cmds, clearStatusAfter(5*time.Second))
+		} else {
+			m.statusMsg = fmt.Sprintf("Completed %s - %s", msg.projectName, msg.plateName)
+			m.statusError = false
+			cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
+		}
 	}
 
 	if m.ready {
@@ -499,8 +558,113 @@ func (m tuiModel) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.modal {
 	case modalStop:
 		return m.updateStopModal(msg)
+	case modalComplete:
+		return m.updateCompleteModal(msg)
 	}
 	return m, nil
+}
+
+// updateCompleteModal handles key input for the complete modal.
+func (m tuiModel) updateCompleteModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cm := m.completeModal
+	if cm == nil {
+		m.modal = modalNone
+		return m, nil
+	}
+
+	closeModal := func() tuiModel {
+		m.modal = modalNone
+		m.completeModal = nil
+		m.viewport.SetContent(m.renderScrollable())
+		return m
+	}
+
+	switch cm.stage {
+	case stagePicker:
+		switch msg.String() {
+		case "esc", "q":
+			return closeModal(), nil
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "j", "down":
+			if cm.cursor < len(cm.plates)-1 {
+				cm.cursor++
+			}
+			m.viewport.SetContent(m.renderCompleteModal())
+			return m, nil
+		case "k", "up":
+			if cm.cursor > 0 {
+				cm.cursor--
+			}
+			m.viewport.SetContent(m.renderCompleteModal())
+			return m, nil
+		case "enter":
+			ref := cm.plates[cm.cursor]
+			cm.selected = &ref
+			cm.stage = stageLoading
+			m.viewport.SetContent(m.renderCompleteModal())
+			return m, buildCompletePreviewCmd(ref)
+		}
+
+	case stageLoading:
+		switch msg.String() {
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+	case stagePreview:
+		switch msg.String() {
+		case "esc", "n", "q":
+			if len(cm.plates) > 1 {
+				cm.stage = stagePicker
+				cm.selected = nil
+				cm.deductions = nil
+				cm.issues = nil
+				m.viewport.SetContent(m.renderCompleteModal())
+				return m, nil
+			}
+			return closeModal(), nil
+		case "y", "enter":
+			if cm.selected == nil {
+				return closeModal(), nil
+			}
+			ref := *cm.selected
+			deductions := cm.deductions
+			return closeModal(), executeCompleteCmd(ref, deductions)
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+	case stageNeedsManual:
+		switch msg.String() {
+		case "esc", "q", "enter":
+			return closeModal(), nil
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func buildCompletePreviewCmd(ref completePlateRef) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		deductions, issues, err := buildCompletePreview(ctx, apiClient, ref)
+		return tuiCompletePreviewReadyMsg{deductions: deductions, issues: issues, err: err}
+	}
+}
+
+func executeCompleteCmd(ref completePlateRef, deductions []completeDeduction) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		return executeComplete(ctx, apiClient, ref, deductions)
+	}
 }
 
 // updateStopModal handles key input for the stop modal.
@@ -1163,8 +1327,11 @@ func (m tuiModel) footerHeight() int {
 
 // renderScrollable returns the viewport content for the current view.
 func (m tuiModel) renderScrollable() string {
-	if m.modal == modalStop {
+	switch m.modal {
+	case modalStop:
 		return m.renderStopModal()
+	case modalComplete:
+		return m.renderCompleteModal()
 	}
 	if m.view == viewPlans {
 		return m.renderPlansScrollable()
@@ -1329,12 +1496,14 @@ func (m tuiModel) renderFooter() string {
 		b.WriteString(style.Render(m.statusMsg))
 	} else if m.modal == modalStop {
 		b.WriteString(tuiFooterStyle.Render("Stop plate — [esc]cancel"))
+	} else if m.modal == modalComplete {
+		b.WriteString(tuiFooterStyle.Render("Complete plate — [esc]cancel"))
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [s]top  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [c]omplete  [s]top  [r]efresh  [q]uit"))
 		default:
-			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [s]top  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [c]omplete  [s]top  [r]efresh  [q]uit"))
 		}
 	}
 
