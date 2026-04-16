@@ -98,6 +98,7 @@ type tuiModel struct {
 	modal         tuiModalKind
 	stopModal     *tuiStopModal
 	completeModal *tuiCompleteModal
+	nextModal     *tuiNextModal
 }
 
 // tuiPlanSummary holds the display data for a single plan in the plans view.
@@ -434,6 +435,32 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(m.renderCompleteModal())
 			m.viewport.GotoTop()
 			return m, nil
+		case "n":
+			// Start next plate
+			if len(Cfg.Printers) == 0 {
+				m.statusMsg = "No printers configured"
+				m.statusError = true
+				return m, clearStatusAfter(5 * time.Second)
+			}
+			var printerNames []string
+			for name := range Cfg.Printers {
+				printerNames = append(printerNames, name)
+			}
+			sortStrings(printerNames)
+			m.modal = modalNext
+			m.nextModal = &tuiNextModal{printerNames: printerNames}
+			if len(printerNames) == 1 {
+				m.nextModal.selectedPrinter = printerNames[0]
+				m.nextModal.stage = stageLoading
+				m.nextModal.loadingMsg = "Loading plates..."
+				m.viewport.SetContent(m.renderNextModal())
+				m.viewport.GotoTop()
+				return m, prepareNextPlatesCmd(printerNames[0])
+			}
+			m.nextModal.stage = stagePrinterPicker
+			m.viewport.SetContent(m.renderNextModal())
+			m.viewport.GotoTop()
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -538,6 +565,57 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusError = false
 			cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
 		}
+
+	case nextPreparedData:
+		if m.nextModal != nil {
+			if msg.err != nil {
+				m.nextModal.issues = []nextIssue{{needName: "—", reason: msg.err.Error()}}
+				m.nextModal.stage = stageNeedsManual
+			} else if len(msg.plates) == 0 {
+				m.statusMsg = "No todo plates"
+				m.statusError = false
+				m.modal = modalNone
+				m.nextModal = nil
+				m.viewport.SetContent(m.renderScrollable())
+				cmds = append(cmds, clearStatusAfter(3*time.Second))
+			} else {
+				m.nextModal.plates = msg.plates
+				m.nextModal.plateCursor = 0
+				m.nextModal.stage = stagePicker
+			}
+			if m.nextModal != nil {
+				m.viewport.SetContent(m.renderNextModal())
+			}
+		}
+
+	case nextPreviewReady:
+		if m.nextModal != nil {
+			if msg.err != nil {
+				m.nextModal.issues = []nextIssue{{needName: "—", reason: msg.err.Error()}}
+				m.nextModal.stage = stageNeedsManual
+			} else {
+				m.nextModal.keepOps = msg.keepOps
+				m.nextModal.loadOps = msg.loadOps
+				m.nextModal.issues = msg.issues
+				if len(msg.issues) > 0 {
+					m.nextModal.stage = stageNeedsManual
+				} else {
+					m.nextModal.stage = stagePreview
+				}
+			}
+			m.viewport.SetContent(m.renderNextModal())
+		}
+
+	case tuiNextDoneMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Start failed: %v", msg.err)
+			m.statusError = true
+			cmds = append(cmds, clearStatusAfter(5*time.Second))
+		} else {
+			m.statusMsg = fmt.Sprintf("Started %s - %s", msg.projectName, msg.plateName)
+			m.statusError = false
+			cmds = append(cmds, clearStatusAfter(3*time.Second), fetchTUIData)
+		}
 	}
 
 	if m.ready {
@@ -560,8 +638,159 @@ func (m tuiModel) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateStopModal(msg)
 	case modalComplete:
 		return m.updateCompleteModal(msg)
+	case modalNext:
+		return m.updateNextModal(msg)
 	}
 	return m, nil
+}
+
+// updateNextModal handles key input for the next modal.
+func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	nm := m.nextModal
+	if nm == nil {
+		m.modal = modalNone
+		return m, nil
+	}
+	closeModal := func() tuiModel {
+		m.modal = modalNone
+		m.nextModal = nil
+		m.viewport.SetContent(m.renderScrollable())
+		return m
+	}
+
+	switch nm.stage {
+	case stagePrinterPicker:
+		switch msg.String() {
+		case "esc", "q":
+			return closeModal(), nil
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "j", "down":
+			if nm.printerCursor < len(nm.printerNames)-1 {
+				nm.printerCursor++
+			}
+			m.viewport.SetContent(m.renderNextModal())
+			return m, nil
+		case "k", "up":
+			if nm.printerCursor > 0 {
+				nm.printerCursor--
+			}
+			m.viewport.SetContent(m.renderNextModal())
+			return m, nil
+		case "enter":
+			nm.selectedPrinter = nm.printerNames[nm.printerCursor]
+			nm.stage = stageLoading
+			nm.loadingMsg = "Loading plates..."
+			m.viewport.SetContent(m.renderNextModal())
+			return m, prepareNextPlatesCmd(nm.selectedPrinter)
+		}
+
+	case stageLoading:
+		if msg.String() == "ctrl+c" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+	case stagePicker:
+		switch msg.String() {
+		case "esc", "q":
+			if len(nm.printerNames) > 1 {
+				nm.stage = stagePrinterPicker
+				nm.plates = nil
+				m.viewport.SetContent(m.renderNextModal())
+				return m, nil
+			}
+			return closeModal(), nil
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "j", "down":
+			if nm.plateCursor < len(nm.plates)-1 {
+				nm.plateCursor++
+			}
+			m.viewport.SetContent(m.renderNextModal())
+			return m, nil
+		case "k", "up":
+			if nm.plateCursor > 0 {
+				nm.plateCursor--
+			}
+			m.viewport.SetContent(m.renderNextModal())
+			return m, nil
+		case "enter":
+			if len(nm.plates) == 0 {
+				return m, nil
+			}
+			plate := nm.plates[nm.plateCursor]
+			if !plate.isReady {
+				m.statusMsg = "That plate has insufficient filament"
+				m.statusError = true
+				return m, clearStatusAfter(5 * time.Second)
+			}
+			nm.selectedPlate = &plate
+			nm.stage = stageLoading
+			nm.loadingMsg = "Building preview..."
+			m.viewport.SetContent(m.renderNextModal())
+			return m, buildNextPreviewCmd(nm.selectedPrinter, plate)
+		}
+
+	case stagePreview:
+		switch msg.String() {
+		case "esc", "n", "q":
+			nm.stage = stagePicker
+			nm.selectedPlate = nil
+			nm.keepOps = nil
+			nm.loadOps = nil
+			nm.issues = nil
+			m.viewport.SetContent(m.renderNextModal())
+			return m, nil
+		case "y", "enter":
+			if nm.selectedPlate == nil {
+				return closeModal(), nil
+			}
+			plate := *nm.selectedPlate
+			printer := nm.selectedPrinter
+			loadOps := nm.loadOps
+			return closeModal(), executeNextCmd(printer, plate, loadOps)
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+	case stageNeedsManual:
+		switch msg.String() {
+		case "esc", "q", "enter":
+			return closeModal(), nil
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func prepareNextPlatesCmd(printerName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		return preparePlates(ctx, apiClient, printerName)
+	}
+}
+
+func buildNextPreviewCmd(printerName string, plate nextPlateRef) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		return buildNextPreview(ctx, apiClient, printerName, plate)
+	}
+}
+
+func executeNextCmd(printerName string, plate nextPlateRef, loadOps []nextLoadOp) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		return executeNext(ctx, apiClient, printerName, plate, loadOps)
+	}
 }
 
 // updateCompleteModal handles key input for the complete modal.
@@ -1332,6 +1561,8 @@ func (m tuiModel) renderScrollable() string {
 		return m.renderStopModal()
 	case modalComplete:
 		return m.renderCompleteModal()
+	case modalNext:
+		return m.renderNextModal()
 	}
 	if m.view == viewPlans {
 		return m.renderPlansScrollable()
@@ -1498,12 +1729,14 @@ func (m tuiModel) renderFooter() string {
 		b.WriteString(tuiFooterStyle.Render("Stop plate — [esc]cancel"))
 	} else if m.modal == modalComplete {
 		b.WriteString(tuiFooterStyle.Render("Complete plate — [esc]cancel"))
+	} else if m.modal == modalNext {
+		b.WriteString(tuiFooterStyle.Render("Start next plate — [esc]cancel"))
 	} else {
 		switch m.view {
 		case viewPlans:
-			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [c]omplete  [s]top  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p/esc]dashboard  [↑/↓/j/k]navigate  [→/enter]expand  [←]collapse  [/]filter  [a]rchive  [i]nstructions  [n]ext  [c]omplete  [s]top  [r]efresh  [q]uit"))
 		default:
-			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [c]omplete  [s]top  [r]efresh  [q]uit"))
+			b.WriteString(tuiFooterStyle.Render("[p]lans  [/]filter  [↑/↓]scroll  [n]ext  [c]omplete  [s]top  [r]efresh  [q]uit"))
 		}
 	}
 
