@@ -15,7 +15,9 @@
       "Bash(fil f:*)",
       "Bash(/tmp/fil doctor:*)",
       "Bash(/tmp/fil tui:*)",
-      "Bash(/tmp/fil plan:*)"
+      "Bash(/tmp/fil plan:*)",
+      "Bash(go mod *)",
+      "Bash(./fil find *)"
     ]
   }
 }

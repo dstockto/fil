@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 	"github.com/fatih/color"
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/cobra"
 )
 
@@ -176,6 +178,26 @@ func runFind(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("flags --lru and --mru are mutually exclusive; please specify only one")
 	}
 
+	nearHex, _ := cmd.Flags().GetString("near")
+	limit, _ := cmd.Flags().GetInt("limit")
+	var target colorful.Color
+	useNear := nearHex != ""
+	if useNear {
+		c, ok := parseHexColor(nearHex)
+		if !ok {
+			return fmt.Errorf("invalid --near color %q; expected hex like #ff5500", nearHex)
+		}
+		if lruSort || mruSort {
+			return fmt.Errorf("--near cannot be combined with --lru or --mru")
+		}
+		if limit <= 0 {
+			return fmt.Errorf("--limit must be positive, got %d", limit)
+		}
+		target = c
+	} else if cmd.Flags().Changed("limit") {
+		return fmt.Errorf("--limit only applies with --near")
+	}
+
 	for _, a := range args {
 		foundFmt := "Found %d spools matching '%s':\n"
 		name := a
@@ -200,8 +222,30 @@ func runFind(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// When --near is set, sort by color distance and truncate to the limit.
+		var deltas map[int]float64
+		if useNear {
+			deltas = make(map[int]float64, len(spools))
+			withColor := spools[:0]
+			for _, sp := range spools {
+				d := spoolColorDistance(sp, target)
+				if math.IsInf(d, 1) {
+					continue
+				}
+				deltas[sp.Id] = d
+				withColor = append(withColor, sp)
+			}
+			spools = withColor
+			sort.SliceStable(spools, func(i, j int) bool {
+				return deltas[spools[i].Id] < deltas[spools[j].Id]
+			})
+			if len(spools) > limit {
+				spools = spools[:limit]
+			}
+		}
+
 		// If requested, sort by least- or most-recently used; never-used at the end
-		if (lruSort || mruSort) && len(spools) > 1 {
+		if !useNear && (lruSort || mruSort) && len(spools) > 1 {
 			sort.Slice(spools, func(i, j int) bool {
 				li, lj := spools[i].LastUsed, spools[j].LastUsed
 				zi, zj := li.IsZero(), lj.IsZero()
@@ -219,7 +263,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 				}
 				return li.After(lj) // newer last-used first
 			})
-		} else if len(spools) > 1 && len(ranks) > 0 {
+		} else if !useNear && len(spools) > 1 && len(ranks) > 0 {
 			// Default behavior: group by location, then sort by settings-defined order within each location.
 			// Items with a known rank (present in settings for their Location) come before unknowns.
 			sort.SliceStable(spools, func(i, j int) bool {
@@ -253,7 +297,16 @@ func runFind(cmd *cobra.Command, args []string) error {
 			})
 		}
 
-		foundMsg := fmt.Sprintf(foundFmt, len(spools), name)
+		var foundMsg string
+		if useNear {
+			if name == "*" {
+				foundMsg = fmt.Sprintf("Found %d spools near #%s:\n", len(spools), strings.TrimPrefix(nearHex, "#"))
+			} else {
+				foundMsg = fmt.Sprintf("Found %d spools matching '%s' near #%s:\n", len(spools), name, strings.TrimPrefix(nearHex, "#"))
+			}
+		} else {
+			foundMsg = fmt.Sprintf(foundFmt, len(spools), name)
+		}
 		if len(spools) == 0 {
 			// print in red
 			color.HiRed(foundMsg)
@@ -277,7 +330,32 @@ func runFind(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if hasPrinterLoc && len(spools) > 0 && !lruSort && !mruSort {
+		if useNear && len(spools) > 0 {
+			maxLabel := 0
+			for _, s := range spools {
+				loc := models.Sanitize(s.Location)
+				if loc == "" {
+					loc = "N/A"
+				}
+				if len(loc) > maxLabel {
+					maxLabel = len(loc)
+				}
+			}
+			for _, s := range spools {
+				loc := models.Sanitize(s.Location)
+				if loc == "" {
+					loc = "N/A"
+				}
+				deltaStr := color.New(color.Faint).Sprintf("ΔE %5.1f", deltas[s.Id])
+				boldLabel := color.New(color.Bold).Sprintf("%-*s", maxLabel, loc)
+				fmt.Printf(" %s  %s %s\n", deltaStr, boldLabel, s.StringNoLocation())
+				if showPurchase {
+					fmt.Printf("    %s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+				}
+				totalRemaining += s.RemainingWeight
+				totalUsed += s.UsedWeight
+			}
+		} else if hasPrinterLoc && len(spools) > 0 && !lruSort && !mruSort {
 			// Group spools by location
 			spoolsByLoc := map[string]map[int]models.FindSpool{}
 			locOrder := []string{}
@@ -466,4 +544,6 @@ func init() {
 	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
 	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
 	findCmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
+	findCmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
+	findCmd.Flags().Int("limit", 10, "when --near is set, show only the N nearest results (must be positive)")
 }
