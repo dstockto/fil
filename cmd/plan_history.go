@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,32 +127,68 @@ type daySummary struct {
 }
 
 func printDailySummary(entries []api.HistoryEntry) {
-	days := []daySummary{}
 	dayMap := map[string]*daySummary{}
+	getDay := func(date string) *daySummary {
+		if d, ok := dayMap[date]; ok {
+			return d
+		}
+		d := &daySummary{date: date}
+		dayMap[date] = d
+		return d
+	}
+
+	// Multiple history entries (e.g. a multi-plate batch print) often share
+	// the same wall-clock window on the same printer; merge per-printer
+	// intervals so we don't double-count physical printer time.
+	perPrinter := map[string][]interval{}
+	var unknownPrinter []interval
 
 	for _, e := range entries {
-		ts, _ := time.Parse(time.RFC3339, e.Timestamp)
-		date := ts.Format("2006-01-02")
-
-		if _, ok := dayMap[date]; !ok {
-			s := &daySummary{date: date}
-			dayMap[date] = s
-			days = append(days, *s)
+		completed, err := time.Parse(time.RFC3339, e.Timestamp)
+		if err != nil {
+			continue
+		}
+		completionDay := getDay(completed.Format("2006-01-02"))
+		completionDay.prints++
+		for _, f := range e.Filament {
+			completionDay.filament += f.Amount
 		}
 
-		d := dayMap[date]
-		d.prints++
-		d.duration += calcDuration(e)
-		for _, f := range e.Filament {
-			d.filament += f.Amount
+		started, serr := time.Parse(time.RFC3339, e.StartedAt)
+		if e.StartedAt == "" || serr != nil || !completed.After(started) {
+			continue
+		}
+		iv := interval{start: started, end: completed}
+		if e.Printer == "" {
+			unknownPrinter = append(unknownPrinter, iv)
+		} else {
+			perPrinter[e.Printer] = append(perPrinter[e.Printer], iv)
 		}
 	}
+
+	distribute := func(ivs []interval) {
+		for _, iv := range ivs {
+			for date, dur := range splitDurationByDay(iv.start, iv.end) {
+				getDay(date).duration += dur
+			}
+		}
+	}
+	for _, ivs := range perPrinter {
+		distribute(mergeIntervals(ivs))
+	}
+	distribute(unknownPrinter)
+
+	dates := make([]string, 0, len(dayMap))
+	for d := range dayMap {
+		dates = append(dates, d)
+	}
+	sort.Strings(dates)
 
 	totalPrints := 0
 	var totalDuration time.Duration
 	totalFilament := 0.0
 
-	for _, date := range sortedKeys(dayMap) {
+	for _, date := range dates {
 		d := dayMap[date]
 		fmt.Printf("  %s  %d print(s), %s, %.0fg filament\n",
 			d.date,
@@ -165,6 +202,58 @@ func printDailySummary(entries []api.HistoryEntry) {
 	}
 
 	fmt.Printf("\nTotal: %d prints, %s, %.0fg filament\n", totalPrints, formatDuration(totalDuration), totalFilament)
+}
+
+type interval struct {
+	start, end time.Time
+}
+
+// mergeIntervals collapses overlapping or touching intervals into their union.
+// The input slice is not mutated. Intervals are assumed to have end >= start.
+func mergeIntervals(ivs []interval) []interval {
+	if len(ivs) == 0 {
+		return nil
+	}
+	sorted := make([]interval, len(ivs))
+	copy(sorted, ivs)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].start.Before(sorted[j].start)
+	})
+	merged := []interval{sorted[0]}
+	for _, cur := range sorted[1:] {
+		last := &merged[len(merged)-1]
+		if !cur.start.After(last.end) {
+			if cur.end.After(last.end) {
+				last.end = cur.end
+			}
+		} else {
+			merged = append(merged, cur)
+		}
+	}
+	return merged
+}
+
+// splitDurationByDay distributes the interval [start, end) across local-date
+// buckets, returning the duration that fell within each calendar day. Dates
+// use the start's timezone so the keys align with how entries are bucketed
+// elsewhere in this file.
+func splitDurationByDay(start, end time.Time) map[string]time.Duration {
+	result := map[string]time.Duration{}
+	if !end.After(start) {
+		return result
+	}
+	cursor := start
+	for cursor.Before(end) {
+		y, m, d := cursor.Date()
+		nextMidnight := time.Date(y, m, d, 0, 0, 0, 0, cursor.Location()).AddDate(0, 0, 1)
+		segEnd := nextMidnight
+		if end.Before(segEnd) {
+			segEnd = end
+		}
+		result[cursor.Format("2006-01-02")] += segEnd.Sub(cursor)
+		cursor = segEnd
+	}
+	return result
 }
 
 func calcDuration(e api.HistoryEntry) time.Duration {
@@ -207,22 +296,6 @@ func formatFilamentSummary(filament []api.HistoryFilament) string {
 		total += f.Amount
 	}
 	return fmt.Sprintf("%.0fg", total)
-}
-
-func sortedKeys(m map[string]*daySummary) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	// dates are already in YYYY-MM-DD format, so string sort works
-	for i := 0; i < len(keys)-1; i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[i] > keys[j] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
-	return keys
 }
 
 func init() {
