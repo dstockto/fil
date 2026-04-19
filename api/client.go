@@ -17,6 +17,7 @@ import (
 )
 
 var ErrSpoolNotFound = errors.New("no spool found")
+var ErrFilamentNotFound = errors.New("no filament found")
 
 // SpoolmanInfo is a subset of Spoolman's /api/v1/info response.
 type SpoolmanInfo struct {
@@ -387,6 +388,49 @@ func (c Client) PatchSpool(ctx context.Context, spoolId int, updates map[string]
 
 	if resp.StatusCode == http.StatusNotFound {
 		return ErrSpoolNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+
+		return fmt.Errorf("api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	return nil
+}
+
+// PatchFilament applies the given field updates to a Spoolman filament record.
+// Writes to `color_hex`, `multi_color_hexes`, or custom fields (e.g. `extra.td`)
+// are supported per Spoolman's filament PATCH endpoint.
+func (c Client) PatchFilament(ctx context.Context, filamentId int, updates map[string]any) error {
+	endpoint := fmt.Sprintf(c.base+"/api/v1/filament/%d", filamentId)
+
+	jsonBody, err := json.Marshal(updates)
+	if err != nil {
+		return fmt.Errorf("failed to marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			fmt.Printf("failed to close response body: %v\n", closeErr)
+		}
+	}()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrFilamentNotFound
 	}
 
 	if resp.StatusCode != http.StatusOK {

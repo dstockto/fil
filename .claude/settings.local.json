@@ -18,7 +18,17 @@
       "Bash(/tmp/fil plan:*)",
       "Bash(go mod *)",
       "Bash(./fil find *)",
-      "Bash(./fil plan *)"
+      "Bash(./fil plan *)",
+      "Bash(mempalace mine *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(mempalace mcp *)",
+      "Bash(mempalace status *)",
+      "WebFetch(domain:mempalaceofficial.com)",
+      "Bash(mempalace hook *)",
+      "Bash(mempalace instructions *)",
+      "Bash(gh api *)",
+      "Bash(mkdir -p ~/.mempalace/hooks)",
+      "Read(//Users/davidstockton/.claude/**)"
     ]
   }
 }

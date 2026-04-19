@@ -4,14 +4,17 @@ Copyright © 2025 David Stockton <dave@davidstockton.com>
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/devices"
 	"github.com/dstockto/fil/models"
 	"github.com/fatih/color"
 	"github.com/lucasb-eyer/go-colorful"
@@ -179,10 +182,37 @@ func runFind(cmd *cobra.Command, args []string) error {
 	}
 
 	nearHex, _ := cmd.Flags().GetString("near")
+	useScan, _ := cmd.Flags().GetBool("scan")
 	limit, _ := cmd.Flags().GetInt("limit")
 	var target colorful.Color
 	useNear := nearHex != ""
-	if useNear {
+	if useNear && useScan {
+		return fmt.Errorf("--near and --scan are mutually exclusive")
+	}
+	if useScan {
+		if lruSort || mruSort {
+			return fmt.Errorf("--scan cannot be combined with --lru or --mru")
+		}
+		if limit <= 0 {
+			return fmt.Errorf("--limit must be positive, got %d", limit)
+		}
+		scanned, err := readOneScanForFind(ctx)
+		if err != nil {
+			return err
+		}
+		c, ok := parseHexColor(scanned.Color)
+		if !ok {
+			return fmt.Errorf("scanned color %q is not parseable", scanned.Color)
+		}
+		target = c
+		fmt.Printf("Scanned color: %s %s\n", scanned.Color, models.GetColorBlock(scanned.Color, ""))
+		if scanned.HasTD {
+			fmt.Printf("Scanned TD:    %.2fmm\n", scanned.TD)
+		}
+		fmt.Println()
+		// Re-use the --near code path by marking useNear = true.
+		useNear = true
+	} else if useNear {
 		c, ok := parseHexColor(nearHex)
 		if !ok {
 			return fmt.Errorf("invalid --near color %q; expected hex like #ff5500", nearHex)
@@ -195,7 +225,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 		}
 		target = c
 	} else if cmd.Flags().Changed("limit") {
-		return fmt.Errorf("--limit only applies with --near")
+		return fmt.Errorf("--limit only applies with --near or --scan")
 	}
 
 	for _, a := range args {
@@ -545,5 +575,39 @@ func init() {
 	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
 	findCmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
 	findCmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
-	findCmd.Flags().Int("limit", 10, "when --near is set, show only the N nearest results (must be positive)")
+	findCmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
+	findCmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
+}
+
+// readOneScanForFind opens the TD-1, performs the handshake, reads a single
+// scan, and returns the result. Only used by `fil find --scan`.
+func readOneScanForFind(ctx context.Context) (devices.ScanResult, error) {
+	info, err := devices.Probe(nil)
+	if err != nil {
+		if errors.Is(err, devices.ErrNoDevice) {
+			return devices.ScanResult{}, errors.New("no TD-1 detected — plug it in and try again")
+		}
+		return devices.ScanResult{}, fmt.Errorf("probe TD-1: %w", err)
+	}
+	port, err := devices.Open(info.Path)
+	if err != nil {
+		return devices.ScanResult{}, fmt.Errorf("open TD-1 on %s: %w", info.Path, err)
+	}
+	defer func() { _ = port.Close() }()
+
+	_ = port.WriteLine("connect")
+	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, 2*time.Second)
+	for i := 0; i < 5; i++ {
+		line, rerr := port.ReadLine(handshakeCtx)
+		if rerr != nil {
+			break
+		}
+		if strings.Contains(strings.ToLower(line), "ready") {
+			break
+		}
+	}
+	handshakeCancel()
+
+	fmt.Println("Scanner ready. Press P on the device to scan...")
+	return devices.ReadScan(ctx, port, 10)
 }

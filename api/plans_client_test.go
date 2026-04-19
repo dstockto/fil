@@ -1,6 +1,14 @@
 package api
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestCompareSemver(t *testing.T) {
 	tests := []struct {
@@ -36,5 +44,49 @@ func TestCompareSemver(t *testing.T) {
 		case tt.want == 0 && got != 0:
 			t.Errorf("compareSemver(%q, %q) = %d, want 0", tt.a, tt.b, got)
 		}
+	}
+}
+
+func TestPostScanEvent_Success(t *testing.T) {
+	var got ScanEvent
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/scan-history" {
+			t.Errorf("expected /api/v1/scan-history, got %s", r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewPlanServerClient(srv.URL, "test", false)
+	ev := ScanEvent{
+		Timestamp:  time.Now().UTC(),
+		SpoolID:    127,
+		FilamentID: 42,
+		ScannedHex: "#ead9d4",
+		Action:     "commit",
+	}
+	if err := c.PostScanEvent(context.Background(), ev); err != nil {
+		t.Fatalf("PostScanEvent: %v", err)
+	}
+	if got.Action != "commit" || got.SpoolID != 127 {
+		t.Errorf("server received unexpected event: %+v", got)
+	}
+}
+
+func TestPostScanEvent_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewPlanServerClient(srv.URL, "test", false)
+	err := c.PostScanEvent(context.Background(), ScanEvent{Action: "commit"})
+	if err == nil {
+		t.Fatal("expected error on 500, got nil")
 	}
 }

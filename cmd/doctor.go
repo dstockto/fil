@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/devices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -121,6 +123,11 @@ func runDoctor(ctx context.Context, skip map[string]bool, perCheckTimeout time.D
 		checks = append(checks, mismatchCheck(ctx, perCheckTimeout))
 	}
 
+	// USB devices (TD-1 color scanner).
+	if !skip["devices"] {
+		checks = append(checks, td1DetectCheck())
+	}
+
 	// Merge in server-side checks, tagging so we can tell them apart.
 	if serverReport != nil {
 		for _, c := range serverReport.Checks {
@@ -148,7 +155,8 @@ var clientGroupOrder = map[string]int{
 	"filesystem":    4,
 	"history":       5,
 	"printers":      6,
-	"notifications": 7,
+	"devices":       7,
+	"notifications": 8,
 }
 
 func sortDoctorChecks(checks []api.Check) {
@@ -441,6 +449,36 @@ func mismatchCheck(ctx context.Context, perCheckTimeout time.Duration) api.Check
 
 	c.Status = api.StatusWarn
 	c.Message = fmt.Sprintf("%d mismatch(es) — run: fil verify", len(mismatches))
+	return c
+}
+
+// td1DetectCheck probes for an attached TD-1 color/transmission scanner.
+// The device is optional hardware, so absence is a warn, not a fail.
+func td1DetectCheck() api.Check {
+	start := time.Now()
+	c := api.Check{Group: "devices", Name: "td1_detected"}
+	defer func() { c.DurationMs = time.Since(start).Milliseconds() }()
+
+	info, err := devices.Probe(nil)
+	if err != nil {
+		if errors.Is(err, devices.ErrNoDevice) {
+			c.Status = api.StatusWarn
+			c.Message = "no TD-1 attached (optional)"
+			return c
+		}
+		c.Status = api.StatusFail
+		c.Message = err.Error()
+		return c
+	}
+	c.Status = api.StatusOK
+	c.Message = fmt.Sprintf("TD-1 on %s", info.Path)
+	detail, _ := json.Marshal(map[string]any{
+		"path":   info.Path,
+		"vid":    info.VID,
+		"pid":    info.PID,
+		"serial": info.Serial,
+	})
+	c.Detail = detail
 	return c
 }
 
