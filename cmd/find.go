@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/devices"
@@ -595,19 +594,10 @@ func readOneScanForFind(ctx context.Context) (devices.ScanResult, error) {
 	}
 	defer func() { _ = port.Close() }()
 
-	_ = port.WriteLine("connect")
-	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, 2*time.Second)
-	for i := 0; i < 5; i++ {
-		line, rerr := port.ReadLine(handshakeCtx)
-		if rerr != nil {
-			break
-		}
-		if strings.Contains(strings.ToLower(line), "ready") {
-			break
-		}
+	if err := handshakeTD1(ctx, port); err != nil {
+		return devices.ScanResult{}, fmt.Errorf("TD-1 handshake: %w", err)
 	}
-	handshakeCancel()
 
-	fmt.Println("Scanner ready. Press P on the device to scan...")
+	fmt.Println("Insert a filament sample into the TD-1 to scan...")
 	return devices.ReadScan(ctx, port, 10)
 }

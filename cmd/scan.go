@@ -71,21 +71,9 @@ func runScan(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = port.Close() }()
 
-	// Optional handshake: device may require "connect\n" before scanning. Ignore
-	// errors — the user's setup may not need it, and the scan read below will
-	// fail with a clear message if something's truly wrong.
-	_ = port.WriteLine("connect")
-	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, 2*time.Second)
-	for i := 0; i < 5; i++ {
-		line, rerr := port.ReadLine(handshakeCtx)
-		if rerr != nil {
-			break
-		}
-		if strings.Contains(strings.ToLower(line), "ready") {
-			break
-		}
+	if err := handshakeTD1(ctx, port); err != nil {
+		return fmt.Errorf("TD-1 handshake: %w", err)
 	}
-	handshakeCancel()
 
 	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 	var planClient *api.PlanServerClient
@@ -122,10 +110,47 @@ func runScan(cmd *cobra.Command, _ []string) error {
 	if dryRun {
 		color.HiRed("Dry-run mode — nothing will be written to Spoolman.")
 	}
-	fmt.Println("Press P on the device to scan. Ctrl+C to exit.")
+	fmt.Println("Insert a filament sample into the TD-1 to scan. Ctrl+C to exit.")
 	fmt.Println()
 
 	return s.loop()
+}
+
+// handshakeTD1 performs the connect/ready/P/ack handshake documented in the
+// reference collectDataV1.py script. After this returns successfully the
+// device emits a CSV line each time a filament sample is inserted.
+func handshakeTD1(ctx context.Context, p devices.Port) error {
+	hctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if err := p.WriteLine("connect"); err != nil {
+		return fmt.Errorf("write connect: %w", err)
+	}
+	// Drain up to a handful of lines waiting for "ready". Stray banner text
+	// before the handshake reply is tolerated.
+	ready := false
+	for i := 0; i < 5; i++ {
+		line, err := p.ReadLine(hctx)
+		if err != nil {
+			return fmt.Errorf("wait for ready: %w", err)
+		}
+		if strings.Contains(strings.ToLower(strings.TrimSpace(line)), "ready") {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		return errors.New("device did not respond with 'ready'")
+	}
+
+	if err := p.WriteLine("P"); err != nil {
+		return fmt.Errorf("write P: %w", err)
+	}
+	// Device sends an ack line after P; discard it.
+	if _, err := p.ReadLine(hctx); err != nil {
+		return fmt.Errorf("wait for P ack: %w", err)
+	}
+	return nil
 }
 
 // loop reads scans in a loop, processing each until the user quits or the
