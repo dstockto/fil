@@ -156,6 +156,9 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 
 	if gcodeState, ok := printData["gcode_state"].(string); ok {
 		b.state.State = normalizeState(gcodeState)
+		if b.state.State == "finished" && oldState != "finished" {
+			b.state.LastFinishedAt = time.Now()
+		}
 	}
 
 	if pct, ok := printData["mc_percent"].(float64); ok {

@@ -23,7 +23,8 @@ type HistoryFilament struct {
 
 // HistoryEntry records a single plate completion event.
 type HistoryEntry struct {
-	Timestamp         string            `json:"timestamp"`
+	Timestamp         string            `json:"timestamp"`              // when fil recorded the entry (save-time)
+	FinishedAt        string            `json:"finished_at,omitempty"`  // when the printer reported FINISH; empty when no live printer data was available
 	Plan              string            `json:"plan"`
 	Project           string            `json:"project"`
 	Plate             string            `json:"plate"`
@@ -92,8 +93,16 @@ func (s *PlanServer) logCompletions(planName string, oldPlan, newPlan *models.Pl
 				})
 			}
 
+			finishedAt := ""
+			if printer != "" && s.Printers != nil {
+				if t, ok := s.Printers.LastFinishedAt(printer); ok {
+					finishedAt = t.Format(time.RFC3339)
+				}
+			}
+
 			entries = append(entries, HistoryEntry{
 				Timestamp:         time.Now().Format(time.RFC3339),
+				FinishedAt:        finishedAt,
 				Plan:              planName,
 				Project:           proj.Name,
 				Plate:             plate.Name,

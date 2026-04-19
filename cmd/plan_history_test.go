@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/dstockto/fil/api"
 )
 
 func TestSplitDurationByDay(t *testing.T) {
@@ -184,5 +186,68 @@ func TestMergeIntervals(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCompletionTimePrefersFinishedAt(t *testing.T) {
+	finished := "2026-04-18T14:30:00Z"
+	saved := "2026-04-18T18:45:00Z"
+
+	tests := []struct {
+		name string
+		e    api.HistoryEntry
+		want string
+	}{
+		{
+			name: "uses FinishedAt when present",
+			e:    api.HistoryEntry{Timestamp: saved, FinishedAt: finished},
+			want: finished,
+		},
+		{
+			name: "falls back to Timestamp when FinishedAt empty",
+			e:    api.HistoryEntry{Timestamp: saved},
+			want: saved,
+		},
+		{
+			name: "falls back to Timestamp when FinishedAt is whitespace-equivalent empty",
+			e:    api.HistoryEntry{Timestamp: saved, FinishedAt: ""},
+			want: saved,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := completionTime(tt.e)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			want, _ := time.Parse(time.RFC3339, tt.want)
+			if !got.Equal(want) {
+				t.Errorf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestCalcDurationUsesFinishedAt(t *testing.T) {
+	// Print actually finished at 12:00 (printer-reported); user ran `fil p c`
+	// 4 hours later at 16:00 (save-time). Duration should reflect 12:00, not 16:00.
+	e := api.HistoryEntry{
+		StartedAt:  "2026-04-18T08:00:00Z",
+		FinishedAt: "2026-04-18T12:00:00Z",
+		Timestamp:  "2026-04-18T16:00:00Z",
+	}
+	got := calcDuration(e)
+	want := 4 * time.Hour
+	if got != want {
+		t.Errorf("with FinishedAt: got %v, want %v", got, want)
+	}
+
+	// Without FinishedAt, falls back to Timestamp = 16:00, so duration is 8h.
+	e.FinishedAt = ""
+	got = calcDuration(e)
+	want = 8 * time.Hour
+	if got != want {
+		t.Errorf("fallback to Timestamp: got %v, want %v", got, want)
 	}
 }

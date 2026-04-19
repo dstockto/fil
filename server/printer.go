@@ -17,6 +17,13 @@ type PrinterState struct {
 	TotalLayers   int        `json:"total_layers,omitempty"`
 	ActiveTray    int        `json:"active_tray,omitempty"`    // active AMS tray index (-1 if unknown)
 	LastUpdated   time.Time  `json:"last_updated"`
+	// LastFinishedAt records the most recent moment this printer transitioned
+	// into the "finished" state. Used by history logging so a print's wall-clock
+	// finish time reflects when the printer actually finished, not when the user
+	// later ran `fil p c`. Stays valid (non-zero) until the next FINISH overwrites
+	// it; intentionally not cleared on RUNNING/IDLE transitions so a stale value
+	// remains usable if the user clears the bed before completing in fil.
+	LastFinishedAt time.Time  `json:"last_finished_at,omitzero"`
 	Trays         []TrayInfo `json:"trays,omitempty"`
 }
 

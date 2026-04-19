@@ -504,13 +504,14 @@ type TrayPushRequest struct {
 
 // HistoryEntry represents a completed plate from the print history.
 type HistoryEntry struct {
-	Timestamp         string           `json:"timestamp"`
-	Plan              string           `json:"plan"`
-	Project           string           `json:"project"`
-	Plate             string           `json:"plate"`
-	Printer           string           `json:"printer,omitempty"`
-	StartedAt         string           `json:"started_at,omitempty"`
-	EstimatedDuration string           `json:"estimated_duration,omitempty"`
+	Timestamp         string            `json:"timestamp"`
+	FinishedAt        string            `json:"finished_at,omitempty"`
+	Plan              string            `json:"plan"`
+	Project           string            `json:"project"`
+	Plate             string            `json:"plate"`
+	Printer           string            `json:"printer,omitempty"`
+	StartedAt         string            `json:"started_at,omitempty"`
+	EstimatedDuration string            `json:"estimated_duration,omitempty"`
 	Filament          []HistoryFilament `json:"filament,omitempty"`
 }
 

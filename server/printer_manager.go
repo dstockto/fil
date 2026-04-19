@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // PrinterManager manages connections to all configured printers.
@@ -80,4 +81,21 @@ func (pm *PrinterManager) Adapter(name string) (PrinterAdapter, bool) {
 	defer pm.mu.RUnlock()
 	a, ok := pm.adapters[name]
 	return a, ok
+}
+
+// LastFinishedAt returns the most recent time the named printer transitioned
+// into the "finished" state. The boolean is false if the printer is unknown
+// or has no recorded finish time yet.
+func (pm *PrinterManager) LastFinishedAt(name string) (time.Time, bool) {
+	pm.mu.RLock()
+	adapter, ok := pm.adapters[name]
+	pm.mu.RUnlock()
+	if !ok {
+		return time.Time{}, false
+	}
+	t := adapter.Status().LastFinishedAt
+	if t.IsZero() {
+		return time.Time{}, false
+	}
+	return t, true
 }

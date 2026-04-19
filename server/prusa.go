@@ -100,16 +100,7 @@ func (p *PrusaAdapter) poll() error {
 		return err
 	}
 
-	p.mu.Lock()
-	oldState := p.state.State
-	p.state.LastUpdated = time.Now()
-
-	if printerData, ok := status["printer"].(map[string]interface{}); ok {
-		if state, ok := printerData["state"].(string); ok {
-			p.state.State = normalizePrusaState(state)
-		}
-	}
-	p.mu.Unlock()
+	oldState := p.applyStatusUpdate(status)
 
 	// Fetch job info if printing
 	if p.state.State == "printing" || p.state.State == "paused" {
@@ -149,6 +140,25 @@ func (p *PrusaAdapter) poll() error {
 	}
 
 	return nil
+}
+
+// applyStatusUpdate updates the printer state from a parsed /api/v1/status
+// response and returns the previous state for callback comparison. Extracted
+// from poll() so the FINISH-transition logic is testable without HTTP mocks.
+func (p *PrusaAdapter) applyStatusUpdate(status map[string]interface{}) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	oldState := p.state.State
+	p.state.LastUpdated = time.Now()
+	if printerData, ok := status["printer"].(map[string]interface{}); ok {
+		if state, ok := printerData["state"].(string); ok {
+			p.state.State = normalizePrusaState(state)
+			if p.state.State == "finished" && oldState != "finished" {
+				p.state.LastFinishedAt = time.Now()
+			}
+		}
+	}
+	return oldState
 }
 
 func (p *PrusaAdapter) fetchStatus() (map[string]interface{}, error) {

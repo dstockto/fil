@@ -74,7 +74,7 @@ func printDetailedHistory(entries []api.HistoryEntry, verbose bool) {
 	totalFilament := 0.0
 
 	for _, e := range entries {
-		ts, _ := time.Parse(time.RFC3339, e.Timestamp)
+		ts, _ := completionTime(e)
 		date := ts.Format("2006-01-02")
 
 		dur := calcDuration(e)
@@ -144,7 +144,7 @@ func printDailySummary(entries []api.HistoryEntry) {
 	var unknownPrinter []interval
 
 	for _, e := range entries {
-		completed, err := time.Parse(time.RFC3339, e.Timestamp)
+		completed, err := completionTime(e)
 		if err != nil {
 			continue
 		}
@@ -256,15 +256,27 @@ func splitDurationByDay(start, end time.Time) map[string]time.Duration {
 	return result
 }
 
+// completionTime returns the time the print actually finished. Prefers the
+// printer-reported FinishedAt (recorded by the live printer connection on
+// FINISH transition) and falls back to Timestamp (the moment fil saved the
+// entry) for entries that predate that field or were logged with no live
+// printer data available.
+func completionTime(e api.HistoryEntry) (time.Time, error) {
+	if e.FinishedAt != "" {
+		return time.Parse(time.RFC3339, e.FinishedAt)
+	}
+	return time.Parse(time.RFC3339, e.Timestamp)
+}
+
 func calcDuration(e api.HistoryEntry) time.Duration {
-	if e.StartedAt == "" || e.Timestamp == "" {
+	if e.StartedAt == "" {
 		return 0
 	}
 	started, err := time.Parse(time.RFC3339, e.StartedAt)
 	if err != nil {
 		return 0
 	}
-	completed, err := time.Parse(time.RFC3339, e.Timestamp)
+	completed, err := completionTime(e)
 	if err != nil {
 		return 0
 	}
