@@ -33,6 +33,7 @@ var scanCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(scanCmd)
 	scanCmd.Flags().BoolP("dry-run", "d", false, "scan and display but never write to Spoolman")
+	scanCmd.Flags().Bool("raw", false, "diagnostic: dump each line from the TD-1 verbatim (no parsing, no writes)")
 }
 
 // scanSession holds state that persists across scan iterations.
@@ -55,6 +56,7 @@ func runScan(cmd *cobra.Command, _ []string) error {
 	}
 
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	rawMode, _ := cmd.Flags().GetBool("raw")
 	ctx := cmd.Context()
 
 	info, err := devices.Probe(nil)
@@ -73,6 +75,21 @@ func runScan(cmd *cobra.Command, _ []string) error {
 
 	if err := handshakeTD1(ctx, port); err != nil {
 		return fmt.Errorf("TD-1 handshake: %w", err)
+	}
+
+	if rawMode {
+		fmt.Println("Raw mode — dumping each line from the TD-1 verbatim. Ctrl+C to exit.")
+		fmt.Println()
+		for {
+			line, err := port.ReadLine(ctx)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("read line: %w", err)
+			}
+			fmt.Printf("  %q\n", line)
+		}
 	}
 
 	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
@@ -157,7 +174,9 @@ func handshakeTD1(ctx context.Context, p devices.Port) error {
 // context is cancelled.
 func (s *scanSession) loop() error {
 	for {
-		result, err := devices.ReadScan(s.ctx, s.port, 10)
+		// 0 = drain unlimited non-scan lines (display commands, banners, etc).
+		// Context cancellation (Ctrl+C) is the only way to stop waiting.
+		result, err := devices.ReadScan(s.ctx, s.port, 0)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil

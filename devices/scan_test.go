@@ -15,13 +15,37 @@ func TestParseCSV(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "plain well-formed",
+			name: "plain well-formed 8 fields",
 			in:   "scan001,PolyTerra,PLA,Cotton White,2.47,EAD9D4,Yes,abc-123",
 			want: ScanResult{
 				UID: "scan001", Brand: "PolyTerra", Type: "PLA", Name: "Cotton White",
 				TD: 2.47, HasTD: true, Color: "#ead9d4", Owned: "Yes", UUID: "abc-123",
 				RawCSV: "scan001,PolyTerra,PLA,Cotton White,2.47,EAD9D4,Yes,abc-123",
 			},
+		},
+		{
+			// Real-world format observed from the TD-1 for an unrecognized
+			// filament: 6 fields, Brand/Type/Name blank, no Owned/Uuid.
+			name: "six-field unrecognized filament",
+			in:   "17253504890,,,,0.3,83EAFA",
+			want: ScanResult{
+				UID: "17253504890",
+				TD:  0.3, HasTD: true, Color: "#83eafa",
+				RawCSV: "17253504890,,,,0.3,83EAFA",
+			},
+		},
+		{
+			// Device drives its own LCD with "display, ..." commands on the
+			// same serial stream — these must be silently drained, not
+			// surfaced as broken scans.
+			name:    "display command line is not a scan",
+			in:      "display, Insert Filament, 18, 16",
+			wantErr: ErrNotCSV,
+		},
+		{
+			name:    "clearScreen command is not a scan",
+			in:      "clearScreen",
+			wantErr: ErrNotCSV,
 		},
 		{
 			name: "parens wrapped on some fields",
@@ -70,24 +94,32 @@ func TestParseCSV(t *testing.T) {
 			wantErr: ErrNotCSV,
 		},
 		{
-			name:    "seven fields",
-			in:      "a,b,c,d,1.0,ffffff,Yes",
+			// Seven-field scan: Owned present, Uuid absent — valid, parsed.
+			name: "seven-field scan",
+			in:   "a,b,c,d,1.0,ffffff,Yes",
+			want: ScanResult{
+				UID: "a", Brand: "b", Type: "c", Name: "d",
+				TD: 1.0, HasTD: true, Color: "#ffffff", Owned: "Yes",
+				RawCSV: "a,b,c,d,1.0,ffffff,Yes",
+			},
+		},
+		{
+			name:    "fewer than six fields",
+			in:      "a,b,c,d,1.0",
 			wantErr: ErrNotCSV,
 		},
 		{
-			name:    "bad TD",
+			// TD-shaped field is numeric but color is malformed → not a scan
+			// (rather than ErrBadColor) because the color field is how we
+			// distinguish scan lines from other CSV-shaped noise on the line.
+			name:    "malformed color classified as not-a-scan",
+			in:      "scan,X,PLA,Y,1.0,fff,Yes,u",
+			wantErr: ErrNotCSV,
+		},
+		{
+			name:    "bad TD surfaces on an otherwise valid scan",
 			in:      "scan,X,PLA,Y,notanum,ffffff,Yes,u",
 			wantErr: ErrBadTD,
-		},
-		{
-			name:    "bad color (too short)",
-			in:      "scan,X,PLA,Y,1.0,fff,Yes,u",
-			wantErr: ErrBadColor,
-		},
-		{
-			name:    "bad color (non-hex chars)",
-			in:      "scan,X,PLA,Y,1.0,zzzzzz,Yes,u",
-			wantErr: ErrBadColor,
 		},
 	}
 
@@ -176,15 +208,36 @@ func TestReadScan_MaxDrainExceeded(t *testing.T) {
 }
 
 func TestReadScan_BrokenScanSurfaces(t *testing.T) {
-	// If we get a line that's CSV-shaped but has a bad color, surface it
-	// rather than draining it (user should see the error).
+	// A line that parses as a scan (valid 6-hex color) but has a non-numeric
+	// TD should be surfaced to the caller rather than drained silently — bad
+	// measurement data is worth showing the user.
 	p := &scriptedPort{lines: []string{
 		"ready",
-		"scan1,X,PLA,Y,1.5,notahex,Yes,u",
+		"scan1,X,PLA,Y,notanum,abcdef,Yes,u",
 		"scan2,X,PLA,Y,1.5,abcdef,Yes,u",
 	}}
 	_, err := ReadScan(context.Background(), p, 10)
-	if !errors.Is(err, ErrBadColor) {
-		t.Fatalf("expected ErrBadColor to surface, got %v", err)
+	if !errors.Is(err, ErrBadTD) {
+		t.Fatalf("expected ErrBadTD to surface, got %v", err)
+	}
+}
+
+func TestReadScan_DrainsDisplayCommands(t *testing.T) {
+	// Real-world stream from the TD-1: "display" UI commands interleaved
+	// with a single scan line. The drain should eat every "display" line
+	// and return the scan.
+	p := &scriptedPort{lines: []string{
+		"clearScreen",
+		"display, Insert Filament, 18, 16",
+		"display, TD:, 50, 5",
+		"display, Scanning, 74, 20",
+		"17253504890,,,,0.3,83EAFA",
+	}}
+	res, err := ReadScan(context.Background(), p, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Color != "#83eafa" || res.TD != 0.3 {
+		t.Fatalf("wrong scan parsed: %+v", res)
 	}
 }

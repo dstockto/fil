@@ -37,10 +37,15 @@ type ScanResult struct {
 
 var hexRe = regexp.MustCompile(`^[0-9A-Fa-f]{6}$`)
 
-// ParseCSV parses one line of TD-1 CSV output. Returns ErrNotCSV if the line
-// is not a well-formed 8-field CSV row (so callers can drain boot banners or
-// stray prompts). Returns ErrBadColor / ErrBadTD if the line parses as CSV
-// but one of the critical fields is unusable.
+// ParseCSV parses one line of TD-1 CSV output. Scans look like
+//
+//	uid,Brand,Type,Name,TD,Color[,Owned,Uuid]
+//
+// — 6 to 8 fields. Owned/Uuid may be absent for unrecognized filaments.
+// Returns ErrNotCSV when the line is not scan-shaped at all (boot banner,
+// "display, ..." UI commands, blank lines — all common noise from the TD-1).
+// Returns ErrBadColor / ErrBadTD when the line looks like a scan but a
+// required field is unusable.
 func ParseCSV(line string) (ScanResult, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -52,12 +57,19 @@ func ParseCSV(line string) (ScanResult, error) {
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("%w: %v", ErrNotCSV, err)
 	}
-	if len(fields) != 8 {
-		return ScanResult{}, fmt.Errorf("%w: got %d fields, want 8", ErrNotCSV, len(fields))
+	if len(fields) < 6 {
+		return ScanResult{}, fmt.Errorf("%w: got %d fields, want >=6", ErrNotCSV, len(fields))
 	}
 
 	for i := range fields {
 		fields[i] = stripParens(strings.TrimSpace(fields[i]))
+	}
+
+	// Guard against "display, ..." lines that happen to have 6+ fields: the
+	// color field must look like hex-6, otherwise we don't treat this as a scan.
+	colorStr := strings.TrimPrefix(fields[5], "#")
+	if !hexRe.MatchString(colorStr) {
+		return ScanResult{}, fmt.Errorf("%w: color field %q is not hex", ErrNotCSV, fields[5])
 	}
 
 	res := ScanResult{
@@ -65,9 +77,13 @@ func ParseCSV(line string) (ScanResult, error) {
 		Brand:  fields[1],
 		Type:   fields[2],
 		Name:   fields[3],
-		Owned:  fields[6],
-		UUID:   fields[7],
 		RawCSV: line,
+	}
+	if len(fields) >= 7 {
+		res.Owned = fields[6]
+	}
+	if len(fields) >= 8 {
+		res.UUID = fields[7]
 	}
 
 	if tdStr := fields[4]; tdStr != "" {
@@ -79,12 +95,7 @@ func ParseCSV(line string) (ScanResult, error) {
 		res.HasTD = true
 	}
 
-	colorStr := strings.TrimPrefix(fields[5], "#")
-	if !hexRe.MatchString(colorStr) {
-		return res, fmt.Errorf("%w: %q", ErrBadColor, fields[5])
-	}
 	res.Color = "#" + strings.ToLower(colorStr)
-
 	return res, nil
 }
 
@@ -98,30 +109,27 @@ func stripParens(s string) string {
 }
 
 // ReadScan reads lines from the port until a parseable scan line appears or
-// an unrecoverable error occurs. Boot banners and other non-CSV lines are
-// silently drained up to maxDrain attempts. The final parsed result's RawCSV
-// contains only the winning line; drained lines are discarded.
+// an unrecoverable error occurs. Non-scan noise (TD-1 "display" UI commands,
+// boot banners, blank lines) is silently drained; the context is the only
+// way to stop waiting for a scan. If maxDrain is > 0 it caps the number of
+// non-scan lines tolerated (primarily useful for tests); 0 means unlimited.
 func ReadScan(ctx context.Context, p Port, maxDrain int) (ScanResult, error) {
-	if maxDrain <= 0 {
-		maxDrain = 10
-	}
-	var lastErr error
-	for i := 0; i < maxDrain; i++ {
+	drained := 0
+	for {
 		line, err := p.ReadLine(ctx)
 		if err != nil {
 			return ScanResult{}, fmt.Errorf("read line: %w", err)
 		}
 		res, err := ParseCSV(line)
 		if errors.Is(err, ErrNotCSV) {
-			lastErr = err
+			drained++
+			if maxDrain > 0 && drained >= maxDrain {
+				return ScanResult{}, fmt.Errorf("no scan line after %d non-scan lines: %w", maxDrain, err)
+			}
 			continue
 		}
-		// Any other error (bad TD / bad color) means we got a scan line but
-		// it was broken — surface to caller instead of draining further.
+		// Any other error (bad TD / bad color) means we got a scan-shaped line
+		// but it was broken — surface to caller instead of draining further.
 		return res, err
 	}
-	if lastErr == nil {
-		lastErr = ErrNotCSV
-	}
-	return ScanResult{}, fmt.Errorf("no scan line after %d attempts: %w", maxDrain, lastErr)
 }

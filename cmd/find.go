@@ -599,5 +599,5 @@ func readOneScanForFind(ctx context.Context) (devices.ScanResult, error) {
 	}
 
 	fmt.Println("Insert a filament sample into the TD-1 to scan...")
-	return devices.ReadScan(ctx, port, 10)
+	return devices.ReadScan(ctx, port, 0)
 }
