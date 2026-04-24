@@ -65,6 +65,69 @@ func TestMergeInto(t *testing.T) {
 	}
 }
 
+func TestMergeIntoNotificationsMerges(t *testing.T) {
+	// Shared config layer (loaded first): voicemonkey set.
+	// Local config layer (loaded second): only pushover set.
+	// The bug was that local's Notifications replaced the whole object,
+	// wiping voicemonkey. After the fix, both should survive.
+	dst := &Config{
+		Notifications: &NotificationConfig{
+			VoiceMonkeyToken:  "shared-token",
+			VoiceMonkeyDevice: "Office Echo",
+		},
+	}
+	src := &Config{
+		Notifications: &NotificationConfig{
+			PushoverAPIKey:  "local-api",
+			PushoverUserKey: "local-user",
+		},
+	}
+
+	mergeInto(dst, src)
+
+	if dst.Notifications.VoiceMonkeyToken != "shared-token" {
+		t.Errorf("VoiceMonkeyToken wiped by local merge: got %q", dst.Notifications.VoiceMonkeyToken)
+	}
+	if dst.Notifications.VoiceMonkeyDevice != "Office Echo" {
+		t.Errorf("VoiceMonkeyDevice wiped by local merge: got %q", dst.Notifications.VoiceMonkeyDevice)
+	}
+	if dst.Notifications.PushoverAPIKey != "local-api" {
+		t.Errorf("PushoverAPIKey not merged in: got %q", dst.Notifications.PushoverAPIKey)
+	}
+	if dst.Notifications.PushoverUserKey != "local-user" {
+		t.Errorf("PushoverUserKey not merged in: got %q", dst.Notifications.PushoverUserKey)
+	}
+}
+
+func TestMergeIntoNotificationsLaterOverrides(t *testing.T) {
+	// When both layers set the same field, later wins (the documented semantics).
+	dst := &Config{
+		Notifications: &NotificationConfig{
+			PushoverAPIKey: "shared-key",
+			QuietStart:     "22:00",
+			QuietEnd:       "07:00",
+		},
+	}
+	src := &Config{
+		Notifications: &NotificationConfig{
+			PushoverAPIKey: "local-key",
+			QuietStart:     "23:00",
+		},
+	}
+
+	mergeInto(dst, src)
+
+	if dst.Notifications.PushoverAPIKey != "local-key" {
+		t.Errorf("PushoverAPIKey = %q, want local-key", dst.Notifications.PushoverAPIKey)
+	}
+	if dst.Notifications.QuietStart != "23:00" {
+		t.Errorf("QuietStart = %q, want 23:00", dst.Notifications.QuietStart)
+	}
+	if dst.Notifications.QuietEnd != "07:00" {
+		t.Errorf("QuietEnd wiped when local didn't set it: got %q", dst.Notifications.QuietEnd)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "fil-test")
 	if err != nil {

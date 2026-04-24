@@ -336,6 +336,40 @@ func mergeInto(dst, src *Config) {
 	}
 
 	if src.Notifications != nil {
-		dst.Notifications = src.Notifications
+		if dst.Notifications == nil {
+			dst.Notifications = &NotificationConfig{}
+		}
+		mergeNotifications(dst.Notifications, src.Notifications)
+	}
+}
+
+// mergeNotifications copies non-empty fields from src into dst. Avoids the
+// whole-object replacement that would wipe fields set in an earlier layer
+// (e.g. Voice Monkey in shared config lost to a local config.json that only
+// sets Pushover).
+func mergeNotifications(dst, src *NotificationConfig) {
+	if src.PushoverAPIKey != "" {
+		dst.PushoverAPIKey = src.PushoverAPIKey
+	}
+	if src.PushoverUserKey != "" {
+		dst.PushoverUserKey = src.PushoverUserKey
+	}
+	if src.NtfyTopic != "" {
+		dst.NtfyTopic = src.NtfyTopic
+	}
+	if src.NtfyServer != "" {
+		dst.NtfyServer = src.NtfyServer
+	}
+	if src.VoiceMonkeyToken != "" {
+		dst.VoiceMonkeyToken = src.VoiceMonkeyToken
+	}
+	if src.VoiceMonkeyDevice != "" {
+		dst.VoiceMonkeyDevice = src.VoiceMonkeyDevice
+	}
+	if src.QuietStart != "" {
+		dst.QuietStart = src.QuietStart
+	}
+	if src.QuietEnd != "" {
+		dst.QuietEnd = src.QuietEnd
 	}
 }
