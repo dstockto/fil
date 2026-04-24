@@ -111,12 +111,14 @@ var serveCmd = &cobra.Command{
 		// Start ETA notification watcher if notifications are configured
 		if Cfg.Notifications != nil {
 			notifyCfg := server.NotificationConfig{
-				PushoverAPIKey:  Cfg.Notifications.PushoverAPIKey,
-				PushoverUserKey: Cfg.Notifications.PushoverUserKey,
-				NtfyTopic:       Cfg.Notifications.NtfyTopic,
-				NtfyServer:      Cfg.Notifications.NtfyServer,
-				QuietStart:      Cfg.Notifications.QuietStart,
-				QuietEnd:        Cfg.Notifications.QuietEnd,
+				PushoverAPIKey:    Cfg.Notifications.PushoverAPIKey,
+				PushoverUserKey:   Cfg.Notifications.PushoverUserKey,
+				NtfyTopic:         Cfg.Notifications.NtfyTopic,
+				NtfyServer:        Cfg.Notifications.NtfyServer,
+				VoiceMonkeyToken:  Cfg.Notifications.VoiceMonkeyToken,
+				VoiceMonkeyDevice: Cfg.Notifications.VoiceMonkeyDevice,
+				QuietStart:        Cfg.Notifications.QuietStart,
+				QuietEnd:          Cfg.Notifications.QuietEnd,
 			}
 			notifier := server.NewNotifier(notifyCfg)
 			s.Notifier = notifier
@@ -143,14 +145,16 @@ var serveCmd = &cobra.Command{
 								plateInfo = fmt.Sprintf("%s / %s", projName, plateName)
 							}
 
-							var title, msg string
+							var title, msg, speech string
 							switch event.NewState {
 							case "finished":
 								title = "Print finished"
 								if plateInfo != "" {
 									msg = fmt.Sprintf("%s: %s — print finished", printerName, plateInfo)
+									speech = fmt.Sprintf("%s finished %s", printerName, plateInfo)
 								} else {
 									msg = fmt.Sprintf("%s: print finished", printerName)
+									speech = fmt.Sprintf("%s finished a print", printerName)
 								}
 							case "paused":
 								isUpdate := event.OldState == "paused"
@@ -175,6 +179,7 @@ var serveCmd = &cobra.Command{
 									} else {
 										msg = fmt.Sprintf("%s: paused by printer, check it", printerName)
 									}
+									speech = fmt.Sprintf("%s paused, check the printer", printerName)
 								}
 								// Log HMS codes and include description in notification
 								if len(event.HMSCodes) > 0 {
@@ -197,8 +202,10 @@ var serveCmd = &cobra.Command{
 								title = "Print failed"
 								if plateInfo != "" {
 									msg = fmt.Sprintf("%s: %s — print failed", printerName, plateInfo)
+									speech = fmt.Sprintf("%s failed while printing %s", printerName, plateInfo)
 								} else {
 									msg = fmt.Sprintf("%s: print failed", printerName)
+									speech = fmt.Sprintf("A print failed on %s", printerName)
 								}
 								if len(event.HMSCodes) > 0 {
 									var codes []string
@@ -223,6 +230,11 @@ var serveCmd = &cobra.Command{
 								return
 							}
 							notifier.Send(title, msg)
+							if speech != "" {
+								if err := notifier.Speak(speech); err != nil {
+									fmt.Printf("[notify] voice monkey: %v\n", err)
+								}
+							}
 						})
 					}
 				}

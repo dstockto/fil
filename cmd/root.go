@@ -26,12 +26,14 @@ type LocationCapacity struct {
 }
 
 type NotificationConfig struct {
-	PushoverAPIKey  string `json:"pushover_api_key,omitempty"`
-	PushoverUserKey string `json:"pushover_user_key,omitempty"`
-	NtfyTopic       string `json:"ntfy_topic,omitempty"`
-	NtfyServer      string `json:"ntfy_server,omitempty"` // defaults to https://ntfy.sh
-	QuietStart      string `json:"quiet_start,omitempty"` // e.g. "22:00"
-	QuietEnd        string `json:"quiet_end,omitempty"`   // e.g. "07:00"
+	PushoverAPIKey    string `json:"pushover_api_key,omitempty"`
+	PushoverUserKey   string `json:"pushover_user_key,omitempty"`
+	NtfyTopic         string `json:"ntfy_topic,omitempty"`
+	NtfyServer        string `json:"ntfy_server,omitempty"` // defaults to https://ntfy.sh
+	VoiceMonkeyToken  string `json:"voicemonkey_token,omitempty"`
+	VoiceMonkeyDevice string `json:"voicemonkey_device,omitempty"`
+	QuietStart        string `json:"quiet_start,omitempty"` // e.g. "22:00"
+	QuietEnd          string `json:"quiet_end,omitempty"`   // e.g. "07:00"
 }
 
 type PrinterConfig struct {

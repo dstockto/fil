@@ -73,7 +73,7 @@ func (s *PlanServer) RunHealthChecks(ctx context.Context) *api.HealthReport {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		add(s.notificationCheck())
+		add(s.notificationChecks()...)
 	}()
 
 	wg.Wait()
@@ -397,8 +397,14 @@ func lastHistoryTimestamp(path string) (string, int) {
 	return last, count
 }
 
-// notificationCheck validates Pushover credentials if configured.
-func (s *PlanServer) notificationCheck() api.Check {
+// notificationChecks validates each configured notification channel.
+// Currently: Pushover (API-validated), Voice Monkey (presence-only — no
+// silent validate endpoint to avoid waking Alexa on every doctor run).
+func (s *PlanServer) notificationChecks() []api.Check {
+	return []api.Check{s.pushoverCheck(), s.voiceMonkeyCheck()}
+}
+
+func (s *PlanServer) pushoverCheck() api.Check {
 	start := time.Now()
 	c := api.Check{
 		Group: "notifications",
@@ -415,7 +421,6 @@ func (s *PlanServer) notificationCheck() api.Check {
 	}
 
 	if err := s.Notifier.ValidatePushover(); err != nil {
-		// Distinguish "not configured" from "rejected"
 		if err.Error() == "pushover credentials not configured" {
 			c.Status = api.StatusSkip
 			c.Message = "not configured"
@@ -428,6 +433,33 @@ func (s *PlanServer) notificationCheck() api.Check {
 
 	c.Status = api.StatusOK
 	c.Message = "credentials valid"
+	return c
+}
+
+func (s *PlanServer) voiceMonkeyCheck() api.Check {
+	start := time.Now()
+	c := api.Check{
+		Group: "notifications",
+		Name:  "voicemonkey",
+	}
+	defer func() {
+		c.DurationMs = time.Since(start).Milliseconds()
+	}()
+
+	if s.Notifier == nil {
+		c.Status = api.StatusSkip
+		c.Message = "not configured"
+		return c
+	}
+
+	if err := s.Notifier.ValidateVoiceMonkey(); err != nil {
+		c.Status = api.StatusSkip
+		c.Message = "not configured"
+		return c
+	}
+
+	c.Status = api.StatusOK
+	c.Message = "token and device configured"
 	return c
 }
 

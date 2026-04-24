@@ -541,6 +541,53 @@ func (c *PlanServerClient) PostScanEvent(ctx context.Context, ev ScanEvent) erro
 	return nil
 }
 
+// NotifyTestResult mirrors the server's result for a test-notification request.
+type NotifyTestResult struct {
+	Message    string            `json:"message"`
+	QuietHours bool              `json:"quiet_hours"`
+	Forced     bool              `json:"forced"`
+	Channels   map[string]string `json:"channels"`
+}
+
+// TestNotify POSTs to the server's /notify/test endpoint, firing every
+// configured notification channel with a canned message. Returns per-channel
+// outcomes so the CLI can print which channels succeeded, skipped, or failed.
+func (c *PlanServerClient) TestNotify(ctx context.Context, message string, force bool) (*NotifyTestResult, error) {
+	endpoint := c.base + "/api/v1/notify/test"
+	payload := map[string]any{}
+	if message != "" {
+		payload["message"] = message
+	}
+	if force {
+		payload["force"] = true
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plan server request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var result NotifyTestResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return &result, nil
+}
+
 // TrayPushRequest is the payload for pushing filament metadata to a printer tray.
 type TrayPushRequest struct {
 	AmsID   int    `json:"ams_id"`

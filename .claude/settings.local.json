@@ -28,7 +28,11 @@
       "Bash(mempalace instructions *)",
       "Bash(gh api *)",
       "Bash(mkdir -p ~/.mempalace/hooks)",
-      "Read(//Users/davidstockton/.claude/**)"
+      "Read(//Users/davidstockton/.claude/**)",
+      "Read(//Users/davidstockton/Projects/go/**)",
+      "Read(//Users/davidstockton/**)",
+      "Bash(./voicemonkey-play --help)",
+      "Bash(./voicemonkey-play say *)"
     ]
   }
 }

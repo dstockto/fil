@@ -10,15 +10,18 @@ import (
 
 // NotificationConfig mirrors cmd.NotificationConfig for use in the server package.
 type NotificationConfig struct {
-	PushoverAPIKey  string
-	PushoverUserKey string
-	NtfyTopic       string
-	NtfyServer      string // defaults to https://ntfy.sh
-	QuietStart      string // e.g. "22:00"
-	QuietEnd        string // e.g. "07:00"
+	PushoverAPIKey    string
+	PushoverUserKey   string
+	NtfyTopic         string
+	NtfyServer        string // defaults to https://ntfy.sh
+	VoiceMonkeyToken  string
+	VoiceMonkeyDevice string
+	VoiceMonkeyURL    string // defaults to https://api-v2.voicemonkey.io
+	QuietStart        string // e.g. "22:00"
+	QuietEnd          string // e.g. "07:00"
 }
 
-// Notifier sends notifications via configured channels (Pushover, ntfy).
+// Notifier sends notifications via configured channels (Pushover, ntfy, Voice Monkey).
 type Notifier struct {
 	config NotificationConfig
 }
@@ -31,7 +34,13 @@ func NewNotifier(cfg NotificationConfig) *Notifier {
 // Enabled returns true if at least one notification channel is configured.
 func (n *Notifier) Enabled() bool {
 	return (n.config.PushoverAPIKey != "" && n.config.PushoverUserKey != "") ||
-		n.config.NtfyTopic != ""
+		n.config.NtfyTopic != "" ||
+		n.voiceMonkeyEnabled()
+}
+
+// voiceMonkeyEnabled returns true if Voice Monkey has both token and device configured.
+func (n *Notifier) voiceMonkeyEnabled() bool {
+	return n.config.VoiceMonkeyToken != "" && n.config.VoiceMonkeyDevice != ""
 }
 
 // Send dispatches a notification to all configured channels.
@@ -131,6 +140,89 @@ func (n *Notifier) sendPushover(title, message string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// TestAll fires every configured channel with a canned message and records
+// per-channel outcomes into results ("sent" | "skipped: <reason>" |
+// "error: <msg>"). Used by the notify-test endpoint; bypasses the normal
+// "all-or-nothing" Send semantics so the caller sees which channels worked.
+func (n *Notifier) TestAll(message string, results map[string]string) {
+	if n.config.PushoverAPIKey != "" && n.config.PushoverUserKey != "" {
+		if err := n.sendPushover("Fil test", message); err != nil {
+			results["pushover"] = "error: " + err.Error()
+		} else {
+			results["pushover"] = "sent"
+		}
+	} else {
+		results["pushover"] = "skipped: not configured"
+	}
+
+	if n.config.NtfyTopic != "" {
+		if err := n.sendNtfy("Fil test", message); err != nil {
+			results["ntfy"] = "error: " + err.Error()
+		} else {
+			results["ntfy"] = "sent"
+		}
+	} else {
+		results["ntfy"] = "skipped: not configured"
+	}
+
+	if n.voiceMonkeyEnabled() {
+		if err := n.sendVoiceMonkey(message); err != nil {
+			results["voicemonkey"] = "error: " + err.Error()
+		} else {
+			results["voicemonkey"] = "sent"
+		}
+	} else {
+		results["voicemonkey"] = "skipped: not configured"
+	}
+}
+
+// Speak sends a text-only announcement to Voice Monkey (spoken on the
+// configured Echo). No-op when Voice Monkey isn't configured. Kept separate
+// from Send because speech doesn't want a title, and we only speak a subset
+// of events (finish/fail/non-user pause) to avoid announcement fatigue.
+func (n *Notifier) Speak(text string) error {
+	if !n.voiceMonkeyEnabled() {
+		return nil
+	}
+	return n.sendVoiceMonkey(text)
+}
+
+// ValidateVoiceMonkey verifies Voice Monkey config is present. There's no
+// silent validate endpoint, so this only checks that token+device are set —
+// actual credential correctness surfaces on the first Speak attempt.
+func (n *Notifier) ValidateVoiceMonkey() error {
+	if n.config.VoiceMonkeyToken == "" || n.config.VoiceMonkeyDevice == "" {
+		return fmt.Errorf("voice monkey credentials not configured")
+	}
+	return nil
+}
+
+func (n *Notifier) sendVoiceMonkey(text string) error {
+	base := n.config.VoiceMonkeyURL
+	if base == "" {
+		base = "https://api-v2.voicemonkey.io"
+	}
+
+	q := url.Values{
+		"token":  {n.config.VoiceMonkeyToken},
+		"device": {n.config.VoiceMonkeyDevice},
+		"text":   {text},
+	}
+	u := strings.TrimRight(base, "/") + "/announcement?" + q.Encode()
+
+	client := http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(u)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	return nil
