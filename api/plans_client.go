@@ -513,6 +513,33 @@ type ScanEvent struct {
 	RawCSV       string    `json:"raw_csv,omitempty"`
 }
 
+// PostPlanFail submits a batch failure to the server, which writes one
+// HistoryEntry per plate to print-history.jsonl with Failed=true.
+func (c *PlanServerClient) PostPlanFail(ctx context.Context, req PlanFailRequest) error {
+	endpoint := c.base + "/api/v1/plan-fail"
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("plan-fail failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // PostScanEvent appends a ScanEvent to the server's scan-history log.
 // Returns an error on non-2xx response; callers should treat the error as
 // non-fatal (history is append-only and the Spoolman write has already happened).
@@ -599,7 +626,7 @@ type TrayPushRequest struct {
 	InfoIdx string `json:"info_idx,omitempty"`
 }
 
-// HistoryEntry represents a completed plate from the print history.
+// HistoryEntry represents a completed or failed plate from the print history.
 type HistoryEntry struct {
 	Timestamp         string            `json:"timestamp"`
 	FinishedAt        string            `json:"finished_at,omitempty"`
@@ -609,6 +636,40 @@ type HistoryEntry struct {
 	Printer           string            `json:"printer,omitempty"`
 	StartedAt         string            `json:"started_at,omitempty"`
 	EstimatedDuration string            `json:"estimated_duration,omitempty"`
+	Filament          []HistoryFilament `json:"filament,omitempty"`
+
+	Failed                   bool       `json:"failed,omitempty"`
+	Cause                    string     `json:"cause,omitempty"`
+	Reason                   string     `json:"reason,omitempty"`
+	UsedGrams                float64    `json:"used_grams,omitempty"`
+	PrevPrint                *PrevPrint `json:"prev_print,omitempty"`
+	PrinterIdleMinutesBefore *int       `json:"printer_idle_minutes_before,omitempty"`
+}
+
+// PrevPrint mirrors the server's PrevPrint type embedded in failure entries.
+type PrevPrint struct {
+	Timestamp string `json:"timestamp"`
+	Material  string `json:"material,omitempty"`
+	Name      string `json:"name,omitempty"`
+}
+
+// PlanFailRequest mirrors server.PlanFailRequest for the /api/v1/plan-fail endpoint.
+type PlanFailRequest struct {
+	Printer  string          `json:"printer,omitempty"`
+	Cause    string          `json:"cause"`
+	Reason   string          `json:"reason,omitempty"`
+	FailedAt time.Time       `json:"failed_at,omitempty"`
+	Plates   []PlanFailPlate `json:"plates"`
+}
+
+// PlanFailPlate is one plate inside a PlanFailRequest.
+type PlanFailPlate struct {
+	Plan              string            `json:"plan"`
+	Project           string            `json:"project"`
+	Plate             string            `json:"plate"`
+	StartedAt         string            `json:"started_at,omitempty"`
+	EstimatedDuration string            `json:"estimated_duration,omitempty"`
+	UsedGrams         float64           `json:"used_grams,omitempty"`
 	Filament          []HistoryFilament `json:"filament,omitempty"`
 }
 

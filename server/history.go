@@ -21,10 +21,10 @@ type HistoryFilament struct {
 	Amount     float64 `json:"amount"`
 }
 
-// HistoryEntry records a single plate completion event.
+// HistoryEntry records a single plate completion or failure event.
 type HistoryEntry struct {
-	Timestamp         string            `json:"timestamp"`              // when fil recorded the entry (save-time)
-	FinishedAt        string            `json:"finished_at,omitempty"`  // when the printer reported FINISH; empty when no live printer data was available
+	Timestamp         string            `json:"timestamp"`             // when fil recorded the entry (save-time)
+	FinishedAt        string            `json:"finished_at,omitempty"` // when the printer reported FINISH; empty when no live printer data was available
 	Plan              string            `json:"plan"`
 	Project           string            `json:"project"`
 	Plate             string            `json:"plate"`
@@ -32,6 +32,22 @@ type HistoryEntry struct {
 	StartedAt         string            `json:"started_at,omitempty"`
 	EstimatedDuration string            `json:"estimated_duration,omitempty"`
 	Filament          []HistoryFilament `json:"filament,omitempty"`
+
+	// Failure fields — present only when Failed is true.
+	Failed                   bool       `json:"failed,omitempty"`
+	Cause                    string     `json:"cause,omitempty"`
+	Reason                   string     `json:"reason,omitempty"`
+	UsedGrams                float64    `json:"used_grams,omitempty"`                  // this plate's share of the batch total
+	PrevPrint                *PrevPrint `json:"prev_print,omitempty"`                  // previous completion on the same printer
+	PrinterIdleMinutesBefore *int       `json:"printer_idle_minutes_before,omitempty"` // minutes between previous print's completion and this failure
+}
+
+// PrevPrint records the previous completed entry on the same printer at fail-time.
+// Used to test hypotheses about filament-transition or session-fatigue patterns.
+type PrevPrint struct {
+	Timestamp string `json:"timestamp"`
+	Material  string `json:"material,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 // logCompletions compares old and new plan states and appends history entries

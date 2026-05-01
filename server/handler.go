@@ -19,19 +19,19 @@ const versionHeader = "X-Fil-Version"
 
 // PlanServer handles HTTP requests for plan CRUD and lifecycle operations.
 type PlanServer struct {
-	PlansDir      string
-	PauseDir      string
-	ArchiveDir    string
-	ConfigDir     string
-	AssembliesDir string
-	Version       string
+	PlansDir        string
+	PauseDir        string
+	ArchiveDir      string
+	ConfigDir       string
+	AssembliesDir   string
+	Version         string
 	ApiBase         string // Spoolman base URL, used by health checks
 	ApiBaseInternal string // optional alternate URL for server-side probes (e.g. http://localhost:8000)
 	TLSSkipVerify   bool   // passed to health-check HTTP clients
-	StartedAt     time.Time
-	Watcher       *ETAWatcher
-	Printers      *PrinterManager
-	Notifier      *Notifier
+	StartedAt       time.Time
+	Watcher         *ETAWatcher
+	Printers        *PrinterManager
+	Notifier        *Notifier
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.
@@ -60,6 +60,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("POST /api/v1/plans/clean-assemblies", s.handleCleanAssemblies)
 	mux.HandleFunc("GET /api/v1/history", s.handleHistory)
+	mux.HandleFunc("POST /api/v1/plan-fail", s.handlePlanFail)
 	mux.HandleFunc("POST /api/v1/scan-history", s.handleScanHistoryPost)
 	mux.HandleFunc("GET /api/v1/scan-history", s.handleScanHistoryGet)
 	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)
