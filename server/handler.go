@@ -68,6 +68,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	mux.HandleFunc("GET /api/v1/doctor", s.handleHealth)
 	mux.HandleFunc("POST /api/v1/notify/test", s.handleNotifyTest)
+	mux.HandleFunc("GET /api/v1/say", s.handleSay)
 	return s.versionMiddleware(mux)
 }
 

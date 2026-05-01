@@ -32,7 +32,8 @@
       "Read(//Users/davidstockton/Projects/go/**)",
       "Read(//Users/davidstockton/**)",
       "Bash(./voicemonkey-play --help)",
-      "Bash(./voicemonkey-play say *)"
+      "Bash(./voicemonkey-play say *)",
+      "Bash(go vet *)"
     ]
   }
 }
