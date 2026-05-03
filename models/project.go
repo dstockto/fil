@@ -1,11 +1,11 @@
 package models
 
 type PlateRequirement struct {
-	FilamentID int     `yaml:"filament_id,omitempty"`
-	Name       string  `yaml:"name,omitempty"`
-	Material   string  `yaml:"material,omitempty"`
-	Color      string  `yaml:"color,omitempty"`
-	Amount     float64 `yaml:"amount"`
+	FilamentID int     `yaml:"filament_id,omitempty" json:"filament_id,omitempty"`
+	Name       string  `yaml:"name,omitempty" json:"name,omitempty"`
+	Material   string  `yaml:"material,omitempty" json:"material,omitempty"`
+	Color      string  `yaml:"color,omitempty" json:"color,omitempty"`
+	Amount     float64 `yaml:"amount" json:"amount"`
 }
 
 type Plate struct {

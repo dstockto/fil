@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dstockto/fil/models"
+	"github.com/dstockto/fil/plan"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,6 +33,10 @@ type PlanServer struct {
 	Watcher         *ETAWatcher
 	Printers        *PrinterManager
 	Notifier        *Notifier
+	// PlanOps runs verbs that mutate Plan state (currently only Fail; more
+	// verbs migrate from cmd/plan_*.go in subsequent PRs). The server uses a
+	// LocalPlanOps under the hood — Remote-Mode CLIs delegate here.
+	PlanOps plan.PlanOperations
 }
 
 // PlanSummary is the JSON representation returned by the list endpoint.

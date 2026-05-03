@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/plan"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -109,6 +111,12 @@ func (s SharedConfig) ApplyTo(dst *Config) {
 // Cfg holds the loaded configuration and is available to all commands.
 var Cfg *Config
 
+// PlanOps is the chosen Plan-operations adapter for this process: LocalPlanOps
+// when no plan-server is configured, RemotePlanOps when one is. Wired in
+// PersistentPreRunE after Cfg is loaded. Commands that need to mutate Plan
+// state call methods on this rather than reaching into Spoolman directly.
+var PlanOps plan.PlanOperations
+
 // cfgFile is set from -c/--config flag.
 var cfgFile string
 
@@ -150,8 +158,32 @@ var rootCmd = &cobra.Command{
 			Cfg = cfg
 		}
 
+		PlanOps = buildPlanOps(Cfg)
 		return nil
 	},
+}
+
+// buildPlanOps picks the adapter based on Cfg.PlansServer: a non-empty value
+// means Remote Mode (HTTP delegation to the plan-server); empty means Local
+// Mode (the CLI mutates Spoolman + history directly). Returns nil when there's
+// no usable config — commands that need PlanOps should error if it's nil.
+func buildPlanOps(cfg *Config) plan.PlanOperations {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.PlansServer != "" {
+		return plan.NewRemote(cfg.PlansServer, version, cfg.TLSSkipVerify)
+	}
+	if cfg.ApiBase == "" || cfg.PlansDir == "" {
+		return nil
+	}
+	spoolman := api.NewClient(cfg.ApiBase, cfg.TLSSkipVerify)
+	printers := plan.StaticPrinterLocations{}
+	for name, p := range cfg.Printers {
+		printers[name] = p.Locations
+	}
+	history := plan.NewFileHistoryWriter(cfg.PlansDir)
+	return plan.NewLocal(spoolman, printers, history, plan.NoopNotifier{})
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

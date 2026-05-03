@@ -33,7 +33,8 @@
       "Read(//Users/davidstockton/**)",
       "Bash(./voicemonkey-play --help)",
       "Bash(./voicemonkey-play say *)",
-      "Bash(go vet *)"
+      "Bash(go vet *)",
+      "Bash(awk '{print $NF}')"
     ]
   }
 }

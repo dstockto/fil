@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/plan"
 	"github.com/dstockto/fil/server"
 	"github.com/spf13/cobra"
 )
@@ -242,6 +244,30 @@ var serveCmd = &cobra.Command{
 		} else {
 			fmt.Println("  Notifications: disabled")
 		}
+
+		// Wire LocalPlanOps for the server. Done after Notifier is built so
+		// fail notifications go through the same channels as ETA/state-change
+		// notifications. The server prefers ApiBaseInternal for its own
+		// Spoolman calls — useful when its own hostname isn't resolvable from
+		// inside its own network.
+		spoolBase := Cfg.ApiBaseInternal
+		if spoolBase == "" {
+			spoolBase = Cfg.ApiBase
+		}
+		var spoolman plan.Spoolman
+		if spoolBase != "" {
+			spoolman = api.NewClient(spoolBase, Cfg.TLSSkipVerify)
+		}
+		printerLocs := plan.StaticPrinterLocations{}
+		for name, p := range Cfg.Printers {
+			printerLocs[name] = p.Locations
+		}
+		s.PlanOps = plan.NewLocal(
+			spoolman,
+			printerLocs,
+			plan.NewFileHistoryWriter(Cfg.PlansDir),
+			server.NewNotifierAdapter(s.Notifier),
+		)
 
 		addr := fmt.Sprintf("%s:%d", bind, port)
 		srv := &http.Server{

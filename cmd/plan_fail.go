@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -10,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/dstockto/fil/plan"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -42,53 +41,6 @@ type failPlateRef struct {
 	needs     []models.PlateRequirement
 }
 
-// shareAllocation is one filament-deduction the command should perform after
-// the user supplies a total grams figure. Computed by allocateShares.
-type shareAllocation struct {
-	plateRef     int     // index into the failPlateRef slice this came from
-	needIdx      int     // index into the plate's Needs slice
-	plannedGrams float64 // the plate need's planned amount
-	shareGrams   float64 // grams to deduct from the matching spool
-}
-
-// allocateShares splits totalUsedGrams across each (plate, need) pair in
-// proportion to its planned amount. Returns one allocation per Need plus
-// the per-plate share total used in the JSONL log.
-func allocateShares(plates []failPlateRef, totalUsedGrams float64) (allocations []shareAllocation, perPlate []float64) {
-	perPlate = make([]float64, len(plates))
-	if len(plates) == 0 {
-		return nil, perPlate
-	}
-
-	totalPlanned := 0.0
-	for _, p := range plates {
-		for _, n := range p.needs {
-			totalPlanned += n.Amount
-		}
-	}
-	if totalPlanned <= 0 || totalUsedGrams <= 0 {
-		return nil, perPlate
-	}
-
-	ratio := totalUsedGrams / totalPlanned
-	for i, p := range plates {
-		for j, n := range p.needs {
-			share := n.Amount * ratio
-			if share <= 0 {
-				continue
-			}
-			allocations = append(allocations, shareAllocation{
-				plateRef:     i,
-				needIdx:      j,
-				plannedGrams: n.Amount,
-				shareGrams:   share,
-			})
-			perPlate[i] += share
-		}
-	}
-	return allocations, perPlate
-}
-
 var planFailCmd = &cobra.Command{
 	Use:     "fail",
 	Aliases: []string{"f"},
@@ -96,15 +48,13 @@ var planFailCmd = &cobra.Command{
 	Long: `Logs an in-progress print failure to the print history without changing plate state.
 Run plan stop afterward if you also want the plate moved back to todo.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || Cfg.ApiBase == "" {
-			return fmt.Errorf("api endpoint not configured")
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
 		}
-		if Cfg.PlansServer == "" {
-			return fmt.Errorf("plans_server must be configured")
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
 		}
 		ctx := cmd.Context()
-		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
-		planClient := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 
 		discovered, err := discoverPlans()
 		if err != nil {
@@ -116,7 +66,6 @@ Run plan stop afterward if you also want the plate moved back to todo.`,
 			return nil
 		}
 
-		// Group by printer; if multiple printers have in-progress plates, pick one.
 		printer, err := pickFailPrinter(refs)
 		if err != nil {
 			return err
@@ -153,45 +102,38 @@ Run plan stop afterward if you also want the plate moved back to todo.`,
 			return err
 		}
 
-		// Deduct filament.
-		var printerLocations []string
-		if pc, ok := Cfg.Printers[printer]; ok {
-			printerLocations = pc.Locations
+		req := plan.FailRequest{
+			Printer:   printer,
+			Cause:     cause,
+			Reason:    reason,
+			UsedGrams: totalGrams,
+			FailedAt:  time.Now().UTC(),
 		}
-		allocations, perPlate := allocateShares(selected, totalGrams)
-		if err := deductShares(ctx, apiClient, selected, allocations, printerLocations, printer); err != nil {
-			fmt.Printf("Warning: filament deduction had errors: %v\n", err)
-		}
-
-		// Build the request.
-		req := api.PlanFailRequest{
-			Printer:  printer,
-			Cause:    cause,
-			Reason:   reason,
-			FailedAt: time.Now().UTC(),
-		}
-		for i, p := range selected {
-			pp := api.PlanFailPlate{
+		for _, p := range selected {
+			req.Plates = append(req.Plates, plan.FailPlate{
 				Plan:              planFileName(discovered[p.dpIdx]),
 				Project:           p.project,
 				Plate:             p.plate,
 				StartedAt:         p.startedAt,
 				EstimatedDuration: p.estDur,
-				UsedGrams:         perPlate[i],
-			}
-			for _, n := range p.needs {
-				pp.Filament = append(pp.Filament, api.HistoryFilament{
-					Name:       n.Name,
-					FilamentID: n.FilamentID,
-					Material:   n.Material,
-					Amount:     n.Amount,
-				})
-			}
-			req.Plates = append(req.Plates, pp)
+				Needs:             append([]models.PlateRequirement(nil), p.needs...),
+			})
 		}
 
-		if err := planClient.PostPlanFail(ctx, req); err != nil {
-			return fmt.Errorf("log failure: %w", err)
+		result, err := PlanOps.Fail(ctx, req)
+		if err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
+
+		for _, a := range result.Allocations {
+			fmt.Printf("Deducted %.1fg from %s\n", a.Grams, a.Label)
+		}
+		if len(result.Unmatched) > 0 {
+			fmt.Println("Could not auto-resolve spool for these requirements; deduct manually with `fil use`:")
+			for _, u := range result.Unmatched {
+				fmt.Printf("  - %s / %s: %.1fg of %s\n",
+					models.Sanitize(u.Project), models.Sanitize(u.Plate), u.Grams, models.Sanitize(u.FilamentName))
+			}
 		}
 
 		fmt.Printf("Logged failure: %d plate(s) on %s — cause=%s, used=%.1fg\n", len(selected), printer, cause, totalGrams)
@@ -397,118 +339,6 @@ func readGrams(prompt string) (float64, error) {
 		}
 		return v, nil
 	}
-}
-
-// deductShares groups allocations by spool and calls UseFilamentSafely once
-// per spool with the summed share. Falls back to a manual prompt when no
-// matching spool can be found in the printer's locations.
-func deductShares(ctx context.Context, apiClient *api.Client, plates []failPlateRef, allocs []shareAllocation, printerLocations []string, printerName string) error {
-	if len(allocs) == 0 {
-		return nil
-	}
-
-	// Find candidate spools for each requirement once and group share totals
-	// by the chosen spool ID. We sum first, deduct second, so a single spool
-	// powering two slots only triggers one Spoolman update.
-	type pending struct {
-		spool *models.FindSpool
-		grams float64
-		label string
-	}
-	var allSpools []models.FindSpool
-	loaded := false
-	loadSpools := func() []models.FindSpool {
-		if loaded {
-			return allSpools
-		}
-		s, err := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
-		if err == nil {
-			allSpools = s
-		}
-		loaded = true
-		return allSpools
-	}
-
-	bySpool := map[int]*pending{}
-	var unmatched []shareAllocation
-
-	for _, a := range allocs {
-		need := plates[a.plateRef].needs[a.needIdx]
-		spool := findPrinterSpool(loadSpools(), printerLocations, need)
-		if spool == nil {
-			unmatched = append(unmatched, a)
-			continue
-		}
-		if cur, ok := bySpool[spool.Id]; ok {
-			cur.grams += a.shareGrams
-		} else {
-			label := fmt.Sprintf("#%d %s @ %s", spool.Id, models.Sanitize(spool.Filament.Name), models.Sanitize(spool.Location))
-			cp := *spool
-			bySpool[spool.Id] = &pending{spool: &cp, grams: a.shareGrams, label: label}
-		}
-	}
-
-	for _, p := range bySpool {
-		fmt.Printf("Deducting %.1fg from %s\n", p.grams, p.label)
-		if err := UseFilamentSafely(ctx, apiClient, p.spool, p.grams); err != nil {
-			return fmt.Errorf("deduct %s: %w", p.label, err)
-		}
-	}
-
-	if len(unmatched) > 0 {
-		fmt.Println("Could not auto-resolve spool for these requirements; deduct manually with `fil use`:")
-		for _, a := range unmatched {
-			need := plates[a.plateRef].needs[a.needIdx]
-			fmt.Printf("  - %s / %s: %.1fg of %s\n",
-				models.Sanitize(plates[a.plateRef].project), models.Sanitize(plates[a.plateRef].plate),
-				a.shareGrams, models.Sanitize(need.Name))
-		}
-	}
-	return nil
-}
-
-// findPrinterSpool picks a single spool in the printer's locations matching
-// the requirement. Returns nil when there are zero matches or multiple
-// candidates without a clear winner (caller falls back to manual deduction).
-func findPrinterSpool(spools []models.FindSpool, printerLocations []string, req models.PlateRequirement) *models.FindSpool {
-	if len(printerLocations) == 0 {
-		return nil
-	}
-	locSet := map[string]struct{}{}
-	for _, l := range printerLocations {
-		locSet[l] = struct{}{}
-	}
-
-	var candidates []models.FindSpool
-	for _, s := range spools {
-		if _, ok := locSet[s.Location]; !ok {
-			continue
-		}
-		if req.FilamentID != 0 {
-			if s.Filament.Id == req.FilamentID {
-				candidates = append(candidates, s)
-			}
-		} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
-			candidates = append(candidates, s)
-		}
-	}
-
-	if len(candidates) > 1 {
-		var withWeight []models.FindSpool
-		for _, c := range candidates {
-			if c.RemainingWeight > 0 {
-				withWeight = append(withWeight, c)
-			}
-		}
-		if len(withWeight) > 0 {
-			candidates = withWeight
-		}
-	}
-	if len(candidates) == 1 {
-		c := candidates[0]
-		return &c
-	}
-	return nil
 }
 
 // planFileName returns the basename used as the plan key in history entries.
