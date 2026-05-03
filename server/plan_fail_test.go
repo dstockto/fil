@@ -28,6 +28,9 @@ type fakePlanOps struct {
 	nextGot        plan.NextRequest
 	nextRet        plan.NextResult
 	nextErr        error
+	stopCalled     bool
+	stopGot        plan.StopRequest
+	stopErr        error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -46,6 +49,12 @@ func (f *fakePlanOps) Next(_ context.Context, req plan.NextRequest) (plan.NextRe
 	f.nextCalled = true
 	f.nextGot = req
 	return f.nextRet, f.nextErr
+}
+
+func (f *fakePlanOps) Stop(_ context.Context, req plan.StopRequest) error {
+	f.stopCalled = true
+	f.stopGot = req
+	return f.stopErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {

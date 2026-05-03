@@ -138,22 +138,18 @@ var planNextCmd = &cobra.Command{
 				discovered, _ = discoverPlans()
 				fmt.Println()
 			case 1: // Cancel all
-				// Inline mutation kept for now — there's no Stop verb on
-				// PlanOperations yet. When that lands, this branch becomes
-				// PlanOps.Stop(...) for each in-progress plate.
-				savedPlans := make(map[int]bool)
 				for _, ip := range inProgressOnPrinter {
-					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Status = "todo"
-					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Printer = ""
-					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].StartedAt = ""
-					savedPlans[ip.discoveredIdx] = true
+					dp := discovered[ip.discoveredIdx]
+					if err := PlanOps.Stop(ctx, plan.StopRequest{
+						Plan:    planFileName(dp),
+						Project: ip.projectName,
+						Plate:   ip.plateName,
+					}); err != nil {
+						return fmt.Errorf("stop %s/%s: %w", ip.projectName, ip.plateName, err)
+					}
 					fmt.Printf("Cancelled %s - %s — set back to todo\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
 				}
-				for di := range savedPlans {
-					if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
-						return fmt.Errorf("failed to save plan: %w", err)
-					}
-				}
+				discovered, _ = discoverPlans()
 				fmt.Println()
 			case 2: // Keep printing
 				if len(inProgressOnPrinter) == 1 {

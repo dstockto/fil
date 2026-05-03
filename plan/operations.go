@@ -40,6 +40,13 @@ type PlanOperations interface {
 	// transition, not an event. Filament-swap orchestration (which spools
 	// to load/unload, MoveSpool, tray-push) lives in cmd/ for now.
 	Next(ctx context.Context, req NextRequest) (NextResult, error)
+
+	// Stop cancels an in-progress Plate back to "todo": clears Plate.Printer
+	// and Plate.StartedAt. No Spoolman calls and no history — Stop is the
+	// inverse of Next for cases where the print never happened (or was
+	// abandoned before any deduction). Project status is intentionally not
+	// regressed; a Project's status only moves forward.
+	Stop(ctx context.Context, req StopRequest) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.
@@ -136,4 +143,11 @@ type NextRequest struct {
 // "todo" to "in-progress" as a side effect.
 type NextResult struct {
 	ProjectStarted bool `json:"project_started"`
+}
+
+// StopRequest identifies a Plate to cancel back to "todo".
+type StopRequest struct {
+	Plan    string `json:"plan"`
+	Project string `json:"project"`
+	Plate   string `json:"plate"`
 }

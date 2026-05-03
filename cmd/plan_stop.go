@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dstockto/fil/models"
+	"github.com/dstockto/fil/plan"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -14,17 +15,21 @@ var planStopCmd = &cobra.Command{
 	Aliases: []string{"cancel"},
 	Short:   "Cancel an in-progress plate (set back to todo)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
 		printerFilter, _ := cmd.Flags().GetString("printer")
 
-		plans, err := discoverPlans()
+		discovered, err := discoverPlans()
 		if err != nil {
 			return err
 		}
 
 		type inProgressPlate struct {
 			discoveredIdx int
-			projectIdx    int
-			plateIdx      int
 			projectName   string
 			plateName     string
 			printer       string
@@ -32,12 +37,12 @@ var planStopCmd = &cobra.Command{
 		}
 		var inProgress []inProgressPlate
 
-		for di, dp := range plans {
-			for pi, proj := range dp.Plan.Projects {
+		for di, dp := range discovered {
+			for _, proj := range dp.Plan.Projects {
 				if proj.Status == "completed" {
 					continue
 				}
-				for pli, plate := range proj.Plates {
+				for _, plate := range proj.Plates {
 					if plate.Status != "in-progress" {
 						continue
 					}
@@ -50,8 +55,6 @@ var planStopCmd = &cobra.Command{
 					}
 					inProgress = append(inProgress, inProgressPlate{
 						discoveredIdx: di,
-						projectIdx:    pi,
-						plateIdx:      pli,
 						projectName:   proj.Name,
 						plateName:     plate.Name,
 						printer:       plate.Printer,
@@ -74,7 +77,7 @@ var planStopCmd = &cobra.Command{
 		if len(inProgress) == 1 {
 			selected = inProgress[0]
 		} else {
-			var items []string
+			items := make([]string, 0, len(inProgress))
 			for _, ip := range inProgress {
 				items = append(items, ip.displayName)
 			}
@@ -94,13 +97,13 @@ var planStopCmd = &cobra.Command{
 			selected = inProgress[idx]
 		}
 
-		dp := &plans[selected.discoveredIdx]
-		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].Status = "todo"
-		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].Printer = ""
-		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].StartedAt = ""
-
-		if err := savePlan(*dp, dp.Plan); err != nil {
-			return fmt.Errorf("failed to save plan: %w", err)
+		err = PlanOps.Stop(cmd.Context(), plan.StopRequest{
+			Plan:    planFileName(discovered[selected.discoveredIdx]),
+			Project: selected.projectName,
+			Plate:   selected.plateName,
+		})
+		if err != nil {
+			return fmt.Errorf("stop: %w", err)
 		}
 
 		fmt.Printf("Cancelled %s - %s — set back to todo\n", models.Sanitize(selected.projectName), models.Sanitize(selected.plateName))
