@@ -24,6 +24,10 @@ type fakePlanOps struct {
 	completeGot    plan.CompleteRequest
 	completeRet    plan.CompleteResult
 	completeErr    error
+	nextCalled     bool
+	nextGot        plan.NextRequest
+	nextRet        plan.NextResult
+	nextErr        error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -36,6 +40,12 @@ func (f *fakePlanOps) Complete(_ context.Context, req plan.CompleteRequest) (pla
 	f.completeCalled = true
 	f.completeGot = req
 	return f.completeRet, f.completeErr
+}
+
+func (f *fakePlanOps) Next(_ context.Context, req plan.NextRequest) (plan.NextResult, error) {
+	f.nextCalled = true
+	f.nextGot = req
+	return f.nextRet, f.nextErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {

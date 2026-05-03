@@ -33,6 +33,13 @@ type PlanOperations interface {
 	// not supported — Projects auto-cascade when all their Plates are
 	// completed individually. See CONTEXT.md.
 	Complete(ctx context.Context, req CompleteRequest) (CompleteResult, error)
+
+	// Next marks a Plate as in-progress on a specific printer and stamps
+	// StartedAt. Cascades the parent Project from "todo" to "in-progress"
+	// when needed. No Spoolman calls and no history — Next is a queue
+	// transition, not an event. Filament-swap orchestration (which spools
+	// to load/unload, MoveSpool, tray-push) lives in cmd/ for now.
+	Next(ctx context.Context, req NextRequest) (NextResult, error)
 }
 
 // FailRequest is the input to PlanOperations.Fail.
@@ -113,4 +120,20 @@ type SpoolDeduction struct {
 // auto-cascaded to "completed", and any Spoolman errors per deduction.
 type CompleteResult struct {
 	ProjectCascaded bool
+}
+
+// NextRequest is the input to PlanOperations.Next. Identifies a single Plate
+// the user is about to start printing.
+type NextRequest struct {
+	Plan      string    `json:"plan"`
+	Project   string    `json:"project"`
+	Plate     string    `json:"plate"`
+	Printer   string    `json:"printer"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+}
+
+// NextResult reports whether the Plate's parent Project transitioned from
+// "todo" to "in-progress" as a side effect.
+type NextResult struct {
+	ProjectStarted bool `json:"project_started"`
 }

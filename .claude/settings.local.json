@@ -35,7 +35,8 @@
       "Bash(./voicemonkey-play say *)",
       "Bash(go vet *)",
       "Bash(awk '{print $NF}')",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }

@@ -2,24 +2,26 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/dstockto/fil/plan"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var planNextCmd = &cobra.Command{
-	Use:     "next [file]",
+	Use:     "next",
 	Aliases: []string{"n"},
 	Short:   "Suggest the next plate to print and manage swaps",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api endpoint not configured")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
 		}
 		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 		ctx := cmd.Context()
@@ -47,18 +49,10 @@ var planNextCmd = &cobra.Command{
 		}
 		printerLocations := Cfg.Printers[printerName].Locations
 
-		// 2. Discover and Load Plans
-		var discovered []DiscoveredPlan
-		if len(args) > 0 {
-			data, err := os.ReadFile(args[0])
-			if err == nil {
-				var p models.PlanFile
-				_ = yaml.Unmarshal(data, &p)
-				discovered = append(discovered, DiscoveredPlan{Path: args[0], Plan: p})
-			}
-		} else {
-			discovered, _ = discoverPlans()
-		}
+		// 2. Discover and Load Plans. CWD-arg (next some-file.yaml) was
+		// dropped along with the rest of the verbs that mutate plan YAML —
+		// PlanOps operates on plans within plans_dir only.
+		discovered, _ := discoverPlans()
 
 		// 2b. Check if this printer already has plates in-progress
 		type inProgressPlate struct {
@@ -111,32 +105,42 @@ var planNextCmd = &cobra.Command{
 
 			switch actionIdx {
 			case 0: // Complete all
-				savedPlans := make(map[int]bool)
+				// Same Complete verb as `fil plan complete`, but with empty
+				// Deductions — this branch has always skipped Spoolman
+				// deductions (the user is moving on, not recording usage).
+				// Future PR may surface a prompt for usage here, but for
+				// now we preserve existing no-deduction behavior.
 				for _, ip := range inProgressOnPrinter {
-					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Status = "completed"
-					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Printer = ""
-					// Auto-complete project if all plates done
-					allDone := true
-					for _, pl := range discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates {
-						if pl.Status != "completed" {
-							allDone = false
-							break
-						}
+					dp := discovered[ip.discoveredIdx]
+					plate := dp.Plan.Projects[ip.projectIdx].Plates[ip.plateIdx]
+					req := plan.CompleteRequest{
+						Plan:              planFileName(dp),
+						Project:           ip.projectName,
+						Plate:             ip.plateName,
+						Printer:           printerName,
+						StartedAt:         plate.StartedAt,
+						EstimatedDuration: plate.EstimatedDuration,
+						FinishedAt:        time.Now().UTC(),
+						Filament:          plate.Needs,
 					}
-					if allDone {
-						discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Status = "completed"
+					result, err := PlanOps.Complete(ctx, req)
+					if err != nil {
+						return fmt.Errorf("complete %s/%s: %w", ip.projectName, ip.plateName, err)
+					}
+					fmt.Printf("Marked %s - %s as completed\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
+					if result.ProjectCascaded {
 						fmt.Printf("All plates complete — project %s marked completed\n", models.Sanitize(ip.projectName))
 					}
-					savedPlans[ip.discoveredIdx] = true
-					fmt.Printf("Marked %s - %s as completed\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
 				}
-				for di := range savedPlans {
-					if err := savePlan(discovered[di], discovered[di].Plan); err != nil {
-						return fmt.Errorf("failed to save plan: %w", err)
-					}
-				}
+				// Re-load plans so the discovered slice reflects the
+				// completions we just performed before the next phase
+				// runs against it.
+				discovered, _ = discoverPlans()
 				fmt.Println()
 			case 1: // Cancel all
+				// Inline mutation kept for now — there's no Stop verb on
+				// PlanOperations yet. When that lands, this branch becomes
+				// PlanOps.Stop(...) for each in-progress plate.
 				savedPlans := make(map[int]bool)
 				for _, ip := range inProgressOnPrinter {
 					discovered[ip.discoveredIdx].Plan.Projects[ip.projectIdx].Plates[ip.plateIdx].Status = "todo"
@@ -793,16 +797,17 @@ var planNextCmd = &cobra.Command{
 			loadedSpools[targetLoc+"_"+fmt.Sprint(bestSpool.Id)] = *bestSpool
 		}
 
-		// Mark the plate as in-progress with the printer name
-		dp := &discovered[choice.discoveredIdx]
-		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Status = "in-progress"
-		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].Printer = printerName
-		dp.Plan.Projects[choice.projectIdx].Plates[choice.plateIdx].StartedAt = time.Now().Format(time.RFC3339)
-		// Also mark the project as in-progress if it was todo
-		if dp.Plan.Projects[choice.projectIdx].Status == "todo" {
-			dp.Plan.Projects[choice.projectIdx].Status = "in-progress"
-		}
-		if err := savePlan(*dp, dp.Plan); err != nil {
+		// Mark the plate as in-progress via PlanOps so the same verb runs
+		// whether the CLI is in Local Mode or delegating to a plan-server.
+		dp := discovered[choice.discoveredIdx]
+		_, err = PlanOps.Next(ctx, plan.NextRequest{
+			Plan:      planFileName(dp),
+			Project:   choice.projectName,
+			Plate:     choice.plate.Name,
+			Printer:   printerName,
+			StartedAt: time.Now().UTC(),
+		})
+		if err != nil {
 			fmt.Printf("Warning: failed to save in-progress state: %v\n", err)
 		}
 
