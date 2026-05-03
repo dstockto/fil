@@ -265,6 +265,7 @@ var serveCmd = &cobra.Command{
 		s.PlanOps = plan.NewLocal(
 			spoolman,
 			printerLocs,
+			plan.NewFilePlanStore(Cfg.PlansDir),
 			plan.NewFileHistoryWriter(Cfg.PlansDir),
 			server.NewNotifierAdapter(s.Notifier),
 		)

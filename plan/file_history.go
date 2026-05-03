@@ -24,6 +24,41 @@ func NewFileHistoryWriter(plansDir string) *FileHistoryWriter {
 	return &FileHistoryWriter{HistoryPath: filepath.Join(plansDir, "print-history.jsonl")}
 }
 
+// AppendComplete writes one JSON entry per completed Plate to the history
+// file. Same on-disk format as completed-via-server-watcher entries.
+func (w *FileHistoryWriter) AppendComplete(_ context.Context, entries []CompleteHistoryEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	f, err := os.OpenFile(w.HistoryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open history: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	enc := json.NewEncoder(f)
+	for _, e := range entries {
+		on := onDiskEntry{
+			Timestamp:         e.Timestamp.UTC().Format(time.RFC3339),
+			FinishedAt:        e.FinishedAt.UTC().Format(time.RFC3339),
+			Plan:              e.Plan,
+			Project:           e.Project,
+			Plate:             e.Plate,
+			Printer:           e.Printer,
+			StartedAt:         e.StartedAt,
+			EstimatedDuration: e.EstimatedDuration,
+		}
+		for _, fil := range e.Filament {
+			on.Filament = append(on.Filament, onDiskFilament(fil))
+		}
+		if err := enc.Encode(on); err != nil {
+			return fmt.Errorf("encode entry: %w", err)
+		}
+	}
+	return nil
+}
+
 // AppendFail writes one JSON entry per plate to the history file. The on-disk
 // shape matches server.HistoryEntry — both readers (the GET /history endpoint,
 // downstream analysis) consume the same format.

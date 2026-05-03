@@ -24,11 +24,20 @@ type PrinterLocations interface {
 	Locations(printer string) []string
 }
 
-// HistoryWriter persists one fail-history record per plate. The default
-// file-backed implementation appends to print-history.jsonl alongside the
-// plans dir; tests pass an in-memory recorder.
+// PlanStore loads and saves Plan YAML files by basename. Verbs that mutate
+// plan state (Complete, Next, Resolve, ...) use it so LocalPlanOps doesn't
+// need to know whether plans live on the local filesystem or somewhere else.
+type PlanStore interface {
+	Load(ctx context.Context, name string) (models.PlanFile, error)
+	Save(ctx context.Context, name string, plan models.PlanFile) error
+}
+
+// HistoryWriter persists one history record per Plate-level event. The
+// default file-backed implementation appends to print-history.jsonl alongside
+// the plans dir; tests pass an in-memory recorder.
 type HistoryWriter interface {
 	AppendFail(ctx context.Context, entries []FailHistoryEntry) error
+	AppendComplete(ctx context.Context, entries []CompleteHistoryEntry) error
 }
 
 // FailHistoryEntry is the shape persisted to history. Mirrors the existing
@@ -55,6 +64,21 @@ type HistoryFilament struct {
 	FilamentID int
 	Material   string
 	Amount     float64
+}
+
+// CompleteHistoryEntry is the shape persisted to history when a Plate
+// completes successfully. No Cause/Reason/UsedGrams/PrevPrint — those are
+// fail-only fields.
+type CompleteHistoryEntry struct {
+	Timestamp         time.Time
+	FinishedAt        time.Time
+	Plan              string
+	Project           string
+	Plate             string
+	Printer           string
+	StartedAt         string
+	EstimatedDuration string
+	Filament          []HistoryFilament
 }
 
 // Notifier delivers a best-effort notification. Errors are swallowed inside

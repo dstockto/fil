@@ -50,15 +50,24 @@ func (f *fakeSpoolman) PatchSpool(_ context.Context, spoolID int, updates map[st
 // recordingHistory is an in-memory HistoryWriter that captures the entries it
 // would have written, so tests can assert without touching the filesystem.
 type recordingHistory struct {
-	entries []FailHistoryEntry
-	err     error
+	failEntries     []FailHistoryEntry
+	completeEntries []CompleteHistoryEntry
+	err             error
 }
 
 func (r *recordingHistory) AppendFail(_ context.Context, e []FailHistoryEntry) error {
 	if r.err != nil {
 		return r.err
 	}
-	r.entries = append(r.entries, e...)
+	r.failEntries = append(r.failEntries, e...)
+	return nil
+}
+
+func (r *recordingHistory) AppendComplete(_ context.Context, e []CompleteHistoryEntry) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.completeEntries = append(r.completeEntries, e...)
 	return nil
 }
 
@@ -77,7 +86,19 @@ func newLocalForTest(t *testing.T, sm *fakeSpoolman, h HistoryWriter, n Notifier
 	printers := StaticPrinterLocations{
 		"Bambu X1C": {"AMS A1", "AMS A2", "AMS A3", "AMS A4"},
 	}
-	return NewLocal(sm, printers, h, n)
+	// Fail tests don't exercise the PlanStore — pass nil; LocalPlanOps.Fail
+	// never reads or writes plan files. Complete tests use newLocalWithStore.
+	return NewLocal(sm, printers, nil, h, n)
+}
+
+// newLocalWithStore is the variant used by Complete tests, which require a
+// real PlanStore for load/save round-trips.
+func newLocalWithStore(t *testing.T, sm *fakeSpoolman, store PlanStore, h HistoryWriter, n Notifier) *LocalPlanOps {
+	t.Helper()
+	printers := StaticPrinterLocations{
+		"Bambu X1C": {"AMS A1", "AMS A2", "AMS A3", "AMS A4"},
+	}
+	return NewLocal(sm, printers, store, h, n)
 }
 
 func TestLocalFailHappyPath(t *testing.T) {
@@ -132,8 +153,8 @@ func TestLocalFailHappyPath(t *testing.T) {
 	if len(result.Unmatched) != 0 {
 		t.Errorf("got %d unmatched, want 0: %+v", len(result.Unmatched), result.Unmatched)
 	}
-	if len(hist.entries) != 2 {
-		t.Errorf("got %d history entries, want 2", len(hist.entries))
+	if len(hist.failEntries) != 2 {
+		t.Errorf("got %d history entries, want 2", len(hist.failEntries))
 	}
 	if len(notif.calls) != 1 {
 		t.Errorf("got %d notify calls, want 1", len(notif.calls))
@@ -174,8 +195,8 @@ func TestLocalFailUnmatchedFilament(t *testing.T) {
 	}
 	// History should still be written even when nothing was deducted —
 	// the failure happened, the audit record exists.
-	if len(hist.entries) != 1 {
-		t.Errorf("got %d history entries, want 1", len(hist.entries))
+	if len(hist.failEntries) != 1 {
+		t.Errorf("got %d history entries, want 1", len(hist.failEntries))
 	}
 }
 
@@ -199,8 +220,8 @@ func TestLocalFailContinuesHistoryAfterDeductError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Fail should return error when Spoolman fails")
 	}
-	if len(hist.entries) != 1 {
-		t.Errorf("history not written despite Spoolman failure: %d entries", len(hist.entries))
+	if len(hist.failEntries) != 1 {
+		t.Errorf("history not written despite Spoolman failure: %d entries", len(hist.failEntries))
 	}
 }
 
@@ -226,8 +247,8 @@ func TestLocalFailZeroGramsSkipsSpoolman(t *testing.T) {
 	if len(sm.useCalls) != 0 {
 		t.Errorf("UseFilament should not have been called for 0g, got %v", sm.useCalls)
 	}
-	if len(hist.entries) != 1 {
-		t.Errorf("history must still be written for zero-gram failure: %d entries", len(hist.entries))
+	if len(hist.failEntries) != 1 {
+		t.Errorf("history must still be written for zero-gram failure: %d entries", len(hist.failEntries))
 	}
 }
 

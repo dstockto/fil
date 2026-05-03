@@ -13,19 +13,29 @@ import (
 	"github.com/dstockto/fil/plan"
 )
 
-// fakePlanOps lets handler tests inspect the FailRequest the server forwards
+// fakePlanOps lets handler tests inspect the request the server forwards
 // without needing a real LocalPlanOps + Spoolman + history writer chain.
 type fakePlanOps struct {
-	called bool
-	got    plan.FailRequest
-	ret    plan.FailResult
-	err    error
+	failCalled     bool
+	failGot        plan.FailRequest
+	failRet        plan.FailResult
+	failErr        error
+	completeCalled bool
+	completeGot    plan.CompleteRequest
+	completeRet    plan.CompleteResult
+	completeErr    error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
-	f.called = true
-	f.got = req
-	return f.ret, f.err
+	f.failCalled = true
+	f.failGot = req
+	return f.failRet, f.failErr
+}
+
+func (f *fakePlanOps) Complete(_ context.Context, req plan.CompleteRequest) (plan.CompleteResult, error) {
+	f.completeCalled = true
+	f.completeGot = req
+	return f.completeRet, f.completeErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {
@@ -60,14 +70,14 @@ func TestPlanFailDelegatesToPlanOps(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, body = %q", w.Code, w.Body.String())
 	}
-	if !fake.called {
+	if !fake.failCalled {
 		t.Fatal("PlanOps.Fail was not called")
 	}
-	if fake.got.Cause != "bed_adhesion" {
-		t.Errorf("got cause %q", fake.got.Cause)
+	if fake.failGot.Cause != "bed_adhesion" {
+		t.Errorf("got cause %q", fake.failGot.Cause)
 	}
-	if len(fake.got.Plates) != 2 {
-		t.Errorf("got %d plates, want 2", len(fake.got.Plates))
+	if len(fake.failGot.Plates) != 2 {
+		t.Errorf("got %d plates, want 2", len(fake.failGot.Plates))
 	}
 }
 
@@ -93,7 +103,7 @@ func TestPlanFailRejectsInvalidCause(t *testing.T) {
 }
 
 func TestPlanFailReturns500WhenPlanOpsErrors(t *testing.T) {
-	fake := &fakePlanOps{err: errors.New("boom")}
+	fake := &fakePlanOps{failErr: errors.New("boom")}
 	s := &PlanServer{PlansDir: t.TempDir(), PlanOps: fake}
 	req := plan.FailRequest{
 		Cause:    "bed_adhesion",

@@ -182,8 +182,9 @@ func buildPlanOps(cfg *Config) plan.PlanOperations {
 	for name, p := range cfg.Printers {
 		printers[name] = p.Locations
 	}
+	plans := plan.NewFilePlanStore(cfg.PlansDir)
 	history := plan.NewFileHistoryWriter(cfg.PlansDir)
-	return plan.NewLocal(spoolman, printers, history, plan.NoopNotifier{})
+	return plan.NewLocal(spoolman, printers, plans, history, plan.NoopNotifier{})
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

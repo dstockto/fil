@@ -1,313 +1,314 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
+	"github.com/dstockto/fil/plan"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var planCompleteCmd = &cobra.Command{
-	Use:     "complete [file]",
+	Use:     "complete",
 	Aliases: []string{"done", "c"},
-	Short:   "Mark a plate or project as completed",
+	Short:   "Mark a plate as completed",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || Cfg.ApiBase == "" {
-			return fmt.Errorf("api endpoint not configured")
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
 		}
-		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
+		if Cfg.ApiBase == "" {
+			return fmt.Errorf("api_base not configured (needed for spool queries)")
+		}
 		ctx := cmd.Context()
+		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 
-		var dp *DiscoveredPlan
-		if len(args) > 0 {
-			dp = &DiscoveredPlan{Path: args[0]}
-			data, err := os.ReadFile(args[0])
-			if err != nil {
-				return err
-			}
-			var plan models.PlanFile
-			_ = yaml.Unmarshal(data, &plan)
-			plan.DefaultStatus()
-			dp.Plan = plan
-			dp.DisplayName = FormatPlanPath(args[0])
-		} else {
-			plans, _ := discoverPlans()
-			var err error
-			dp, err = selectPlan("Select plan file", plans)
-			if err != nil {
-				return err
-			}
+		plans, err := discoverPlans()
+		if err != nil {
+			return fmt.Errorf("discover plans: %w", err)
 		}
-
-		plan := dp.Plan
-
-		// Select Project and Plate
-		var options []string
-		type opt struct {
-			projIdx  int
-			plateIdx int
-			isProj   bool
+		dp, err := selectPlan("Select plan file", plans)
+		if err != nil {
+			return err
 		}
-		var optMap []opt
+		planFile := dp.Plan
 
-		// Collect in-progress plates first, then the rest
-		var inProgressOptions []string
-		var inProgressOptMap []opt
-		var otherOptions []string
-		var otherOptMap []opt
-
-		for i, proj := range plan.Projects {
-			if proj.Status != "completed" {
-				// Add project option to the "other" group
-				otherOptions = append(otherOptions, fmt.Sprintf("Project: %s", proj.Name))
-				otherOptMap = append(otherOptMap, opt{projIdx: i, isProj: true})
-				for j, plate := range proj.Plates {
-					if plate.Status != "completed" {
-						label := fmt.Sprintf("  Plate: %s", plate.Name)
-						if plate.Status == "in-progress" && plate.Printer != "" {
-							label = fmt.Sprintf("  Plate: %s (printing on %s)", plate.Name, plate.Printer)
-							inProgressOptions = append(inProgressOptions, label)
-							inProgressOptMap = append(inProgressOptMap, opt{projIdx: i, plateIdx: j, isProj: false})
-						} else {
-							otherOptions = append(otherOptions, label)
-							otherOptMap = append(otherOptMap, opt{projIdx: i, plateIdx: j, isProj: false})
-						}
-					}
-				}
-			}
+		projIdx, plateIdx, err := selectPlateToComplete(planFile)
+		if err != nil {
+			return err
 		}
-
-		// Bubble in-progress plates to the top
-		options = append(inProgressOptions, otherOptions...)
-		optMap = append(inProgressOptMap, otherOptMap...)
-
-		if len(options) == 0 {
+		if projIdx < 0 {
 			fmt.Println("Nothing to complete.")
 			return nil
 		}
+		plate := planFile.Projects[projIdx].Plates[plateIdx]
+		project := planFile.Projects[projIdx]
 
-		prompt := promptui.Select{
-			Label:             "What did you complete?",
-			Items:             options,
-			Size:              10,
-			Stdout:            NoBellStdout,
-			StartInSearchMode: true,
-			Searcher: func(input string, index int) bool {
-				return strings.Contains(strings.ToLower(options[index]), strings.ToLower(input))
-			},
+		printerName := pickPrinterForComplete(plate)
+		var printerLocations []string
+		if printerName != "" {
+			printerLocations = Cfg.Printers[printerName].Locations
 		}
-		idx, _, err := prompt.Run()
+
+		fmt.Printf("Updating filament usage for %s...\n", models.Sanitize(plate.Name))
+		deductions, err := collectDeductions(ctx, apiClient, plate, printerLocations, printerName)
 		if err != nil {
 			return err
 		}
 
-		choice := optMap[idx]
-		if choice.isProj {
-			plan.Projects[choice.projIdx].Status = "completed"
-			for j := range plan.Projects[choice.projIdx].Plates {
-				plan.Projects[choice.projIdx].Plates[j].Status = "completed"
-				plan.Projects[choice.projIdx].Plates[j].Printer = ""
-			}
-		} else {
-			completedPlate := &plan.Projects[choice.projIdx].Plates[choice.plateIdx]
-			completedPlate.Status = "completed"
-
-			// Check if all plates in project are done
-			allDone := true
-			for _, p := range plan.Projects[choice.projIdx].Plates {
-				if p.Status != "completed" {
-					allDone = false
-					break
-				}
-			}
-			if allDone {
-				plan.Projects[choice.projIdx].Status = "completed"
-			}
-
-			// Printer selection for filament usage tracking
-			// Pre-fill from in-progress printer if available
-			var printerName string
-			if completedPlate.Printer != "" {
-				printerName = completedPlate.Printer
-				fmt.Printf("Printer: %s (from in-progress tracking)\n", printerName)
-			} else if len(Cfg.Printers) > 0 {
-				var printerNames []string
-				for name := range Cfg.Printers {
-					printerNames = append(printerNames, name)
-				}
-				if len(printerNames) == 1 {
-					printerName = printerNames[0]
-				} else {
-					promptPrinter := promptui.Select{
-						Label:             "Which printer was used?",
-						Items:             append([]string{"None/Other"}, printerNames...),
-						Stdout:            NoBellStdout,
-						StartInSearchMode: true,
-						Searcher: func(input string, index int) bool {
-							items := append([]string{"None/Other"}, printerNames...)
-							return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
-						},
-					}
-					_, result, err := promptPrinter.Run()
-					if err == nil && result != "None/Other" {
-						printerName = result
-					}
-				}
-			}
-
-			// Clear the printer field now that it's completed
-			completedPlate.Printer = ""
-
-			var printerLocations []string
-			if printerName != "" {
-				printerLocations = Cfg.Printers[printerName].Locations
-			}
-
-			// Interactive usage recording
-			fmt.Printf("Updating filament usage for %s...\n", models.Sanitize(plan.Projects[choice.projIdx].Plates[choice.plateIdx].Name))
-			for _, req := range plan.Projects[choice.projIdx].Plates[choice.plateIdx].Needs {
-				fmt.Printf("Filament: %s. Amount used (default %.1fg): ", models.Sanitize(req.Name), req.Amount)
-				var input string
-				_, _ = fmt.Scanln(&input)
-				used := req.Amount
-				if input != "" {
-					_, _ = fmt.Sscanf(input, "%f", &used)
-				}
-
-				for used > 0 {
-					// Find which spool to deduct from
-					var matchedSpool *models.FindSpool
-
-					// 1. Try to find matching spools in the printer
-					if len(printerLocations) > 0 {
-						allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
-						var candidates []models.FindSpool
-						for _, s := range allSpools {
-							inPrinter := false
-							for _, loc := range printerLocations {
-								if s.Location == loc {
-									inPrinter = true
-									break
-								}
-							}
-							if !inPrinter {
-								continue
-							}
-
-							// Check if it matches the requirement: prefer filament_id when available, fall back to name
-							if req.FilamentID != 0 {
-								if s.Filament.Id == req.FilamentID {
-									candidates = append(candidates, s)
-								}
-							} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
-								candidates = append(candidates, s)
-							}
-						}
-
-						// filter out candidates with no remaining weight if we have more than 1
-						if len(candidates) > 1 {
-							var withWeight []models.FindSpool
-							for _, c := range candidates {
-								if c.RemainingWeight > 0 {
-									withWeight = append(withWeight, c)
-								}
-							}
-							if len(withWeight) > 0 {
-								candidates = withWeight
-							}
-						}
-
-						if len(candidates) == 1 {
-							matchedSpool = &candidates[0]
-							fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n", matchedSpool.Id, models.Sanitize(matchedSpool.Filament.Name), models.Sanitize(matchedSpool.Location), matchedSpool.RemainingWeight, matchedSpool.RemainingWeight-used)
-						} else if len(candidates) > 1 {
-							var items []string
-							for _, c := range candidates {
-								items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg -> %.1fg remaining", c.Id, models.Sanitize(c.Filament.Name), models.Sanitize(c.Location), c.RemainingWeight, c.RemainingWeight-used))
-							}
-							promptSpool := promptui.Select{
-								Label:             fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
-								Items:             append(items, "Other/Manual"),
-								Stdout:            NoBellStdout,
-								StartInSearchMode: true,
-								Searcher: func(input string, index int) bool {
-									all := append(items, "Other/Manual")
-									return strings.Contains(strings.ToLower(all[index]), strings.ToLower(input))
-								},
-							}
-							idx, _, err := promptSpool.Run()
-							if err == nil && idx < len(candidates) {
-								matchedSpool = &candidates[idx]
-							}
-						}
-					}
-
-					if matchedSpool != nil {
-						amountToDeduct := used
-						if used > matchedSpool.RemainingWeight && matchedSpool.RemainingWeight > 0 {
-							fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", matchedSpool.Id, matchedSpool.RemainingWeight)
-							var confirm string
-							_, _ = fmt.Scanln(&confirm)
-							if confirm == "" || strings.ToLower(confirm) == "y" {
-								amountToDeduct = matchedSpool.RemainingWeight
-							}
-						}
-
-						err := UseFilamentSafely(ctx, apiClient, matchedSpool, amountToDeduct)
-						if err == nil {
-							used -= amountToDeduct
-						} else {
-							fmt.Printf("Error updating filament usage: %v\n", err)
-							break
-						}
-					} else {
-						// Fallback: ask for Spool ID
-						fmt.Printf("Enter Spool ID to deduct from (%.1fg remaining to account for, or leave blank to skip): ", used)
-						var spoolIdStr string
-						_, _ = fmt.Scanln(&spoolIdStr)
-						if spoolIdStr != "" {
-							var sid int
-							_, _ = fmt.Sscanf(spoolIdStr, "%d", &sid)
-							spool, err := apiClient.FindSpoolsById(ctx, sid)
-							if err == nil {
-								amountToDeduct := used
-								if used > spool.RemainingWeight && spool.RemainingWeight > 0 {
-									fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", spool.Id, spool.RemainingWeight)
-									var confirm string
-									_, _ = fmt.Scanln(&confirm)
-									if confirm == "" || strings.ToLower(confirm) == "y" {
-										amountToDeduct = spool.RemainingWeight
-									}
-								}
-								err := UseFilamentSafely(ctx, apiClient, spool, amountToDeduct)
-								if err == nil {
-									used -= amountToDeduct
-								} else {
-									fmt.Printf("Error updating filament usage: %v\n", err)
-									break
-								}
-							} else {
-								fmt.Printf("Error finding spool #%d: %v. Using %.1fg anyway (may result in negative weight if not found in spoolman correctly)\n", sid, err, used)
-								_ = apiClient.UseFilament(ctx, sid, used)
-								used = 0
-							}
-						} else {
-							break
-						}
-					}
-				}
-			}
+		req := plan.CompleteRequest{
+			Plan:              planFileName(*dp),
+			Project:           project.Name,
+			Plate:             plate.Name,
+			Printer:           printerName,
+			StartedAt:         plate.StartedAt,
+			EstimatedDuration: plate.EstimatedDuration,
+			FinishedAt:        time.Now().UTC(),
+			Deductions:        deductions,
+			Filament:          plate.Needs,
 		}
 
-		_ = savePlan(*dp, plan)
+		result, err := PlanOps.Complete(ctx, req)
+		if err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
+		if result.ProjectCascaded {
+			fmt.Printf("Project %s now fully complete.\n", models.Sanitize(project.Name))
+		}
 		fmt.Println("Plan updated.")
 		return nil
 	},
+}
+
+// selectPlateToComplete prompts the user to pick a plate from the plan,
+// preferring in-progress plates at the top. Returns -1 indices when there's
+// nothing to complete.
+func selectPlateToComplete(planFile models.PlanFile) (int, int, error) {
+	type opt struct {
+		projIdx  int
+		plateIdx int
+	}
+	var inProgressOptions, otherOptions []string
+	var inProgressOptMap, otherOptMap []opt
+
+	for i, proj := range planFile.Projects {
+		if proj.Status == "completed" {
+			continue
+		}
+		for j, plate := range proj.Plates {
+			if plate.Status == "completed" {
+				continue
+			}
+			label := fmt.Sprintf("%s / %s", proj.Name, plate.Name)
+			if plate.Status == "in-progress" && plate.Printer != "" {
+				label = fmt.Sprintf("%s / %s (printing on %s)", proj.Name, plate.Name, plate.Printer)
+				inProgressOptions = append(inProgressOptions, label)
+				inProgressOptMap = append(inProgressOptMap, opt{projIdx: i, plateIdx: j})
+			} else {
+				otherOptions = append(otherOptions, label)
+				otherOptMap = append(otherOptMap, opt{projIdx: i, plateIdx: j})
+			}
+		}
+	}
+
+	options := append(inProgressOptions, otherOptions...)
+	optMap := append(inProgressOptMap, otherOptMap...)
+	if len(options) == 0 {
+		return -1, -1, nil
+	}
+
+	prompt := promptui.Select{
+		Label:             "Which plate did you complete?",
+		Items:             options,
+		Size:              10,
+		Stdout:            NoBellStdout,
+		StartInSearchMode: true,
+		Searcher: func(input string, index int) bool {
+			return strings.Contains(strings.ToLower(options[index]), strings.ToLower(input))
+		},
+	}
+	idx, _, err := prompt.Run()
+	if err != nil {
+		return 0, 0, err
+	}
+	return optMap[idx].projIdx, optMap[idx].plateIdx, nil
+}
+
+// pickPrinterForComplete returns the printer to use for filament-usage
+// tracking. Pre-fills from in-progress; falls back to the configured printer
+// list (auto-selecting the only one or prompting). Returns "" when no printer
+// is selected.
+func pickPrinterForComplete(plate models.Plate) string {
+	if plate.Printer != "" {
+		fmt.Printf("Printer: %s (from in-progress tracking)\n", plate.Printer)
+		return plate.Printer
+	}
+	if len(Cfg.Printers) == 0 {
+		return ""
+	}
+	var printerNames []string
+	for name := range Cfg.Printers {
+		printerNames = append(printerNames, name)
+	}
+	if len(printerNames) == 1 {
+		return printerNames[0]
+	}
+	items := append([]string{"None/Other"}, printerNames...)
+	prompt := promptui.Select{
+		Label:             "Which printer was used?",
+		Items:             items,
+		Stdout:            NoBellStdout,
+		StartInSearchMode: true,
+		Searcher: func(input string, index int) bool {
+			return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+		},
+	}
+	_, result, err := prompt.Run()
+	if err != nil || result == "None/Other" {
+		return ""
+	}
+	return result
+}
+
+// collectDeductions runs the per-need interactive flow: ask the user how much
+// filament they used, find a matching spool in the printer, deduct, and loop
+// for overruns until the user is satisfied. Returns a SpoolDeduction list
+// that LocalPlanOps applies via Spoolman writes.
+//
+// Note: this performs Spoolman *reads* (FindSpoolsByName, FindSpoolsById) to
+// resolve the deduction list. In Remote Mode the writes still go through the
+// plan-server. May revisit later to route reads through the server too.
+func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.Plate, printerLocations []string, printerName string) ([]plan.SpoolDeduction, error) {
+	var out []plan.SpoolDeduction
+	for _, req := range plate.Needs {
+		fmt.Printf("Filament: %s. Amount used (default %.1fg): ", models.Sanitize(req.Name), req.Amount)
+		var input string
+		_, _ = fmt.Scanln(&input)
+		used := req.Amount
+		if input != "" {
+			_, _ = fmt.Sscanf(input, "%f", &used)
+		}
+
+		for used > 0 {
+			matched, manualID, skipped := findCompleteSpool(ctx, apiClient, req, printerLocations, printerName, used)
+			if skipped {
+				break
+			}
+			if matched != nil {
+				amount := used
+				if used > matched.RemainingWeight && matched.RemainingWeight > 0 {
+					fmt.Printf("Spool #%d only has %.1fg remaining. Deduct all of it and pick another spool for the rest? [Y/n] ", matched.Id, matched.RemainingWeight)
+					var confirm string
+					_, _ = fmt.Scanln(&confirm)
+					if confirm == "" || strings.ToLower(confirm) == "y" {
+						amount = matched.RemainingWeight
+					}
+				}
+				out = append(out, plan.SpoolDeduction{SpoolID: matched.Id, Amount: amount})
+				used -= amount
+				continue
+			}
+			// Manual ID path: user typed an ID we couldn't verify against
+			// Spoolman. Record the deduction at face value; LocalPlanOps
+			// will surface any Spoolman rejection as an error.
+			out = append(out, plan.SpoolDeduction{SpoolID: manualID, Amount: used})
+			used = 0
+		}
+	}
+	return out, nil
+}
+
+// findCompleteSpool resolves a single deduction step interactively. Returns:
+//   - (spool, 0, false) when a spool was successfully matched
+//   - (nil, manualID, false) when the user typed an unverified spool ID
+//   - (nil, 0, true) when the user opted to skip (blank input)
+func findCompleteSpool(ctx context.Context, apiClient *api.Client, req models.PlateRequirement, printerLocations []string, printerName string, used float64) (*models.FindSpool, int, bool) {
+	if len(printerLocations) > 0 {
+		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
+		var candidates []models.FindSpool
+		for _, s := range allSpools {
+			inPrinter := false
+			for _, loc := range printerLocations {
+				if s.Location == loc {
+					inPrinter = true
+					break
+				}
+			}
+			if !inPrinter {
+				continue
+			}
+			if req.FilamentID != 0 {
+				if s.Filament.Id == req.FilamentID {
+					candidates = append(candidates, s)
+				}
+			} else if req.Name != "" && strings.Contains(strings.ToLower(s.Filament.Name), strings.ToLower(req.Name)) {
+				candidates = append(candidates, s)
+			}
+		}
+		if len(candidates) > 1 {
+			var withWeight []models.FindSpool
+			for _, c := range candidates {
+				if c.RemainingWeight > 0 {
+					withWeight = append(withWeight, c)
+				}
+			}
+			if len(withWeight) > 0 {
+				candidates = withWeight
+			}
+		}
+		if len(candidates) == 1 {
+			fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n",
+				candidates[0].Id, models.Sanitize(candidates[0].Filament.Name),
+				models.Sanitize(candidates[0].Location),
+				candidates[0].RemainingWeight, candidates[0].RemainingWeight-used)
+			return &candidates[0], 0, false
+		}
+		if len(candidates) > 1 {
+			items := make([]string, 0, len(candidates)+1)
+			for _, c := range candidates {
+				items = append(items, fmt.Sprintf("#%d: %s (%s) - %.1fg -> %.1fg remaining",
+					c.Id, models.Sanitize(c.Filament.Name), models.Sanitize(c.Location),
+					c.RemainingWeight, c.RemainingWeight-used))
+			}
+			items = append(items, "Other/Manual")
+			prompt := promptui.Select{
+				Label:             fmt.Sprintf("Multiple matching spools found in %s. Select one:", printerName),
+				Items:             items,
+				Stdout:            NoBellStdout,
+				StartInSearchMode: true,
+				Searcher: func(input string, index int) bool {
+					return strings.Contains(strings.ToLower(items[index]), strings.ToLower(input))
+				},
+			}
+			idx, _, err := prompt.Run()
+			if err == nil && idx < len(candidates) {
+				return &candidates[idx], 0, false
+			}
+		}
+	}
+
+	// Manual-ID fallback.
+	fmt.Printf("Enter Spool ID to deduct from (%.1fg remaining to account for, or leave blank to skip): ", used)
+	var spoolIdStr string
+	_, _ = fmt.Scanln(&spoolIdStr)
+	if spoolIdStr == "" {
+		return nil, 0, true
+	}
+	var sid int
+	_, _ = fmt.Sscanf(spoolIdStr, "%d", &sid)
+	if spool, err := apiClient.FindSpoolsById(ctx, sid); err == nil && spool != nil {
+		return spool, 0, false
+	} else if err != nil {
+		fmt.Printf("Could not verify spool #%d (%v). Recording deduction anyway.\n", sid, err)
+	}
+	return nil, sid, false
 }
 
 func init() {

@@ -38,6 +38,10 @@ The CLI is configured with a plan-server URL. All Plan operations are performed 
 A *logged event* recording wasted filament and notes against a Plate, plus the corresponding Spoolman deduction. It is **not** a Plate lifecycle status — failing a Plate does not transition it to a "failed" state.
 _Avoid_: treating "failed" as a status value.
 
+**Complete (a Plate)**:
+A Plate-level lifecycle transition: sets Plate.Status = "completed", clears Plate.Printer, records actual filament usage against Spools, and writes a history entry. There is no whole-Project complete operation — Projects auto-cascade to "completed" when all their Plates are completed individually.
+_Avoid_: completing a Project directly, treating cascade as a separate operation.
+
 **TD-1**:
 A handheld colorimeter device (`devices/td1.go`) used to read filament colors. Readings are unreliable for dark and opaque filaments — a physical limitation, not a software bug.
 

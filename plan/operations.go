@@ -16,16 +16,23 @@ import (
 	"github.com/dstockto/fil/models"
 )
 
-// PlanOperations is the verb surface for Plan-state changes. The pilot
-// implementation only includes Fail; subsequent verbs (Complete, Next, Resolve,
-// Pause, Resume, Stop, Archive, Unarchive, Delete, Reprint, plus per-plan data
-// edits) get added one PR at a time.
+// PlanOperations is the verb surface for Plan-state changes. Verbs are
+// migrating in one PR per verb; subsequent verbs (Next, Resolve, Pause,
+// Resume, Stop, Archive, Unarchive, Delete, Reprint, plus per-plan data
+// edits) still live in cmd/plan_*.go for now.
 type PlanOperations interface {
 	// Fail logs a print failure: deducts wasted filament from the matching
 	// Spool(s), records one history entry per plate, and fires a notification.
 	// Plate lifecycle status is not changed — callers who also want plates
 	// returned to "todo" run plan stop separately. See CONTEXT.md.
 	Fail(ctx context.Context, req FailRequest) (FailResult, error)
+
+	// Complete marks a Plate as completed: mutates plan YAML (status,
+	// printer), saves it, deducts filament from caller-resolved Spools,
+	// writes a history entry, and notifies. Whole-Project completion is
+	// not supported — Projects auto-cascade when all their Plates are
+	// completed individually. See CONTEXT.md.
+	Complete(ctx context.Context, req CompleteRequest) (CompleteResult, error)
 }
 
 // FailRequest is the input to PlanOperations.Fail.
@@ -77,4 +84,33 @@ type FailUnmatched struct {
 	Plate        string
 	FilamentName string
 	Grams        float64
+}
+
+// CompleteRequest is the input to PlanOperations.Complete. The caller has
+// already done the interactive work — picked which Spools cover this Plate's
+// Needs and how much to deduct from each. LocalPlanOps doesn't run any
+// prompts of its own.
+type CompleteRequest struct {
+	Plan              string                    `json:"plan"`
+	Project           string                    `json:"project"`
+	Plate             string                    `json:"plate"`
+	Printer           string                    `json:"printer,omitempty"`
+	StartedAt         string                    `json:"started_at,omitempty"`
+	EstimatedDuration string                    `json:"estimated_duration,omitempty"`
+	FinishedAt        time.Time                 `json:"finished_at,omitempty"`
+	Deductions        []SpoolDeduction          `json:"deductions,omitempty"`
+	Filament          []models.PlateRequirement `json:"filament,omitempty"`
+}
+
+// SpoolDeduction is one (Spool, grams) deduction the caller has already
+// decided on. LocalPlanOps applies these via Spoolman in the order given.
+type SpoolDeduction struct {
+	SpoolID int     `json:"spool_id"`
+	Amount  float64 `json:"amount"`
+}
+
+// CompleteResult reports what changed: whether the parent Project also
+// auto-cascaded to "completed", and any Spoolman errors per deduction.
+type CompleteResult struct {
+	ProjectCascaded bool
 }
