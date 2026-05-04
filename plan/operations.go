@@ -85,6 +85,12 @@ type PlanOperations interface {
 	// values from Spoolman as a best-effort convenience. Prefer the typed
 	// verbs when one fits; SaveAll is for ad-hoc field edits.
 	SaveAll(ctx context.Context, name string, plan models.PlanFile) error
+
+	// SaveBytes persists raw YAML bytes. Used by verbs that must preserve
+	// the user's exact formatting (comments, spacing) — primarily $EDITOR
+	// flows where unmarshal/marshal round-trips would lose information.
+	// Skips the SaveAll-time color backfill for the same reason.
+	SaveBytes(ctx context.Context, name string, data []byte) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.

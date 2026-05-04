@@ -66,8 +66,17 @@ func (s *FilePlanStore) Save(_ context.Context, name string, plan models.PlanFil
 	if err != nil {
 		return fmt.Errorf("marshal plan %s: %w", name, err)
 	}
+	return s.SaveBytes(nil, name, out) //nolint:staticcheck // delegate; ctx not used
+}
+
+// SaveBytes writes raw bytes to <plansDir>/<name>. Bypasses unmarshal/marshal
+// so $EDITOR-style flows preserve user formatting.
+func (s *FilePlanStore) SaveBytes(_ context.Context, name string, data []byte) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
 	path := filepath.Join(s.PlansDir, name)
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write plan %s: %w", name, err)
 	}
 	return nil

@@ -32,6 +32,10 @@ type PrinterLocations interface {
 type PlanStore interface {
 	Load(ctx context.Context, name string) (models.PlanFile, error)
 	Save(ctx context.Context, name string, plan models.PlanFile) error
+	// SaveBytes writes raw YAML bytes verbatim, preserving comments and
+	// formatting that an unmarshal/marshal round-trip would lose. Used by
+	// $EDITOR-driven flows.
+	SaveBytes(ctx context.Context, name string, data []byte) error
 	// Pause/Resume move the named plan between active and paused storage.
 	Pause(ctx context.Context, name string) error
 	Resume(ctx context.Context, name string) error

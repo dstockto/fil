@@ -50,9 +50,12 @@ type fakePlanOps struct {
 	resolveCalled   bool
 	resolveGot      plan.ResolveRequest
 	resolveErr      error
-	saveAllCalled   bool
-	saveAllGotName  string
-	saveAllErr      error
+	saveAllCalled    bool
+	saveAllGotName   string
+	saveAllErr       error
+	saveBytesCalled  bool
+	saveBytesGotName string
+	saveBytesErr     error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -119,6 +122,12 @@ func (f *fakePlanOps) SaveAll(_ context.Context, name string, _ models.PlanFile)
 	f.saveAllCalled = true
 	f.saveAllGotName = name
 	return f.saveAllErr
+}
+
+func (f *fakePlanOps) SaveBytes(_ context.Context, name string, _ []byte) error {
+	f.saveBytesCalled = true
+	f.saveBytesGotName = name
+	return f.saveBytesErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {

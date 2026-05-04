@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dstockto/fil/models"
+	"gopkg.in/yaml.v3"
 )
 
 // memPlanStore is an in-memory PlanStore for tests. Tracks the last saved
@@ -51,6 +52,20 @@ func (m *memPlanStore) Save(_ context.Context, name string, plan models.PlanFile
 	m.plans[name] = plan
 	m.saveCalls = append(m.saveCalls, plan)
 	return nil
+}
+
+// SaveBytes is unmarshal-then-store so tests can also exercise SaveBytes
+// paths via the in-memory fake. Real callers care about byte preservation;
+// the fake just round-trips through PlanFile.
+func (m *memPlanStore) SaveBytes(ctx context.Context, name string, data []byte) error {
+	if m.saveErr != nil {
+		return m.saveErr
+	}
+	var p models.PlanFile
+	if err := yaml.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	return m.Save(ctx, name, p)
 }
 
 func (m *memPlanStore) Pause(_ context.Context, name string) error {

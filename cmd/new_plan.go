@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/dstockto/fil/models"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var newPlanCmd = &cobra.Command{
@@ -146,87 +144,67 @@ var newPlanCmd = &cobra.Command{
 			},
 		}
 
-		// Marshal plan to YAML
-		out, err := yaml.Marshal(plan)
-		if err != nil {
-			return err
-		}
-
 		ctx := context.Background()
 
 		// Track where we created the plan for --edit
 		var editPath string
 		var editRemote bool
 
-		if Cfg != nil && Cfg.PlansServer != "" {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			if err := client.PutPlan(ctx, filename, out); err != nil {
-				return fmt.Errorf("failed to upload plan to server: %w", err)
-			}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
 
-			// Upload assembly PDF if selected
+		// Local-Mode collision check — Remote Mode would surface a server-
+		// side collision via SaveAll's HTTP error, but local users prefer
+		// an early friendly message.
+		if Cfg.PlansServer == "" && Cfg.PlansDir != "" {
+			if _, err := os.Stat(filepath.Join(Cfg.PlansDir, filename)); err == nil {
+				return fmt.Errorf("file %s already exists", filepath.Join(Cfg.PlansDir, filename))
+			}
+		}
+
+		if err := PlanOps.SaveAll(ctx, filename, plan); err != nil {
+			return fmt.Errorf("failed to save plan: %w", err)
+		}
+
+		if Cfg.PlansServer != "" {
+			// Upload assembly PDF and patch the plan with the server-side
+			// filename. Server-only feature; assemblies live there, not in
+			// plans_dir.
 			if assemblyFile != "" {
 				pdfData, readErr := os.ReadFile(assemblyFile)
 				if readErr != nil {
 					fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", assemblyFile, readErr)
-				} else if serverFilename, uploadErr := client.PutAssembly(ctx, filename, pdfData); uploadErr != nil {
-					fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
 				} else {
-					plan.Assembly = serverFilename
-					if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
-						_ = client.PutPlan(ctx, filename, updatedYAML)
+					client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+					if serverFilename, uploadErr := client.PutAssembly(ctx, filename, pdfData); uploadErr != nil {
+						fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
+					} else {
+						plan.Assembly = serverFilename
+						if err := PlanOps.SaveAll(ctx, filename, plan); err != nil {
+							fmt.Printf("Warning: assembly uploaded but failed to patch plan YAML: %v\n", err)
+						}
+						fmt.Printf("Uploaded assembly instructions: %s\n", assemblyFile)
 					}
-					fmt.Printf("Uploaded assembly instructions: %s\n", assemblyFile)
 				}
 			}
-
 			fmt.Printf("Created plan: <server>/%s\n", filename)
 			editRemote = true
-		} else if Cfg != nil && Cfg.PlansDir != "" {
-			if _, err := os.Stat(Cfg.PlansDir); os.IsNotExist(err) {
-				_ = os.MkdirAll(Cfg.PlansDir, 0755)
-			}
-
-			dest := filepath.Join(Cfg.PlansDir, filename)
-			if _, err := os.Stat(dest); err == nil {
-				return fmt.Errorf("file %s already exists", dest)
-			}
-
-			if err := os.WriteFile(dest, out, 0644); err != nil {
-				return err
-			}
-
-			fmt.Printf("Created plan: %s\n", FormatPlanPath(dest))
-			editPath = dest
 		} else {
-			return fmt.Errorf("plans_server or plans_dir must be configured")
+			fmt.Printf("Created plan: %s\n", FormatPlanPath(filepath.Join(Cfg.PlansDir, filename)))
+			editPath = filepath.Join(Cfg.PlansDir, filename)
 		}
 
 		// Optional: open in editor
 		edit, _ := cmd.Flags().GetBool("edit")
 		if edit {
-			editor := os.Getenv("VISUAL")
-			if editor == "" {
-				editor = os.Getenv("EDITOR")
-			}
-			if editor == "" {
-				for _, e := range []string{"vim", "vi", "nano"} {
-					if _, err := os.Stat("/usr/bin/" + e); err == nil {
-						editor = e
-						break
-					}
-					if _, err := os.Stat("/usr/local/bin/" + e); err == nil {
-						editor = e
-						break
-					}
-				}
-			}
-			if editor == "" {
-				return fmt.Errorf("no editor found. Please set $VISUAL or $EDITOR environment variable")
+			editor, err := resolveEditor()
+			if err != nil {
+				return err
 			}
 
 			if editRemote {
-				// Download from server to temp file, edit, upload back
+				// Pull from server, edit in temp, save bytes back through PlanOps.
 				client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 				data, err := client.GetPlan(ctx, filename)
 				if err != nil {
@@ -243,35 +221,20 @@ var newPlanCmd = &cobra.Command{
 				if err := os.WriteFile(editPath, data, 0644); err != nil {
 					return fmt.Errorf("failed to write temp file: %w", err)
 				}
-
-				parts := strings.Fields(editor)
-				editorCmd := exec.Command(parts[0], append(parts[1:], editPath)...)
-				editorCmd.Stdin = os.Stdin
-				editorCmd.Stdout = os.Stdout
-				editorCmd.Stderr = os.Stderr
-
-				if err := editorCmd.Run(); err != nil {
+				if err := runEditor(editor, editPath); err != nil {
 					return err
 				}
-
 				edited, err := os.ReadFile(editPath)
 				if err != nil {
 					return fmt.Errorf("failed to read edited file: %w", err)
 				}
-
-				if err := client.PutPlan(ctx, filename, edited); err != nil {
-					return fmt.Errorf("failed to upload edited plan: %w", err)
+				if err := PlanOps.SaveBytes(ctx, filename, edited); err != nil {
+					return fmt.Errorf("failed to save edited plan: %w", err)
 				}
 				fmt.Printf("Updated plan: <server>/%s\n", filename)
 			} else {
-				// Edit local file directly
-				parts := strings.Fields(editor)
-				editorCmd := exec.Command(parts[0], append(parts[1:], editPath)...)
-				editorCmd.Stdin = os.Stdin
-				editorCmd.Stdout = os.Stdout
-				editorCmd.Stderr = os.Stderr
-
-				if err := editorCmd.Run(); err != nil {
+				// Local Mode: editor opens the just-created file directly.
+				if err := runEditor(editor, editPath); err != nil {
 					return err
 				}
 			}

@@ -193,54 +193,61 @@ var planReprintCmd = &cobra.Command{
 
 		newFilename := base + ext
 
-		// Save to server or local plans_dir
-		updatedData, err := yaml.Marshal(plan)
-		if err != nil {
-			return fmt.Errorf("failed to marshal plan: %w", err)
+		// Disambiguate the new filename so we don't overwrite an existing
+		// plan. Both modes do this differently — server lists via API, local
+		// stats the filesystem — but the rule (append -N until free) is the
+		// same. Resolved filename then flows into PlanOps.SaveAll.
+		newFilename = uniqueReprintName(newFilename, base, ext)
+
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured")
 		}
-
+		if err := PlanOps.SaveAll(cmd.Context(), newFilename, plan); err != nil {
+			return fmt.Errorf("failed to save reprinted plan: %w", err)
+		}
 		if Cfg.PlansServer != "" {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-
-			// Check for filename collision on server
-			existing, listErr := client.ListPlans(context.Background(), "")
-			if listErr == nil {
-				existingNames := make(map[string]bool)
-				for _, s := range existing {
-					existingNames[s.Name] = true
-				}
-				counter := 1
-				for existingNames[newFilename] {
-					newFilename = fmt.Sprintf("%s-%d%s", base, counter, ext)
-					counter++
-				}
-			}
-
-			if err := client.PutPlan(context.Background(), newFilename, updatedData); err != nil {
-				return fmt.Errorf("failed to upload reprinted plan: %w", err)
-			}
 			fmt.Printf("Successfully reprinted plan to <server>/%s\n", newFilename)
 		} else {
-			destPath := filepath.Join(Cfg.PlansDir, newFilename)
-
-			// Check if destination already exists and find a unique name
-			counter := 1
-			for {
-				if _, err := os.Stat(destPath); os.IsNotExist(err) {
-					break
-				}
-				destPath = filepath.Join(Cfg.PlansDir, fmt.Sprintf("%s-%d%s", base, counter, ext))
-				counter++
-			}
-
-			if err := os.WriteFile(destPath, updatedData, 0644); err != nil {
-				return fmt.Errorf("failed to write plan file: %w", err)
-			}
-			fmt.Printf("Successfully reprinted plan to %s\n", FormatPlanPath(destPath))
+			fmt.Printf("Successfully reprinted plan to %s\n", FormatPlanPath(filepath.Join(Cfg.PlansDir, newFilename)))
 		}
-
 		return nil
 	},
+}
+
+// uniqueReprintName returns a name that doesn't collide with an existing
+// plan. Falls back to the candidate as-is on errors (caller will hit the
+// real conflict during SaveAll).
+func uniqueReprintName(candidate, base, ext string) string {
+	if Cfg.PlansServer != "" {
+		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+		existing, err := client.ListPlans(context.Background(), "")
+		if err != nil {
+			return candidate
+		}
+		taken := make(map[string]bool, len(existing))
+		for _, s := range existing {
+			taken[s.Name] = true
+		}
+		counter := 1
+		for taken[candidate] {
+			candidate = fmt.Sprintf("%s-%d%s", base, counter, ext)
+			counter++
+		}
+		return candidate
+	}
+	if Cfg.PlansDir == "" {
+		return candidate
+	}
+	dest := filepath.Join(Cfg.PlansDir, candidate)
+	counter := 1
+	for {
+		if _, err := os.Stat(dest); os.IsNotExist(err) {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d%s", base, counter, ext)
+		dest = filepath.Join(Cfg.PlansDir, candidate)
+		counter++
+	}
 }
 
 func init() {

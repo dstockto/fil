@@ -101,3 +101,33 @@ func TestLocalSaveAllRequiresPlanStore(t *testing.T) {
 		t.Fatal("expected error when PlanStore not configured")
 	}
 }
+
+func TestLocalSaveBytesPersistsRawBytes(t *testing.T) {
+	store := newMemPlanStore()
+	store.plans["test.yaml"] = models.PlanFile{}
+	ops := newLocalWithStore(t, newFakeSpoolman(), store, &recordingHistory{}, NoopNotifier{})
+
+	yamlBytes := []byte("projects:\n  - name: Proj\n    plates:\n      - name: P1\n")
+	if err := ops.SaveBytes(context.Background(), "test.yaml", yamlBytes); err != nil {
+		t.Fatalf("SaveBytes: %v", err)
+	}
+	saved := store.plans["test.yaml"]
+	if len(saved.Projects) != 1 || saved.Projects[0].Name != "Proj" {
+		t.Errorf("plan not persisted via SaveBytes round-trip: %+v", saved)
+	}
+}
+
+func TestLocalSaveBytesRejectsEmptyName(t *testing.T) {
+	store := newMemPlanStore()
+	ops := newLocalWithStore(t, newFakeSpoolman(), store, &recordingHistory{}, NoopNotifier{})
+	if err := ops.SaveBytes(context.Background(), "", []byte("projects: []\n")); err == nil {
+		t.Fatal("expected error for empty name")
+	}
+}
+
+func TestLocalSaveBytesRequiresPlanStore(t *testing.T) {
+	ops := NewLocal(newFakeSpoolman(), StaticPrinterLocations{}, nil, &recordingHistory{}, NoopNotifier{})
+	if err := ops.SaveBytes(context.Background(), "test.yaml", []byte("projects: []\n")); err == nil {
+		t.Fatal("expected error when PlanStore not configured")
+	}
+}

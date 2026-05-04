@@ -20,3 +20,15 @@ func (l *LocalPlanOps) SaveAll(ctx context.Context, name string, plan models.Pla
 	applyColorBackfill(ctx, l.spoolman, &plan)
 	return l.plans.Save(ctx, name, plan)
 }
+
+// SaveBytes writes raw YAML bytes through PlanStore. Skips backfill — by
+// design, the caller is preserving exact bytes from $EDITOR or similar.
+func (l *LocalPlanOps) SaveBytes(ctx context.Context, name string, data []byte) error {
+	if l.plans == nil {
+		return errors.New("PlanStore not configured")
+	}
+	if name == "" {
+		return errors.New("plan name is required")
+	}
+	return l.plans.SaveBytes(ctx, name, data)
+}

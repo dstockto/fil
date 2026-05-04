@@ -17,17 +17,19 @@ import (
 var planMoveCmd = &cobra.Command{
 	Use:     "move [file]",
 	Aliases: []string{"mv", "m"},
-	Short:   "Move a plan file to the central plans directory or server",
+	Short:   "Move a plan file from CWD into the central plans directory or server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || (Cfg.PlansDir == "" && Cfg.PlansServer == "") {
-			return fmt.Errorf("plans_dir or plans_server must be configured in config.json")
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
 		}
 
 		var path string
 		if len(args) > 0 {
 			path = args[0]
 		} else {
-			// Find yaml files in current directory
 			files, _ := filepath.Glob("*.yaml")
 			files2, _ := filepath.Glob("*.yml")
 			files = append(files, files2...)
@@ -55,61 +57,74 @@ var planMoveCmd = &cobra.Command{
 			}
 		}
 
-		// If plans_server is configured, upload to server and remove local file
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		name := filepath.Base(path)
+		ctx := cmd.Context()
+
+		// Save raw bytes through PlanOps. Both modes go through the same
+		// path; SaveBytes preserves the user's exact YAML formatting from
+		// the CWD file.
+		if err := PlanOps.SaveBytes(ctx, name, data); err != nil {
+			return fmt.Errorf("failed to save plan: %w", err)
+		}
+
+		// Optional assembly PDF upload — server-only feature; in pure Local
+		// Mode there's no assemblies endpoint, so this is conditional on
+		// PlansServer.
 		if Cfg.PlansServer != "" {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return fmt.Errorf("failed to read file: %w", err)
-			}
-
-			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			if err := client.PutPlan(context.Background(), filepath.Base(path), data); err != nil {
-				return fmt.Errorf("failed to upload plan to server: %w", err)
-			}
-
-			// Upload assembly PDF if the plan references one
 			var plan models.PlanFile
 			if yamlErr := yaml.Unmarshal(data, &plan); yamlErr == nil && plan.Assembly != "" {
-				pdfPath := filepath.Join(filepath.Dir(path), plan.Assembly)
-				pdfData, readErr := os.ReadFile(pdfPath)
-				if readErr != nil {
-					fmt.Printf("Warning: failed to read assembly PDF %s: %v\n", plan.Assembly, readErr)
-				} else if serverFilename, uploadErr := client.PutAssembly(context.Background(), filepath.Base(path), pdfData); uploadErr != nil {
-					fmt.Printf("Warning: failed to upload assembly PDF: %v\n", uploadErr)
-				} else {
-					// Update the plan on the server with the server-side assembly filename
-					plan.Assembly = serverFilename
-					if updatedYAML, marshalErr := yaml.Marshal(plan); marshalErr == nil {
-						_ = client.PutPlan(context.Background(), filepath.Base(path), updatedYAML)
-					}
-					fmt.Printf("Uploaded assembly instructions: %s\n", filepath.Base(pdfPath))
+				if err := uploadAssemblyAlongside(ctx, name, path, plan.Assembly); err != nil {
+					fmt.Printf("Warning: %v\n", err)
 				}
 			}
-
-			if err := os.Remove(path); err != nil {
-				fmt.Printf("Warning: uploaded to server but failed to remove local file: %v\n", err)
-			}
-
-			fmt.Printf("Moved %s to <server>/%s\n", path, filepath.Base(path))
-			return nil
 		}
 
-		// Ensure plans dir exists
-		if _, err := os.Stat(Cfg.PlansDir); os.IsNotExist(err) {
-			_ = os.MkdirAll(Cfg.PlansDir, 0755)
+		if err := os.Remove(path); err != nil {
+			fmt.Printf("Warning: saved plan but failed to remove local file: %v\n", err)
 		}
 
-		dest := filepath.Join(Cfg.PlansDir, filepath.Base(path))
-		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("file %s already exists in central Location", dest)
+		if Cfg.PlansServer != "" {
+			fmt.Printf("Moved %s to <server>/%s\n", path, name)
+		} else {
+			fmt.Printf("Moved %s to %s\n", path, filepath.Join(Cfg.PlansDir, name))
 		}
-
-		if err := os.Rename(path, dest); err != nil {
-			return fmt.Errorf("failed to move file: %w", err)
-		}
-		fmt.Printf("Moved %s to %s\n", path, dest)
 		return nil
 	},
+}
+
+// uploadAssemblyAlongside uploads the PDF that the plan's Assembly field
+// names, then patches the plan on the server with the server-side filename
+// it returned. Best-effort — assembly upload errors don't fail the move.
+func uploadAssemblyAlongside(ctx context.Context, planName, planPath, assemblyName string) error {
+	pdfPath := filepath.Join(filepath.Dir(planPath), assemblyName)
+	pdfData, err := os.ReadFile(pdfPath)
+	if err != nil {
+		return fmt.Errorf("read assembly PDF %s: %w", assemblyName, err)
+	}
+	client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
+	serverFilename, err := client.PutAssembly(ctx, planName, pdfData)
+	if err != nil {
+		return fmt.Errorf("upload assembly PDF: %w", err)
+	}
+	// Re-fetch and patch the Assembly field with the server-side name.
+	planBytes, err := client.GetPlan(ctx, planName)
+	if err != nil {
+		return fmt.Errorf("re-fetch plan: %w", err)
+	}
+	var plan models.PlanFile
+	if err := yaml.Unmarshal(planBytes, &plan); err != nil {
+		return fmt.Errorf("parse re-fetched plan: %w", err)
+	}
+	plan.Assembly = serverFilename
+	if err := PlanOps.SaveAll(ctx, planName, plan); err != nil {
+		return fmt.Errorf("update plan with assembly filename: %w", err)
+	}
+	fmt.Printf("Uploaded assembly instructions: %s\n", filepath.Base(pdfPath))
+	return nil
 }
 
 func init() {
