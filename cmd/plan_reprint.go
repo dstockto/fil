@@ -124,11 +124,12 @@ var planReprintCmd = &cobra.Command{
 		var err error
 		if selected.remote {
 			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			if selected.status == "archived" {
+			switch selected.status {
+			case "archived":
 				data, err = client.GetPlan(context.Background(), selected.remoteName, "archived")
-			} else if selected.status == "paused" {
+			case "paused":
 				data, err = client.GetPlan(context.Background(), selected.remoteName, "paused")
-			} else {
+			default:
 				data, err = client.GetPlan(context.Background(), selected.remoteName)
 			}
 		} else {

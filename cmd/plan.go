@@ -241,15 +241,6 @@ func discoverPlansWithFilter(includePaused, pausedOnly bool) ([]DiscoveredPlan, 
 	return plans, nil
 }
 
-// loadPlanYAML unmarshals YAML data into a PlanFile and sets defaults.
-func loadPlanYAML(data []byte, plan *models.PlanFile) error {
-	if err := yaml.Unmarshal(data, plan); err != nil {
-		return err
-	}
-	plan.DefaultStatus()
-	return nil
-}
-
 // selectPlan prompts the user to select a plan from a list of discovered plans.
 // Returns the selected DiscoveredPlan. If only one plan exists, it is returned directly.
 func selectPlan(label string, plans []DiscoveredPlan) (*DiscoveredPlan, error) {

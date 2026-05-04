@@ -151,29 +151,6 @@ func (c *PlanServerClient) GetPlan(ctx context.Context, name string, status ...s
 	return io.ReadAll(resp.Body)
 }
 
-// PutPlan creates or updates a plan on the server.
-func (c *PlanServerClient) PutPlan(ctx context.Context, name string, yamlData []byte) error {
-	endpoint := c.base + "/api/v1/plans/" + name
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(yamlData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.do(req)
-	if err != nil {
-		return fmt.Errorf("plan server request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-
-	return nil
-}
-
 // GetSharedConfig fetches the shared configuration from the server.
 func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) {
 	endpoint := c.base + "/api/v1/config"
@@ -314,29 +291,6 @@ func (c *PlanServerClient) GetAssembly(ctx context.Context, planName string) ([]
 	}
 
 	return data, filename, nil
-}
-
-// DeleteAssembly removes the assembly PDF for a plan.
-func (c *PlanServerClient) DeleteAssembly(ctx context.Context, planName string) error {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.do(req)
-	if err != nil {
-		return fmt.Errorf("plan server request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-
-	return nil
 }
 
 // CleanAssembliesResult is the response from the clean-assemblies endpoint.
@@ -634,24 +588,3 @@ func (c *PlanServerClient) GetHistory(ctx context.Context, since, until, printer
 	return entries, nil
 }
 
-func (c *PlanServerClient) planAction(ctx context.Context, name, action string) error {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", c.base, name, action)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.do(req)
-	if err != nil {
-		return fmt.Errorf("plan server request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-
-	return nil
-}
