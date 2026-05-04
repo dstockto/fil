@@ -71,6 +71,13 @@ type PlanOperations interface {
 	// Delete removes a Plan file from the active plans dir. Assembly PDFs
 	// are not cleaned up here — that's a server-side cross-plan concern.
 	Delete(ctx context.Context, name string) error
+
+	// Resolve applies a batch of caller-decided NeedResolutions to a Plan:
+	// for each (Project, Plate, NeedIndex), it overwrites the FilamentID,
+	// Name, and Material on that Need. The interactive disambiguation
+	// against Spoolman happens in the caller — Resolve is the persistence
+	// step. Empty Resolutions short-circuits (no-op).
+	Resolve(ctx context.Context, req ResolveRequest) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.
@@ -174,4 +181,23 @@ type StopRequest struct {
 	Plan    string `json:"plan"`
 	Project string `json:"project"`
 	Plate   string `json:"plate"`
+}
+
+// ResolveRequest is the input to PlanOperations.Resolve. Each NeedResolution
+// pins one previously-ambiguous Need to a specific Spoolman filament.
+type ResolveRequest struct {
+	Plan        string           `json:"plan"`
+	Resolutions []NeedResolution `json:"resolutions"`
+}
+
+// NeedResolution identifies a single Plate Need (by Project name, Plate
+// name, and zero-based NeedIndex) and the resolved Spoolman filament info to
+// stamp onto it.
+type NeedResolution struct {
+	Project    string `json:"project"`
+	Plate      string `json:"plate"`
+	NeedIndex  int    `json:"need_index"`
+	FilamentID int    `json:"filament_id"`
+	Name       string `json:"name"`
+	Material   string `json:"material"`
 }

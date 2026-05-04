@@ -69,6 +69,7 @@ func (s *PlanServer) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/plans/{name}/complete", s.handlePlanComplete)
 	mux.HandleFunc("POST /api/v1/plans/{name}/next", s.handlePlanNext)
 	mux.HandleFunc("POST /api/v1/plans/{name}/stop", s.handlePlanStop)
+	mux.HandleFunc("POST /api/v1/plans/{name}/resolve", s.handlePlanResolve)
 	mux.HandleFunc("POST /api/v1/scan-history", s.handleScanHistoryPost)
 	mux.HandleFunc("GET /api/v1/scan-history", s.handleScanHistoryGet)
 	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)

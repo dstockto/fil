@@ -46,6 +46,9 @@ type fakePlanOps struct {
 	deleteCalled    bool
 	deleteGotName   string
 	deleteErr       error
+	resolveCalled   bool
+	resolveGot      plan.ResolveRequest
+	resolveErr      error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -100,6 +103,12 @@ func (f *fakePlanOps) Delete(_ context.Context, name string) error {
 	f.deleteCalled = true
 	f.deleteGotName = name
 	return f.deleteErr
+}
+
+func (f *fakePlanOps) Resolve(_ context.Context, req plan.ResolveRequest) error {
+	f.resolveCalled = true
+	f.resolveGot = req
+	return f.resolveErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {
