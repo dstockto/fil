@@ -197,16 +197,6 @@ func (c *PlanServerClient) DeletePlan(ctx context.Context, name string) error {
 	return nil
 }
 
-// PausePlan moves a plan to the paused state on the server.
-func (c *PlanServerClient) PausePlan(ctx context.Context, name string) error {
-	return c.planAction(ctx, name, "pause")
-}
-
-// ResumePlan moves a plan from paused back to active on the server.
-func (c *PlanServerClient) ResumePlan(ctx context.Context, name string) error {
-	return c.planAction(ctx, name, "resume")
-}
-
 // ArchivePlan moves a plan to the archive on the server.
 func (c *PlanServerClient) ArchivePlan(ctx context.Context, name string) error {
 	return c.planAction(ctx, name, "archive")

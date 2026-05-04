@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -349,61 +350,44 @@ func (s *PlanServer) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *PlanServer) handlePausePlan(w http.ResponseWriter, r *http.Request) {
-	if s.PauseDir == "" {
-		http.Error(w, "pause directory not configured", http.StatusBadRequest)
-		return
-	}
-
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "plan name required", http.StatusBadRequest)
 		return
 	}
-
-	src := filepath.Join(s.PlansDir, filepath.Base(name))
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		http.Error(w, "plan not found", http.StatusNotFound)
+	if s.PlanOps == nil {
+		http.Error(w, "plan ops not configured", http.StatusInternalServerError)
 		return
 	}
-
-	if err := os.MkdirAll(s.PauseDir, 0755); err != nil {
-		http.Error(w, fmt.Sprintf("failed to create pause directory: %v", err), http.StatusInternalServerError)
+	if err := s.PlanOps.Pause(r.Context(), name); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("pause: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	dest := filepath.Join(s.PauseDir, filepath.Base(name))
-	if err := os.Rename(src, dest); err != nil {
-		http.Error(w, fmt.Sprintf("failed to pause plan: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *PlanServer) handleResumePlan(w http.ResponseWriter, r *http.Request) {
-	if s.PauseDir == "" {
-		http.Error(w, "pause directory not configured", http.StatusBadRequest)
-		return
-	}
-
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "plan name required", http.StatusBadRequest)
 		return
 	}
-
-	src := filepath.Join(s.PauseDir, filepath.Base(name))
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		http.Error(w, "plan not found in pause directory", http.StatusNotFound)
+	if s.PlanOps == nil {
+		http.Error(w, "plan ops not configured", http.StatusInternalServerError)
 		return
 	}
-
-	dest := filepath.Join(s.PlansDir, filepath.Base(name))
-	if err := os.Rename(src, dest); err != nil {
-		http.Error(w, fmt.Sprintf("failed to resume plan: %v", err), http.StatusInternalServerError)
+	if err := s.PlanOps.Resume(r.Context(), name); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "plan not found in pause directory", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("resume: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 

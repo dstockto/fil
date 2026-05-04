@@ -47,6 +47,16 @@ type PlanOperations interface {
 	// abandoned before any deduction). Project status is intentionally not
 	// regressed; a Project's status only moves forward.
 	Stop(ctx context.Context, req StopRequest) error
+
+	// Pause moves a Plan file out of the active plans dir into the pause
+	// dir. The file's contents aren't touched. Plate-level status fields
+	// also aren't changed — pausing is a workflow signal ("don't surface
+	// this plan in next/list right now"), not a Plate transition.
+	Pause(ctx context.Context, name string) error
+
+	// Resume moves a Plan file from the pause dir back to the active plans
+	// dir. Inverse of Pause.
+	Resume(ctx context.Context, name string) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.

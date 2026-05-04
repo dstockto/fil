@@ -10,16 +10,22 @@ import (
 
 // memPlanStore is an in-memory PlanStore for Complete tests. Tracks the last
 // saved plan so tests can assert on the post-mutation YAML state without
-// hitting disk.
+// hitting disk. paused mirrors the active map for Pause/Resume tests.
 type memPlanStore struct {
 	plans     map[string]models.PlanFile
+	paused    map[string]models.PlanFile
 	saveErr   error
 	loadErr   error
+	pauseErr  error
+	resumeErr error
 	saveCalls []models.PlanFile
 }
 
 func newMemPlanStore() *memPlanStore {
-	return &memPlanStore{plans: map[string]models.PlanFile{}}
+	return &memPlanStore{
+		plans:  map[string]models.PlanFile{},
+		paused: map[string]models.PlanFile{},
+	}
 }
 
 func (m *memPlanStore) Load(_ context.Context, name string) (models.PlanFile, error) {
@@ -39,6 +45,32 @@ func (m *memPlanStore) Save(_ context.Context, name string, plan models.PlanFile
 	}
 	m.plans[name] = plan
 	m.saveCalls = append(m.saveCalls, plan)
+	return nil
+}
+
+func (m *memPlanStore) Pause(_ context.Context, name string) error {
+	if m.pauseErr != nil {
+		return m.pauseErr
+	}
+	p, ok := m.plans[name]
+	if !ok {
+		return errors.New("not found")
+	}
+	delete(m.plans, name)
+	m.paused[name] = p
+	return nil
+}
+
+func (m *memPlanStore) Resume(_ context.Context, name string) error {
+	if m.resumeErr != nil {
+		return m.resumeErr
+	}
+	p, ok := m.paused[name]
+	if !ok {
+		return errors.New("not found in paused")
+	}
+	delete(m.paused, name)
+	m.plans[name] = p
 	return nil
 }
 

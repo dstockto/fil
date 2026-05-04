@@ -31,6 +31,12 @@ type fakePlanOps struct {
 	stopCalled     bool
 	stopGot        plan.StopRequest
 	stopErr        error
+	pauseCalled    bool
+	pauseGotName   string
+	pauseErr       error
+	resumeCalled   bool
+	resumeGotName  string
+	resumeErr      error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -55,6 +61,18 @@ func (f *fakePlanOps) Stop(_ context.Context, req plan.StopRequest) error {
 	f.stopCalled = true
 	f.stopGot = req
 	return f.stopErr
+}
+
+func (f *fakePlanOps) Pause(_ context.Context, name string) error {
+	f.pauseCalled = true
+	f.pauseGotName = name
+	return f.pauseErr
+}
+
+func (f *fakePlanOps) Resume(_ context.Context, name string) error {
+	f.resumeCalled = true
+	f.resumeGotName = name
+	return f.resumeErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {
