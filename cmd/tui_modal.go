@@ -162,7 +162,10 @@ func stopSelectedPlate(ref stopPlateRef, plans []DiscoveredPlan) tuiStopDoneMsg 
 	proj.Plates[ref.plateIdx].Printer = ""
 	proj.Plates[ref.plateIdx].StartedAt = ""
 
-	if err := savePlan(*dp, dp.Plan); err != nil {
+	if PlanOps == nil {
+		return tuiStopDoneMsg{err: fmt.Errorf("plan operations not configured")}
+	}
+	if err := PlanOps.SaveAll(context.Background(), planFileName(*dp), dp.Plan); err != nil {
 		return tuiStopDoneMsg{err: fmt.Errorf("failed to save plan: %w", err)}
 	}
 
@@ -414,7 +417,10 @@ func executeComplete(ctx context.Context, apiClient *api.Client, ref completePla
 		proj.Status = "completed"
 	}
 
-	if err := savePlan(*dp, dp.Plan); err != nil {
+	if PlanOps == nil {
+		return tuiCompleteDoneMsg{err: fmt.Errorf("plan operations not configured")}
+	}
+	if err := PlanOps.SaveAll(context.Background(), planFileName(*dp), dp.Plan); err != nil {
 		return tuiCompleteDoneMsg{err: fmt.Errorf("failed to save plan: %w", err)}
 	}
 
@@ -976,7 +982,10 @@ func executeNext(ctx context.Context, apiClient *api.Client, printerName string,
 	if proj.Status == "todo" {
 		proj.Status = "in-progress"
 	}
-	if err := savePlan(*dp, dp.Plan); err != nil {
+	if PlanOps == nil {
+		return tuiNextDoneMsg{err: fmt.Errorf("plan operations not configured")}
+	}
+	if err := PlanOps.SaveAll(context.Background(), planFileName(*dp), dp.Plan); err != nil {
 		return tuiNextDoneMsg{err: fmt.Errorf("failed to save plan: %w", err)}
 	}
 

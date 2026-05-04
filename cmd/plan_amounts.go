@@ -6,40 +6,25 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dstockto/fil/models"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var planAmountsCmd = &cobra.Command{
-	Use:     "amounts [file]",
+	Use:     "amounts",
 	Aliases: []string{"amt"},
 	Short:   "Interactively fill in filament amounts for plan plates",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var dp *DiscoveredPlan
-		if len(args) > 0 {
-			dp = &DiscoveredPlan{Path: args[0]}
-			data, err := os.ReadFile(args[0])
-			if err != nil {
-				return err
-			}
-			var plan models.PlanFile
-			if err := yaml.Unmarshal(data, &plan); err != nil {
-				return err
-			}
-			plan.DefaultStatus()
-			dp.Plan = plan
-			dp.DisplayName = FormatPlanPath(args[0])
-		} else {
-			plans, err := discoverPlans()
-			if err != nil {
-				return err
-			}
-			dp, err = selectPlan("Select plan to fill amounts", plans)
-			if err != nil {
-				return err
-			}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
+		plans, err := discoverPlans()
+		if err != nil {
+			return err
+		}
+		dp, err := selectPlan("Select plan to fill amounts", plans)
+		if err != nil {
+			return err
 		}
 
 		showAll, _ := cmd.Flags().GetBool("all")
@@ -106,7 +91,7 @@ var planAmountsCmd = &cobra.Command{
 							var confirm string
 							_, _ = fmt.Scanln(&confirm)
 							if confirm == "" || strings.EqualFold(confirm, "y") {
-								if saveErr := savePlan(*dp, plan); saveErr != nil {
+								if saveErr := PlanOps.SaveAll(cmd.Context(), planFileName(*dp), plan); saveErr != nil {
 									return fmt.Errorf("failed to save plan: %w", saveErr)
 								}
 								fmt.Println("Plan saved.")
@@ -138,7 +123,7 @@ var planAmountsCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Updated %d amount(s). Saving plan...\n", count)
-		if err := savePlan(*dp, plan); err != nil {
+		if err := PlanOps.SaveAll(cmd.Context(), planFileName(*dp), plan); err != nil {
 			return fmt.Errorf("failed to save plan: %w", err)
 		}
 		fmt.Println("Plan saved.")

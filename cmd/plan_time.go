@@ -17,6 +17,9 @@ var planTimeCmd = &cobra.Command{
 	Long:    "Set the estimated remaining print time for an in-progress plate. Duration is always interpreted as remaining from now (e.g. 6h25m, 2h, 45m).",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
 		plans, err := discoverPlans()
 		if err != nil {
 			return err
@@ -126,7 +129,7 @@ var planTimeCmd = &cobra.Command{
 		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].StartedAt = time.Now().Format(time.RFC3339)
 		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].EstimatedDuration = durationStr
 
-		if err := savePlan(*dp, dp.Plan); err != nil {
+		if err := PlanOps.SaveAll(cmd.Context(), planFileName(*dp), dp.Plan); err != nil {
 			return fmt.Errorf("failed to save plan: %w", err)
 		}
 

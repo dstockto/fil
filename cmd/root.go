@@ -172,7 +172,11 @@ func buildPlanOps(cfg *Config) plan.PlanOperations {
 		return nil
 	}
 	if cfg.PlansServer != "" {
-		return plan.NewRemote(cfg.PlansServer, version, cfg.TLSSkipVerify)
+		var sm plan.Spoolman
+		if cfg.ApiBase != "" {
+			sm = api.NewClient(cfg.ApiBase, cfg.TLSSkipVerify)
+		}
+		return plan.NewRemote(cfg.PlansServer, version, cfg.TLSSkipVerify, sm)
 	}
 	if cfg.ApiBase == "" || cfg.PlansDir == "" {
 		return nil

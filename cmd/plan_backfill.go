@@ -1,25 +1,26 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"os"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var planBackfillColorsCmd = &cobra.Command{
 	Use:   "backfill-colors",
 	Short: "Populate missing filament colors on all plan needs from Spoolman",
 	Long: `Looks up each need's FilamentID in Spoolman and writes the color_hex
-into the plan YAML. Run once to backfill existing plans; future saves
-will populate colors automatically.`,
+into the plan YAML. SaveAll on data-edit verbs auto-fills colors for newly
+resolved needs; this command sweeps existing plans for needs that pre-date
+that auto-fill.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if Cfg == nil || Cfg.ApiBase == "" {
 			return fmt.Errorf("api_base must be configured")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
 		}
 
 		ctx := cmd.Context()
@@ -44,7 +45,10 @@ will populate colors automatically.`,
 				continue
 			}
 
-			changed := backfillPlanColors(&plan, spools)
+			// fillPlanColors mirrors plan.backfillPlanColors but lives here so
+			// the cmd layer doesn't need to import internal plan helpers. The
+			// canonical owner of the fill rule is plan/backfill.go.
+			changed := fillPlanColors(&plan, spools)
 			if !changed {
 				continue
 			}
@@ -52,7 +56,7 @@ will populate colors automatically.`,
 			if dryRun {
 				fmt.Printf("  %s: would fill %d color(s)\n", dp.DisplayName, filled)
 			} else {
-				if err := savePlanDirect(dp, plan); err != nil {
+				if err := PlanOps.SaveAll(ctx, planFileName(dp), plan); err != nil {
 					fmt.Printf("  %s: error saving: %v\n", dp.DisplayName, err)
 					continue
 				}
@@ -96,17 +100,31 @@ func countMissingColors(plan *models.PlanFile, spools []models.FindSpool) int {
 	return count
 }
 
-// savePlanDirect saves a plan without the backfill hook (to avoid double-backfill).
-func savePlanDirect(dp DiscoveredPlan, plan models.PlanFile) error {
-	out, err := yaml.Marshal(plan)
-	if err != nil {
-		return err
+// fillPlanColors fills missing Need.Color values from a spool list. Mirrors
+// plan/backfill.go's backfillPlanColors so the dry-run path can detect
+// whether anything would change before deciding to call SaveAll.
+func fillPlanColors(plan *models.PlanFile, spools []models.FindSpool) bool {
+	colorByFilament := map[int]string{}
+	for _, s := range spools {
+		if s.Filament.Id != 0 && s.Filament.ColorHex != "" {
+			colorByFilament[s.Filament.Id] = s.Filament.ColorHex
+		}
 	}
-	if dp.Remote {
-		client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-		return client.PutPlan(context.Background(), dp.RemoteName, out)
+	changed := false
+	for i := range plan.Projects {
+		for j := range plan.Projects[i].Plates {
+			for k := range plan.Projects[i].Plates[j].Needs {
+				need := &plan.Projects[i].Plates[j].Needs[k]
+				if need.Color == "" && need.FilamentID != 0 {
+					if hex, ok := colorByFilament[need.FilamentID]; ok {
+						need.Color = hex
+						changed = true
+					}
+				}
+			}
+		}
 	}
-	return os.WriteFile(dp.Path, out, 0644)
+	return changed
 }
 
 //nolint:gochecknoinits

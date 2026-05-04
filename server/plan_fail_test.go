@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dstockto/fil/models"
 	"github.com/dstockto/fil/plan"
 )
 
@@ -49,6 +50,9 @@ type fakePlanOps struct {
 	resolveCalled   bool
 	resolveGot      plan.ResolveRequest
 	resolveErr      error
+	saveAllCalled   bool
+	saveAllGotName  string
+	saveAllErr      error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -109,6 +113,12 @@ func (f *fakePlanOps) Resolve(_ context.Context, req plan.ResolveRequest) error 
 	f.resolveCalled = true
 	f.resolveGot = req
 	return f.resolveErr
+}
+
+func (f *fakePlanOps) SaveAll(_ context.Context, name string, _ models.PlanFile) error {
+	f.saveAllCalled = true
+	f.saveAllGotName = name
+	return f.saveAllErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {

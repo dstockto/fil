@@ -78,6 +78,13 @@ type PlanOperations interface {
 	// against Spoolman happens in the caller — Resolve is the persistence
 	// step. Empty Resolutions short-circuits (no-op).
 	Resolve(ctx context.Context, req ResolveRequest) error
+
+	// SaveAll persists an entire mutated PlanFile. Used by data-edit verbs
+	// (amounts, time, attach, etc.) that mutate the plan in-memory and need
+	// a single save call. Implementations also backfill missing Need.Color
+	// values from Spoolman as a best-effort convenience. Prefer the typed
+	// verbs when one fits; SaveAll is for ad-hoc field edits.
+	SaveAll(ctx context.Context, name string, plan models.PlanFile) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.

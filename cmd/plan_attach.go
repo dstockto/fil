@@ -121,7 +121,10 @@ var planAttachCmd = &cobra.Command{
 
 		// Update plan YAML with the server-side assembly filename
 		dp.Plan.Assembly = serverFilename
-		if err := savePlan(*dp, dp.Plan); err != nil {
+		if PlanOps == nil {
+			return fmt.Errorf("PDF uploaded but plan operations not configured to update YAML")
+		}
+		if err := PlanOps.SaveAll(cmd.Context(), planFileName(*dp), dp.Plan); err != nil {
 			return fmt.Errorf("PDF uploaded but failed to update plan YAML: %w", err)
 		}
 
