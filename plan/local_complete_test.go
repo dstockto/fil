@@ -8,23 +8,28 @@ import (
 	"github.com/dstockto/fil/models"
 )
 
-// memPlanStore is an in-memory PlanStore for Complete tests. Tracks the last
-// saved plan so tests can assert on the post-mutation YAML state without
-// hitting disk. paused mirrors the active map for Pause/Resume tests.
+// memPlanStore is an in-memory PlanStore for tests. Tracks the last saved
+// plan so tests can assert on the post-mutation YAML state without hitting
+// disk. paused/archived mirror the active map for the workflow verbs.
 type memPlanStore struct {
-	plans     map[string]models.PlanFile
-	paused    map[string]models.PlanFile
-	saveErr   error
-	loadErr   error
-	pauseErr  error
-	resumeErr error
-	saveCalls []models.PlanFile
+	plans        map[string]models.PlanFile
+	paused       map[string]models.PlanFile
+	archived     map[string]models.PlanFile
+	saveErr      error
+	loadErr      error
+	pauseErr     error
+	resumeErr    error
+	archiveErr   error
+	unarchiveErr error
+	deleteErr    error
+	saveCalls    []models.PlanFile
 }
 
 func newMemPlanStore() *memPlanStore {
 	return &memPlanStore{
-		plans:  map[string]models.PlanFile{},
-		paused: map[string]models.PlanFile{},
+		plans:    map[string]models.PlanFile{},
+		paused:   map[string]models.PlanFile{},
+		archived: map[string]models.PlanFile{},
 	}
 }
 
@@ -71,6 +76,43 @@ func (m *memPlanStore) Resume(_ context.Context, name string) error {
 	}
 	delete(m.paused, name)
 	m.plans[name] = p
+	return nil
+}
+
+func (m *memPlanStore) Archive(_ context.Context, name string) error {
+	if m.archiveErr != nil {
+		return m.archiveErr
+	}
+	p, ok := m.plans[name]
+	if !ok {
+		return errors.New("not found")
+	}
+	delete(m.plans, name)
+	m.archived[name] = p
+	return nil
+}
+
+func (m *memPlanStore) Unarchive(_ context.Context, name string) error {
+	if m.unarchiveErr != nil {
+		return m.unarchiveErr
+	}
+	p, ok := m.archived[name]
+	if !ok {
+		return errors.New("not found in archived")
+	}
+	delete(m.archived, name)
+	m.plans[name] = p
+	return nil
+}
+
+func (m *memPlanStore) Delete(_ context.Context, name string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	if _, ok := m.plans[name]; !ok {
+		return errors.New("not found")
+	}
+	delete(m.plans, name)
 	return nil
 }
 

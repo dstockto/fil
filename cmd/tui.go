@@ -1397,7 +1397,9 @@ func archivePlanTUI(plan tuiPlanSummary) tea.Cmd {
 			RemoteName: plan.RemoteName,
 			Remote:     plan.Remote,
 		}
-		archivePlan(dp)
+		if PlanOps != nil {
+			_ = PlanOps.Archive(context.Background(), planFileName(dp))
+		}
 		return tuiArchiveDoneMsg{name: plan.Name}
 	}
 }

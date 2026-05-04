@@ -57,6 +57,20 @@ type PlanOperations interface {
 	// Resume moves a Plan file from the pause dir back to the active plans
 	// dir. Inverse of Pause.
 	Resume(ctx context.Context, name string) error
+
+	// Archive moves a completed Plan file from the active plans dir to the
+	// archive dir, applying a timestamp suffix to the archived filename so
+	// repeat archives of the same plan name don't collide.
+	Archive(ctx context.Context, name string) error
+
+	// Unarchive moves a Plan file from the archive dir back to the active
+	// plans dir. The timestamp suffix added by Archive is stripped to
+	// restore the original filename.
+	Unarchive(ctx context.Context, name string) error
+
+	// Delete removes a Plan file from the active plans dir. Assembly PDFs
+	// are not cleaned up here — that's a server-side cross-plan concern.
+	Delete(ctx context.Context, name string) error
 }
 
 // FailRequest is the input to PlanOperations.Fail.

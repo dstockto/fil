@@ -26,15 +26,23 @@ type PrinterLocations interface {
 
 // PlanStore loads, saves, and moves Plan YAML files by basename. Verbs that
 // mutate plan state (Complete, Next, Stop) use Load+Save; workflow verbs
-// (Pause, Resume) use Move. LocalPlanOps doesn't need to know whether plans
-// live on the local filesystem or somewhere else.
+// (Pause, Resume, Archive, Unarchive, Delete) use the move/delete methods.
+// LocalPlanOps doesn't need to know whether plans live on the local
+// filesystem or somewhere else.
 type PlanStore interface {
 	Load(ctx context.Context, name string) (models.PlanFile, error)
 	Save(ctx context.Context, name string, plan models.PlanFile) error
-	// Pause moves the named plan from active storage to paused storage.
-	// Resume is the inverse.
+	// Pause/Resume move the named plan between active and paused storage.
 	Pause(ctx context.Context, name string) error
 	Resume(ctx context.Context, name string) error
+	// Archive moves the active plan to archive storage, possibly with a
+	// derived archived name. Unarchive is the inverse and strips any
+	// archive-specific suffix to restore the original active name.
+	Archive(ctx context.Context, name string) error
+	Unarchive(ctx context.Context, name string) error
+	// Delete removes the active plan. Idempotency around already-missing
+	// files is the implementation's choice; the file-backed store errors.
+	Delete(ctx context.Context, name string) error
 }
 
 // HistoryWriter persists one history record per Plate-level event. The

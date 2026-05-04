@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"os"
 
-	"github.com/dstockto/fil/api"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
@@ -16,18 +13,20 @@ var planDeleteCmd = &cobra.Command{
 	Aliases: []string{"del"},
 	Short:   "Delete an active plan",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var dp *DiscoveredPlan
-		if len(args) > 0 {
-			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
-		} else {
-			plans, err := discoverPlans()
-			if err != nil {
-				return err
-			}
-			dp, err = selectPlan("Select plan to delete", plans)
-			if err != nil {
-				return err
-			}
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
+		}
+
+		plans, err := discoverPlans()
+		if err != nil {
+			return err
+		}
+		dp, err := selectPlan("Select plan to delete", plans)
+		if err != nil {
+			return err
 		}
 
 		confirmPrompt := promptui.Prompt{
@@ -35,9 +34,7 @@ var planDeleteCmd = &cobra.Command{
 			IsConfirm: true,
 			Stdout:    NoBellStdout,
 		}
-
-		_, err := confirmPrompt.Run()
-		if err != nil {
+		if _, err := confirmPrompt.Run(); err != nil {
 			if errors.Is(err, promptui.ErrAbort) {
 				fmt.Println("Deletion aborted.")
 				return nil
@@ -45,15 +42,8 @@ var planDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if dp.Remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			if err := client.DeletePlan(context.Background(), dp.RemoteName); err != nil {
-				return fmt.Errorf("failed to delete remote plan: %w", err)
-			}
-		} else {
-			if err := os.Remove(dp.Path); err != nil {
-				return fmt.Errorf("failed to delete plan: %w", err)
-			}
+		if err := PlanOps.Delete(cmd.Context(), planFileName(*dp)); err != nil {
+			return fmt.Errorf("delete: %w", err)
 		}
 
 		fmt.Printf("Plan %s deleted successfully.\n", dp.DisplayName)

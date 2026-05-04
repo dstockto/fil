@@ -43,7 +43,7 @@ func setupTestServer(t *testing.T) (*PlanServer, string) {
 	// Wire a real LocalPlanOps over the same dirs so pause/resume/etc.
 	// route through PlanOps end-to-end. Spoolman/history/notifier are
 	// nil because these tests don't exercise verbs that need them.
-	s.PlanOps = plan.NewLocal(nil, nil, plan.NewFilePlanStore(plansDir, pauseDir), nil, plan.NoopNotifier{})
+	s.PlanOps = plan.NewLocal(nil, nil, plan.NewFilePlanStore(plansDir, pauseDir, archiveDir), nil, plan.NoopNotifier{})
 	return s, base
 }
 

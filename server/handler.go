@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -316,26 +315,32 @@ func (s *PlanServer) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "plan name required", http.StatusBadRequest)
 		return
 	}
+	if s.PlanOps == nil {
+		http.Error(w, "plan ops not configured", http.StatusInternalServerError)
+		return
+	}
 
-	path := filepath.Join(s.PlansDir, filepath.Base(name))
-
-	// Read plan before deleting to find assembly reference for cleanup
+	// Read the assembly reference before deleting so we can clean up the
+	// PDF after the plan file is gone. The plan-file delete itself goes
+	// through PlanOps; the assembly cleanup is server-only cross-plan
+	// logic that doesn't belong in plan/.
 	var assemblyFile string
 	if s.AssembliesDir != "" {
+		path := filepath.Join(s.PlansDir, filepath.Base(name))
 		if planData, readErr := os.ReadFile(path); readErr == nil {
-			var plan models.PlanFile
-			if yamlErr := yaml.Unmarshal(planData, &plan); yamlErr == nil && plan.Assembly != "" {
-				assemblyFile = plan.Assembly
+			var pf models.PlanFile
+			if yamlErr := yaml.Unmarshal(planData, &pf); yamlErr == nil && pf.Assembly != "" {
+				assemblyFile = pf.Assembly
 			}
 		}
 	}
 
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
+	if err := s.PlanOps.Delete(r.Context(), name); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			http.Error(w, "plan not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, fmt.Sprintf("failed to delete plan: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -392,74 +397,44 @@ func (s *PlanServer) handleResumePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *PlanServer) handleArchivePlan(w http.ResponseWriter, r *http.Request) {
-	if s.ArchiveDir == "" {
-		http.Error(w, "archive directory not configured", http.StatusBadRequest)
-		return
-	}
-
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "plan name required", http.StatusBadRequest)
 		return
 	}
-
-	src := filepath.Join(s.PlansDir, filepath.Base(name))
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		http.Error(w, "plan not found", http.StatusNotFound)
+	if s.PlanOps == nil {
+		http.Error(w, "plan ops not configured", http.StatusInternalServerError)
 		return
 	}
-
-	if err := os.MkdirAll(s.ArchiveDir, 0755); err != nil {
-		http.Error(w, fmt.Sprintf("failed to create archive directory: %v", err), http.StatusInternalServerError)
+	if err := s.PlanOps.Archive(r.Context(), name); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "plan not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("archive: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	ext := filepath.Ext(name)
-	base := strings.TrimSuffix(filepath.Base(name), ext)
-	timestamp := time.Now().Format("20060102150405")
-	newFilename := fmt.Sprintf("%s-%s%s", base, timestamp, ext)
-
-	dest := filepath.Join(s.ArchiveDir, newFilename)
-	if err := os.Rename(src, dest); err != nil {
-		http.Error(w, fmt.Sprintf("failed to archive plan: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// archiveTimestampRe matches the -YYYYMMDDHHMMSS suffix added during archiving.
-var archiveTimestampRe = regexp.MustCompile(`-\d{14}$`)
-
 func (s *PlanServer) handleUnarchivePlan(w http.ResponseWriter, r *http.Request) {
-	if s.ArchiveDir == "" {
-		http.Error(w, "archive directory not configured", http.StatusBadRequest)
-		return
-	}
-
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "plan name required", http.StatusBadRequest)
 		return
 	}
-
-	src := filepath.Join(s.ArchiveDir, filepath.Base(name))
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		http.Error(w, "plan not found in archive directory", http.StatusNotFound)
+	if s.PlanOps == nil {
+		http.Error(w, "plan ops not configured", http.StatusInternalServerError)
 		return
 	}
-
-	// Strip the archive timestamp to restore the original filename.
-	ext := filepath.Ext(name)
-	base := strings.TrimSuffix(filepath.Base(name), ext)
-	restored := archiveTimestampRe.ReplaceAllString(base, "") + ext
-
-	dest := filepath.Join(s.PlansDir, restored)
-	if err := os.Rename(src, dest); err != nil {
-		http.Error(w, fmt.Sprintf("failed to unarchive plan: %v", err), http.StatusInternalServerError)
+	if err := s.PlanOps.Unarchive(r.Context(), name); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "plan not found in archive directory", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("unarchive: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -182,7 +182,7 @@ func buildPlanOps(cfg *Config) plan.PlanOperations {
 	for name, p := range cfg.Printers {
 		printers[name] = p.Locations
 	}
-	plans := plan.NewFilePlanStore(cfg.PlansDir, cfg.PauseDir)
+	plans := plan.NewFilePlanStore(cfg.PlansDir, cfg.PauseDir, cfg.ArchiveDir)
 	history := plan.NewFileHistoryWriter(cfg.PlansDir)
 	return plan.NewLocal(spoolman, printers, plans, history, plan.NoopNotifier{})
 }

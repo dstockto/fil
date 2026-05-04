@@ -5,27 +5,35 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/dstockto/fil/models"
 	"gopkg.in/yaml.v3"
 )
 
 // FilePlanStore reads and writes Plan YAML files in the configured plans dir,
-// and moves them between plans dir and pause dir for Pause/Resume. Used by
-// both the CLI in Local Mode and by the plan-server's LocalPlanOps. The CLI's
-// CWD-arg path is not supported through this store — verbs that mutate or
-// move plans operate strictly on plans within the configured directories.
+// and moves them between plans dir, pause dir, and archive dir for the
+// workflow verbs. Used by both the CLI in Local Mode and by the plan-server's
+// LocalPlanOps. The CLI's CWD-arg path is not supported through this store —
+// verbs that mutate or move plans operate strictly on plans within the
+// configured directories.
 type FilePlanStore struct {
-	PlansDir string
-	PauseDir string
+	PlansDir   string
+	PauseDir   string
+	ArchiveDir string
 }
 
-// NewFilePlanStore returns a store rooted at plansDir. pauseDir may be empty
-// in setups that don't use pause/resume; calling Pause/Resume on such a
-// store returns an error.
-func NewFilePlanStore(plansDir, pauseDir string) *FilePlanStore {
-	return &FilePlanStore{PlansDir: plansDir, PauseDir: pauseDir}
+// NewFilePlanStore returns a store rooted at plansDir. pauseDir/archiveDir
+// may be empty in setups that don't use those workflows; calling the
+// corresponding methods on such a store returns an error.
+func NewFilePlanStore(plansDir, pauseDir, archiveDir string) *FilePlanStore {
+	return &FilePlanStore{PlansDir: plansDir, PauseDir: pauseDir, ArchiveDir: archiveDir}
 }
+
+// archiveTimestampRe matches the -YYYYMMDDHHMMSS suffix added by Archive.
+var archiveTimestampRe = regexp.MustCompile(`-\d{14}$`)
 
 // Load reads <plansDir>/<name> as YAML and applies status defaults. The name
 // must be a basename (no path separators); callers pass the same value the
@@ -97,6 +105,63 @@ func (s *FilePlanStore) Resume(_ context.Context, name string) error {
 	dst := filepath.Join(s.PlansDir, name)
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("resume %s: %w", name, err)
+	}
+	return nil
+}
+
+// Archive moves <plansDir>/<name> to <archiveDir>/<name-without-ext>-YYYYMMDDHHMMSS<ext>,
+// so re-archiving the same name doesn't collide. Creates archiveDir if missing.
+func (s *FilePlanStore) Archive(_ context.Context, name string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	if s.ArchiveDir == "" {
+		return fmt.Errorf("archive_dir not configured")
+	}
+	if err := os.MkdirAll(s.ArchiveDir, 0755); err != nil {
+		return fmt.Errorf("create archive dir: %w", err)
+	}
+	src := filepath.Join(s.PlansDir, name)
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	dst := filepath.Join(s.ArchiveDir, fmt.Sprintf("%s-%s%s", base, time.Now().Format("20060102150405"), ext))
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("archive %s: %w", name, err)
+	}
+	return nil
+}
+
+// Unarchive moves <archiveDir>/<name> to <plansDir>/<stripped-name>, where
+// the timestamp suffix added by Archive is stripped. The caller passes the
+// archived basename (the timestamped one), since that's what the archive
+// listing surfaces.
+func (s *FilePlanStore) Unarchive(_ context.Context, name string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	if s.ArchiveDir == "" {
+		return fmt.Errorf("archive_dir not configured")
+	}
+	src := filepath.Join(s.ArchiveDir, name)
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	restored := archiveTimestampRe.ReplaceAllString(base, "") + ext
+	dst := filepath.Join(s.PlansDir, restored)
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("unarchive %s: %w", name, err)
+	}
+	return nil
+}
+
+// Delete removes <plansDir>/<name>. Errors if the file doesn't exist —
+// callers should have just discovered it.
+func (s *FilePlanStore) Delete(_ context.Context, name string) error {
+	if err := validateName(name); err != nil {
+		return err
+	}
+	path := filepath.Join(s.PlansDir, name)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("delete %s: %w", name, err)
 	}
 	return nil
 }

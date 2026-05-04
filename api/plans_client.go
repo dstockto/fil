@@ -174,39 +174,6 @@ func (c *PlanServerClient) PutPlan(ctx context.Context, name string, yamlData []
 	return nil
 }
 
-// DeletePlan removes a plan from the server.
-func (c *PlanServerClient) DeletePlan(ctx context.Context, name string) error {
-	endpoint := c.base + "/api/v1/plans/" + name
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.do(req)
-	if err != nil {
-		return fmt.Errorf("plan server request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plan server error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-
-	return nil
-}
-
-// ArchivePlan moves a plan to the archive on the server.
-func (c *PlanServerClient) ArchivePlan(ctx context.Context, name string) error {
-	return c.planAction(ctx, name, "archive")
-}
-
-// UnarchivePlan moves a plan from the archive back to active on the server.
-func (c *PlanServerClient) UnarchivePlan(ctx context.Context, name string) error {
-	return c.planAction(ctx, name, "unarchive")
-}
-
 // GetSharedConfig fetches the shared configuration from the server.
 func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) {
 	endpoint := c.base + "/api/v1/config"

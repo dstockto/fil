@@ -5,73 +5,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
-	"gopkg.in/yaml.v3"
-
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var planUnarchiveCmd = &cobra.Command{
-	Use:     "unarchive [file]",
+	Use:     "unarchive",
 	Aliases: []string{"ua"},
 	Short:   "Move a plan file from the archive directory back to the active plans directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if Cfg == nil || (Cfg.PlansServer == "" && (Cfg.ArchiveDir == "" || Cfg.PlansDir == "")) {
-			return fmt.Errorf("archive_dir and plans_dir (or plans_server) must be configured in config.json")
+		if Cfg == nil {
+			return fmt.Errorf("config not loaded")
+		}
+		if PlanOps == nil {
+			return fmt.Errorf("plan operations not configured (need either plans_server or api_base+plans_dir)")
 		}
 
-		var dp *DiscoveredPlan
-		if len(args) > 0 {
-			dp = &DiscoveredPlan{Path: args[0], DisplayName: FormatPlanPath(args[0])}
-		} else {
-			plans, err := discoverArchivedPlans()
-			if err != nil {
-				return err
-			}
-			dp, err = selectPlan("Select plan file to unarchive", plans)
-			if err != nil {
-				return err
-			}
-		}
-
-		if dp.Remote {
-			client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
-			if err := client.UnarchivePlan(context.Background(), dp.RemoteName); err != nil {
-				return fmt.Errorf("failed to unarchive remote plan: %w", err)
-			}
-			fmt.Printf("Unarchived %s\n", dp.DisplayName)
-			return nil
-		}
-
-		// Strip the archive timestamp suffix to restore the original filename
-		base := filepath.Base(dp.Path)
-		restored := stripArchiveTimestamp(base)
-		dest := filepath.Join(Cfg.PlansDir, restored)
-
-		err := os.Rename(dp.Path, dest)
+		plans, err := discoverArchivedPlans()
 		if err != nil {
-			return fmt.Errorf("failed to move file: %w", err)
+			return err
+		}
+		dp, err := selectPlan("Select plan file to unarchive", plans)
+		if err != nil {
+			return err
 		}
 
-		fmt.Printf("Moved %s to %s\n", dp.DisplayName, FormatPlanPath(dest))
+		if err := PlanOps.Unarchive(cmd.Context(), planFileName(*dp)); err != nil {
+			return fmt.Errorf("unarchive: %w", err)
+		}
+		fmt.Printf("Unarchived %s\n", dp.DisplayName)
 		return nil
 	},
-}
-
-// timestampSuffix matches the -YYYYMMDDHHMMSS suffix added by plan archive.
-var timestampSuffix = regexp.MustCompile(`-\d{14}$`)
-
-// stripArchiveTimestamp removes the archive timestamp from a filename,
-// e.g. "myplan-20260328150405.yaml" -> "myplan.yaml"
-func stripArchiveTimestamp(filename string) string {
-	ext := filepath.Ext(filename)
-	name := strings.TrimSuffix(filename, ext)
-	name = timestampSuffix.ReplaceAllString(name, "")
-	return name + ext
 }
 
 // discoverArchivedPlans finds plans in the archive directory and on the remote server.
@@ -81,9 +49,7 @@ func discoverArchivedPlans() ([]DiscoveredPlan, error) {
 	// Local archive directory
 	if Cfg != nil && Cfg.ArchiveDir != "" {
 		evalDir, err := filepath.EvalSymlinks(Cfg.ArchiveDir)
-		if err == nil {
-			// use evaluated path
-		} else {
+		if err != nil {
 			evalDir = Cfg.ArchiveDir
 		}
 

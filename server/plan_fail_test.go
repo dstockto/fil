@@ -34,9 +34,18 @@ type fakePlanOps struct {
 	pauseCalled    bool
 	pauseGotName   string
 	pauseErr       error
-	resumeCalled   bool
-	resumeGotName  string
-	resumeErr      error
+	resumeCalled    bool
+	resumeGotName   string
+	resumeErr       error
+	archiveCalled   bool
+	archiveGotName  string
+	archiveErr      error
+	unarchiveCalled bool
+	unarchiveGotName string
+	unarchiveErr    error
+	deleteCalled    bool
+	deleteGotName   string
+	deleteErr       error
 }
 
 func (f *fakePlanOps) Fail(_ context.Context, req plan.FailRequest) (plan.FailResult, error) {
@@ -73,6 +82,24 @@ func (f *fakePlanOps) Resume(_ context.Context, name string) error {
 	f.resumeCalled = true
 	f.resumeGotName = name
 	return f.resumeErr
+}
+
+func (f *fakePlanOps) Archive(_ context.Context, name string) error {
+	f.archiveCalled = true
+	f.archiveGotName = name
+	return f.archiveErr
+}
+
+func (f *fakePlanOps) Unarchive(_ context.Context, name string) error {
+	f.unarchiveCalled = true
+	f.unarchiveGotName = name
+	return f.unarchiveErr
+}
+
+func (f *fakePlanOps) Delete(_ context.Context, name string) error {
+	f.deleteCalled = true
+	f.deleteGotName = name
+	return f.deleteErr
 }
 
 func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.ResponseRecorder {
