@@ -585,6 +585,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.nextModal != nil {
 				m.viewport.SetContent(m.renderNextModal())
+				m.viewport.GotoTop()
 			}
 		}
 
@@ -644,6 +645,29 @@ func (m tuiModel) updateModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// scrollPickerToCursor adjusts the viewport's Y-offset so the row at `cursor`
+// stays visible. Picker renders are: `headerLines` lines of header, then one
+// line per row — so the cursor's absolute line is `headerLines + cursor`.
+// Caller is expected to have just SetContent'd the picker render.
+func scrollPickerToCursor(vp *viewport.Model, cursor, headerLines int) {
+	if vp.Height <= 0 {
+		return
+	}
+	target := headerLines + cursor
+	top := vp.YOffset
+	bottom := top + vp.Height - 1
+	if target < top {
+		vp.SetYOffset(target)
+	} else if target > bottom {
+		vp.SetYOffset(target - vp.Height + 1)
+	}
+}
+
+// pickerHeaderLines is the number of lines all picker stages render before the
+// first row (title + blank line). Kept as a named constant so the scroll math
+// stays in sync if the picker chrome ever grows.
+const pickerHeaderLines = 2
+
 // updateNextModal handles key input for the next modal.
 func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	nm := m.nextModal
@@ -671,12 +695,14 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				nm.printerCursor++
 			}
 			m.viewport.SetContent(m.renderNextModal())
+			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines)
 			return m, nil
 		case "k", "up":
 			if nm.printerCursor > 0 {
 				nm.printerCursor--
 			}
 			m.viewport.SetContent(m.renderNextModal())
+			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines)
 			return m, nil
 		case "enter":
 			nm.selectedPrinter = nm.printerNames[nm.printerCursor]
@@ -710,12 +736,14 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				nm.plateCursor++
 			}
 			m.viewport.SetContent(m.renderNextModal())
+			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines)
 			return m, nil
 		case "k", "up":
 			if nm.plateCursor > 0 {
 				nm.plateCursor--
 			}
 			m.viewport.SetContent(m.renderNextModal())
+			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines)
 			return m, nil
 		case "enter":
 			if len(nm.plates) == 0 {
@@ -821,12 +849,14 @@ func (m tuiModel) updateCompleteModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cm.cursor++
 			}
 			m.viewport.SetContent(m.renderCompleteModal())
+			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines)
 			return m, nil
 		case "k", "up":
 			if cm.cursor > 0 {
 				cm.cursor--
 			}
 			m.viewport.SetContent(m.renderCompleteModal())
+			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines)
 			return m, nil
 		case "enter":
 			ref := cm.plates[cm.cursor]
@@ -917,12 +947,14 @@ func (m tuiModel) updateStopModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				sm.cursor++
 			}
 			m.viewport.SetContent(m.renderStopModal())
+			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines)
 			return m, nil
 		case "k", "up":
 			if sm.cursor > 0 {
 				sm.cursor--
 			}
 			m.viewport.SetContent(m.renderStopModal())
+			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines)
 			return m, nil
 		case "enter":
 			sm.stage = stageConfirm
