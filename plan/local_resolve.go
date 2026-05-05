@@ -42,6 +42,8 @@ func (l *LocalPlanOps) Resolve(ctx context.Context, req ResolveRequest) error {
 		need.Material = res.Material
 	}
 
+	applyColorBackfill(ctx, l.spoolman, &plan)
+
 	if err := l.plans.Save(ctx, req.Plan, plan); err != nil {
 		return fmt.Errorf("save plan: %w", err)
 	}

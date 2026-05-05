@@ -49,6 +49,32 @@ func TestLocalResolveAppliesResolutions(t *testing.T) {
 	}
 }
 
+func TestLocalResolveBackfillsColors(t *testing.T) {
+	// Regression: Resolve must backfill missing Need.Color from Spoolman the
+	// same way SaveAll does. Previously Resolve called PlanStore.Save directly,
+	// bypassing the backfill — so resolved needs ended up with FilamentID set
+	// but Color empty, forcing users to run `fil plan backfill-colors`.
+	store := newMemPlanStore()
+	store.plans["test.yaml"] = resolvableSamplePlan()
+
+	sm := newFakeSpoolman(makeFailSpool(1, "AMS A1", 800, 100, "PLA white"))
+	sm.spools[0].Filament.ColorHex = "#FFFFFF"
+	ops := newLocalWithStore(t, sm, store, &recordingHistory{}, NoopNotifier{})
+
+	req := ResolveRequest{
+		Plan: "test.yaml",
+		Resolutions: []NeedResolution{
+			{Project: "Proj", Plate: "P1", NeedIndex: 0, FilamentID: 100, Name: "PLA white", Material: "PLA"},
+		},
+	}
+	if err := ops.Resolve(context.Background(), req); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := store.plans["test.yaml"].Projects[0].Plates[0].Needs[0].Color; got != "#FFFFFF" {
+		t.Errorf("Color = %q, want #FFFFFF (auto-backfilled from Spoolman)", got)
+	}
+}
+
 func TestLocalResolveEmptyResolutionsIsNoOp(t *testing.T) {
 	store := newMemPlanStore()
 	store.plans["test.yaml"] = resolvableSamplePlan()
