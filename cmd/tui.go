@@ -834,6 +834,7 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			nm.loadOps = nil
 			nm.issues = nil
 			m.viewport.SetContent(m.renderNextModal())
+			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines(nm.filtered != nil))
 			return m, nil
 		case "y", "enter":
 			if nm.selectedPlate == nil {
@@ -1004,6 +1005,7 @@ func (m tuiModel) updateCompleteModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cm.deductions = nil
 				cm.issues = nil
 				m.viewport.SetContent(m.renderCompleteModal())
+				scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines(cm.filtered != nil))
 				return m, nil
 			}
 			return closeModal(), nil
