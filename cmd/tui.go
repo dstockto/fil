@@ -404,7 +404,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				stage = stageConfirm
 			}
 			m.modal = modalStop
-			m.stopModal = &tuiStopModal{plates: refs, cursor: 0, stage: stage}
+			m.stopModal = &tuiStopModal{plates: refs, cursor: 0, stage: stage, filterInput: newPickerFilterInput()}
 			m.viewport.SetContent(m.renderStopModal())
 			m.viewport.GotoTop()
 			return m, nil
@@ -422,7 +422,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, clearStatusAfter(3 * time.Second)
 			}
 			m.modal = modalComplete
-			m.completeModal = &tuiCompleteModal{plates: refs, cursor: 0, stage: stagePicker}
+			m.completeModal = &tuiCompleteModal{plates: refs, cursor: 0, stage: stagePicker, filterInput: newPickerFilterInput()}
 			// If only one plate, jump straight to preview
 			if len(refs) == 1 {
 				ref := refs[0]
@@ -448,7 +448,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			sortStrings(printerNames)
 			m.modal = modalNext
-			m.nextModal = &tuiNextModal{printerNames: printerNames}
+			m.nextModal = &tuiNextModal{printerNames: printerNames, filterInput: newPickerFilterInput()}
 			if len(printerNames) == 1 {
 				m.nextModal.selectedPrinter = printerNames[0]
 				m.nextModal.stage = stageLoading
@@ -663,10 +663,15 @@ func scrollPickerToCursor(vp *viewport.Model, cursor, headerLines int) {
 	}
 }
 
-// pickerHeaderLines is the number of lines all picker stages render before the
-// first row (title + blank line). Kept as a named constant so the scroll math
-// stays in sync if the picker chrome ever grows.
-const pickerHeaderLines = 2
+// pickerHeaderLines is the number of lines all picker stages render before
+// the first row. Default is 2 (title + blank). When the filter input or an
+// active filter pill is showing, two more lines are added (filter line + blank).
+func pickerHeaderLines(showFilter bool) int {
+	if showFilter {
+		return 4
+	}
+	return 2
+}
 
 // updateNextModal handles key input for the next modal.
 func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -695,14 +700,14 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				nm.printerCursor++
 			}
 			m.viewport.SetContent(m.renderNextModal())
-			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines(false))
 			return m, nil
 		case "k", "up":
 			if nm.printerCursor > 0 {
 				nm.printerCursor--
 			}
 			m.viewport.SetContent(m.renderNextModal())
-			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, nm.printerCursor, pickerHeaderLines(false))
 			return m, nil
 		case "enter":
 			nm.selectedPrinter = nm.printerNames[nm.printerCursor]
@@ -719,8 +724,57 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case stagePicker:
+		// Filter-edit mode: keystrokes go to the textinput.
+		if nm.filtering {
+			switch msg.String() {
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "esc":
+				nm.filtering = false
+				nm.filtered = nil
+				nm.filterInput.SetValue("")
+				nm.filterInput.Blur()
+				nm.plateCursor = 0
+				m.viewport.SetContent(m.renderNextModal())
+				m.viewport.GotoTop()
+				return m, nil
+			case "enter":
+				nm.filtering = false
+				nm.filterInput.Blur()
+				m.viewport.SetContent(m.renderNextModal())
+				scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines(true))
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				nm.filterInput, cmd = nm.filterInput.Update(msg)
+				nm.filtered = pickerFilterIdxs(nm.filterInput.Value(), nextPlateLines(nm.plates))
+				visCount := visiblePickerCount(nm.filtered, len(nm.plates))
+				if nm.plateCursor >= visCount {
+					nm.plateCursor = visCount - 1
+				}
+				if nm.plateCursor < 0 {
+					nm.plateCursor = 0
+				}
+				m.viewport.SetContent(m.renderNextModal())
+				m.viewport.GotoTop()
+				return m, cmd
+			}
+		}
+
+		showFilter := nm.filtered != nil
+		visCount := visiblePickerCount(nm.filtered, len(nm.plates))
 		switch msg.String() {
 		case "esc", "q":
+			if nm.filtered != nil {
+				// Esc with an applied filter clears it before bailing out of the picker.
+				nm.filtered = nil
+				nm.filterInput.SetValue("")
+				nm.plateCursor = 0
+				m.viewport.SetContent(m.renderNextModal())
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			if len(nm.printerNames) > 1 {
 				nm.stage = stagePrinterPicker
 				nm.plates = nil
@@ -731,25 +785,34 @@ func (m tuiModel) updateNextModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "/":
+			nm.filtering = true
+			nm.filterInput.Focus()
+			m.viewport.SetContent(m.renderNextModal())
+			return m, textinput.Blink
 		case "j", "down":
-			if nm.plateCursor < len(nm.plates)-1 {
+			if nm.plateCursor < visCount-1 {
 				nm.plateCursor++
 			}
 			m.viewport.SetContent(m.renderNextModal())
-			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "k", "up":
 			if nm.plateCursor > 0 {
 				nm.plateCursor--
 			}
 			m.viewport.SetContent(m.renderNextModal())
-			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, nm.plateCursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "enter":
-			if len(nm.plates) == 0 {
+			if visCount == 0 {
 				return m, nil
 			}
-			plate := nm.plates[nm.plateCursor]
+			plateIdx := visiblePickerIdx(nm.filtered, nm.plateCursor)
+			if plateIdx < 0 {
+				return m, nil
+			}
+			plate := nm.plates[plateIdx]
 			if !plate.isReady {
 				m.statusMsg = "That plate has insufficient filament"
 				m.statusError = true
@@ -838,28 +901,87 @@ func (m tuiModel) updateCompleteModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch cm.stage {
 	case stagePicker:
+		if cm.filtering {
+			switch msg.String() {
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "esc":
+				cm.filtering = false
+				cm.filtered = nil
+				cm.filterInput.SetValue("")
+				cm.filterInput.Blur()
+				cm.cursor = 0
+				m.viewport.SetContent(m.renderCompleteModal())
+				m.viewport.GotoTop()
+				return m, nil
+			case "enter":
+				cm.filtering = false
+				cm.filterInput.Blur()
+				m.viewport.SetContent(m.renderCompleteModal())
+				scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines(true))
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				cm.filterInput, cmd = cm.filterInput.Update(msg)
+				cm.filtered = pickerFilterIdxs(cm.filterInput.Value(), completePlateLines(cm.plates))
+				visCount := visiblePickerCount(cm.filtered, len(cm.plates))
+				if cm.cursor >= visCount {
+					cm.cursor = visCount - 1
+				}
+				if cm.cursor < 0 {
+					cm.cursor = 0
+				}
+				m.viewport.SetContent(m.renderCompleteModal())
+				m.viewport.GotoTop()
+				return m, cmd
+			}
+		}
+
+		showFilter := cm.filtered != nil
+		visCount := visiblePickerCount(cm.filtered, len(cm.plates))
 		switch msg.String() {
 		case "esc", "q":
+			if cm.filtered != nil {
+				cm.filtered = nil
+				cm.filterInput.SetValue("")
+				cm.cursor = 0
+				m.viewport.SetContent(m.renderCompleteModal())
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			return closeModal(), nil
 		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "/":
+			cm.filtering = true
+			cm.filterInput.Focus()
+			m.viewport.SetContent(m.renderCompleteModal())
+			return m, textinput.Blink
 		case "j", "down":
-			if cm.cursor < len(cm.plates)-1 {
+			if cm.cursor < visCount-1 {
 				cm.cursor++
 			}
 			m.viewport.SetContent(m.renderCompleteModal())
-			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "k", "up":
 			if cm.cursor > 0 {
 				cm.cursor--
 			}
 			m.viewport.SetContent(m.renderCompleteModal())
-			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, cm.cursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "enter":
-			ref := cm.plates[cm.cursor]
+			if visCount == 0 {
+				return m, nil
+			}
+			plateIdx := visiblePickerIdx(cm.filtered, cm.cursor)
+			if plateIdx < 0 {
+				return m, nil
+			}
+			ref := cm.plates[plateIdx]
 			cm.selected = &ref
 			cm.stage = stageLoading
 			m.viewport.SetContent(m.renderCompleteModal())
@@ -936,27 +1058,85 @@ func (m tuiModel) updateStopModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch sm.stage {
 	case stagePicker:
+		if sm.filtering {
+			switch msg.String() {
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "esc":
+				sm.filtering = false
+				sm.filtered = nil
+				sm.filterInput.SetValue("")
+				sm.filterInput.Blur()
+				sm.cursor = 0
+				m.viewport.SetContent(m.renderStopModal())
+				m.viewport.GotoTop()
+				return m, nil
+			case "enter":
+				sm.filtering = false
+				sm.filterInput.Blur()
+				m.viewport.SetContent(m.renderStopModal())
+				scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines(true))
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				sm.filterInput, cmd = sm.filterInput.Update(msg)
+				sm.filtered = pickerFilterIdxs(sm.filterInput.Value(), stopPlateLines(sm.plates))
+				visCount := visiblePickerCount(sm.filtered, len(sm.plates))
+				if sm.cursor >= visCount {
+					sm.cursor = visCount - 1
+				}
+				if sm.cursor < 0 {
+					sm.cursor = 0
+				}
+				m.viewport.SetContent(m.renderStopModal())
+				m.viewport.GotoTop()
+				return m, cmd
+			}
+		}
+
+		showFilter := sm.filtered != nil
+		visCount := visiblePickerCount(sm.filtered, len(sm.plates))
 		switch msg.String() {
-		case "esc", "q", "ctrl+c":
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "esc", "q":
+			if sm.filtered != nil {
+				sm.filtered = nil
+				sm.filterInput.SetValue("")
+				sm.cursor = 0
+				m.viewport.SetContent(m.renderStopModal())
+				m.viewport.GotoTop()
+				return m, nil
+			}
 			m.modal = modalNone
 			m.stopModal = nil
 			m.viewport.SetContent(m.renderScrollable())
 			return m, nil
+		case "/":
+			sm.filtering = true
+			sm.filterInput.Focus()
+			m.viewport.SetContent(m.renderStopModal())
+			return m, textinput.Blink
 		case "j", "down":
-			if sm.cursor < len(sm.plates)-1 {
+			if sm.cursor < visCount-1 {
 				sm.cursor++
 			}
 			m.viewport.SetContent(m.renderStopModal())
-			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "k", "up":
 			if sm.cursor > 0 {
 				sm.cursor--
 			}
 			m.viewport.SetContent(m.renderStopModal())
-			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines)
+			scrollPickerToCursor(&m.viewport, sm.cursor, pickerHeaderLines(showFilter))
 			return m, nil
 		case "enter":
+			if visCount == 0 {
+				return m, nil
+			}
 			sm.stage = stageConfirm
 			m.viewport.SetContent(m.renderStopModal())
 			return m, nil
@@ -976,7 +1156,11 @@ func (m tuiModel) updateStopModal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "y", "enter":
 			// Execute the stop
-			ref := sm.plates[sm.cursor]
+			plateIdx := visiblePickerIdx(sm.filtered, sm.cursor)
+			if plateIdx < 0 || plateIdx >= len(sm.plates) {
+				return m, nil
+			}
+			ref := sm.plates[plateIdx]
 			m.modal = modalNone
 			m.stopModal = nil
 			m.viewport.SetContent(m.renderScrollable())

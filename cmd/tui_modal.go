@@ -7,10 +7,87 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 )
+
+// newPickerFilterInput returns a textinput configured for in-modal picker
+// filtering. Same prompt/limits as the main TUI filter so the UX is uniform.
+func newPickerFilterInput() textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = "/ "
+	ti.CharLimit = 64
+	return ti
+}
+
+// pickerFilterIdxs returns the indices in `lines` whose lowercased form
+// contains the lowercased query as a substring. An empty/whitespace query
+// returns nil — meaning "no filter active, render the full list". A
+// non-empty query that matches nothing returns a non-nil empty slice so
+// callers can distinguish "filter active, zero matches" from "no filter".
+func pickerFilterIdxs(query string, lines []string) []int {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil
+	}
+	out := []int{}
+	for i, l := range lines {
+		if strings.Contains(strings.ToLower(l), q) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// visiblePickerIdx maps a cursor position in the visible (filtered) row list
+// back to the underlying plates slice index. With no filter, the visible
+// cursor IS the plate index.
+func visiblePickerIdx(filtered []int, visCursor int) int {
+	if filtered == nil {
+		return visCursor
+	}
+	if visCursor < 0 || visCursor >= len(filtered) {
+		return -1
+	}
+	return filtered[visCursor]
+}
+
+// visiblePickerCount returns the number of visible rows in the picker.
+func visiblePickerCount(filtered []int, total int) int {
+	if filtered != nil {
+		return len(filtered)
+	}
+	return total
+}
+
+// nextPlateLines / stopPlateLines / completePlateLines return the per-plate
+// display strings used both for rendering and for filter matching, so a
+// substring query catches anything visible in the picker.
+func nextPlateLines(plates []nextPlateRef) []string {
+	out := make([]string, len(plates))
+	for i, p := range plates {
+		out[i] = p.displayLine() + " " + p.planName
+	}
+	return out
+}
+
+func stopPlateLines(plates []stopPlateRef) []string {
+	out := make([]string, len(plates))
+	for i, p := range plates {
+		out[i] = p.displayLine() + " " + p.planName
+	}
+	return out
+}
+
+func completePlateLines(plates []completePlateRef) []string {
+	out := make([]string, len(plates))
+	for i, p := range plates {
+		out[i] = p.displayLine() + " " + p.planName
+	}
+	return out
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modal infrastructure
@@ -55,9 +132,12 @@ type stopPlateRef struct {
 
 // tuiStopModal manages the stop-plate flow: optional picker, then confirmation.
 type tuiStopModal struct {
-	plates []stopPlateRef
-	cursor int
-	stage  tuiModalStage
+	plates      []stopPlateRef
+	cursor      int // index into the visible (filtered) row list
+	stage       tuiModalStage
+	filterInput textinput.Model
+	filtering   bool  // true while the filter textinput is focused
+	filtered    []int // indices into plates; nil = no filter active
 }
 
 // displayLine returns a human-readable line for a plate in the picker.
@@ -115,11 +195,31 @@ func (m tuiModel) renderStopModal() string {
 
 	switch sm.stage {
 	case stagePicker:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Stop which plate? (%d in progress)", len(sm.plates))))
+		showFilter := sm.filtering || sm.filtered != nil
+		visCount := len(sm.plates)
+		if sm.filtered != nil {
+			visCount = len(sm.filtered)
+		}
+		title := fmt.Sprintf("Stop which plate? (%d in progress)", len(sm.plates))
+		if sm.filtered != nil {
+			title = fmt.Sprintf("Stop which plate? (%d of %d match)", visCount, len(sm.plates))
+		}
+		b.WriteString(titleStyle.Render(title))
 		b.WriteString("\n\n")
-		for i, p := range sm.plates {
-			line := p.displayLine()
-			if i == sm.cursor {
+		if showFilter {
+			b.WriteString(sm.filterInput.View())
+			b.WriteString("\n\n")
+		}
+		if visCount == 0 && sm.filtered != nil {
+			b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("No plates match filter") + "\n")
+		}
+		for visIdx := 0; visIdx < visCount; visIdx++ {
+			plateIdx := visIdx
+			if sm.filtered != nil {
+				plateIdx = sm.filtered[visIdx]
+			}
+			line := sm.plates[plateIdx].displayLine()
+			if visIdx == sm.cursor {
 				b.WriteString(selStyle.Render("› " + line))
 			} else {
 				b.WriteString("  " + line)
@@ -127,12 +227,17 @@ func (m tuiModel) renderStopModal() string {
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [enter] select  [esc] cancel"))
+		if sm.filtering {
+			b.WriteString(hintStyle.Render("[enter] accept filter  [esc] clear filter"))
+		} else {
+			b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [/] filter  [enter] select  [esc] cancel"))
+		}
 	case stageConfirm:
-		if sm.cursor < 0 || sm.cursor >= len(sm.plates) {
+		plateIdx := visiblePickerIdx(sm.filtered, sm.cursor)
+		if plateIdx < 0 || plateIdx >= len(sm.plates) {
 			return ""
 		}
-		p := sm.plates[sm.cursor]
+		p := sm.plates[plateIdx]
 		b.WriteString(titleStyle.Render("Confirm stop"))
 		b.WriteString("\n\n")
 		b.WriteString("  Plate: " + p.displayLine() + "\n")
@@ -217,12 +322,15 @@ type completeIssue struct {
 // tuiCompleteModal manages the complete-plate flow.
 type tuiCompleteModal struct {
 	plates      []completePlateRef
-	cursor      int
+	cursor      int // index into the visible (filtered) row list
 	stage       tuiModalStage
 	selected    *completePlateRef
 	deductions  []completeDeduction
 	issues      []completeIssue
 	loadErrText string
+	filterInput textinput.Model
+	filtering   bool
+	filtered    []int // indices into plates; nil = no filter active
 }
 
 func (r completePlateRef) displayLine() string {
@@ -446,11 +554,25 @@ func (m tuiModel) renderCompleteModal() string {
 
 	switch cm.stage {
 	case stagePicker:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Complete which plate? (%d available)", len(cm.plates))))
+		showFilter := cm.filtering || cm.filtered != nil
+		visCount := visiblePickerCount(cm.filtered, len(cm.plates))
+		title := fmt.Sprintf("Complete which plate? (%d available)", len(cm.plates))
+		if cm.filtered != nil {
+			title = fmt.Sprintf("Complete which plate? (%d of %d match)", visCount, len(cm.plates))
+		}
+		b.WriteString(titleStyle.Render(title))
 		b.WriteString("\n\n")
-		for i, p := range cm.plates {
-			line := p.displayLine()
-			if i == cm.cursor {
+		if showFilter {
+			b.WriteString(cm.filterInput.View())
+			b.WriteString("\n\n")
+		}
+		if visCount == 0 && cm.filtered != nil {
+			b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("No plates match filter") + "\n")
+		}
+		for visIdx := 0; visIdx < visCount; visIdx++ {
+			plateIdx := visiblePickerIdx(cm.filtered, visIdx)
+			line := cm.plates[plateIdx].displayLine()
+			if visIdx == cm.cursor {
 				b.WriteString(selStyle.Render("› " + line))
 			} else {
 				b.WriteString("  " + line)
@@ -458,7 +580,11 @@ func (m tuiModel) renderCompleteModal() string {
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [enter] select  [esc] cancel"))
+		if cm.filtering {
+			b.WriteString(hintStyle.Render("[enter] accept filter  [esc] clear filter"))
+		} else {
+			b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [/] filter  [enter] select  [esc] cancel"))
+		}
 
 	case stageLoading:
 		b.WriteString(titleStyle.Render("Building preview..."))
@@ -583,11 +709,14 @@ type tuiNextModal struct {
 	printerCursor   int
 	selectedPrinter string
 	plates          []nextPlateRef
-	plateCursor     int
+	plateCursor     int // index into the visible (filtered) row list
 	selectedPlate   *nextPlateRef
 	keepOps         []nextKeepOp
 	loadOps         []nextLoadOp
 	issues          []nextIssue
+	filterInput     textinput.Model
+	filtering       bool
+	filtered        []int // indices into plates; nil = no filter active
 }
 
 // nextDisplayPlate is used for rendering the plate picker line.
@@ -1035,14 +1164,29 @@ func (m tuiModel) renderNextModal() string {
 		b.WriteString("\n")
 
 	case stagePicker:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Select plate for %s (%d todo)", nm.selectedPrinter, len(nm.plates))))
-		b.WriteString("\n\n")
-		if len(nm.plates) == 0 {
-			b.WriteString("  " + dimStyle.Render("No todo plates found") + "\n")
+		showFilter := nm.filtering || nm.filtered != nil
+		visCount := visiblePickerCount(nm.filtered, len(nm.plates))
+		title := fmt.Sprintf("Select plate for %s (%d todo)", nm.selectedPrinter, len(nm.plates))
+		if nm.filtered != nil {
+			title = fmt.Sprintf("Select plate for %s (%d of %d match)", nm.selectedPrinter, visCount, len(nm.plates))
 		}
-		for i, p := range nm.plates {
-			line := p.displayLine()
-			if i == nm.plateCursor {
+		b.WriteString(titleStyle.Render(title))
+		b.WriteString("\n\n")
+		if showFilter {
+			b.WriteString(nm.filterInput.View())
+			b.WriteString("\n\n")
+		}
+		if visCount == 0 {
+			if nm.filtered != nil {
+				b.WriteString("  " + dimStyle.Render("No plates match filter") + "\n")
+			} else {
+				b.WriteString("  " + dimStyle.Render("No todo plates found") + "\n")
+			}
+		}
+		for visIdx := 0; visIdx < visCount; visIdx++ {
+			plateIdx := visiblePickerIdx(nm.filtered, visIdx)
+			line := nm.plates[plateIdx].displayLine()
+			if visIdx == nm.plateCursor {
 				b.WriteString(selStyle.Render("› " + line))
 			} else {
 				b.WriteString("  " + line)
@@ -1050,7 +1194,11 @@ func (m tuiModel) renderNextModal() string {
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [enter] select  [esc] cancel"))
+		if nm.filtering {
+			b.WriteString(hintStyle.Render("[enter] accept filter  [esc] clear filter"))
+		} else {
+			b.WriteString(hintStyle.Render("[↑/↓/j/k] navigate  [/] filter  [enter] select  [esc] cancel"))
+		}
 
 	case stagePreview:
 		if nm.selectedPlate == nil {
