@@ -11,6 +11,13 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+// bambuPushTrayMinGap is the minimum interval between consecutive PushTray
+// MQTT publishes per Bambu printer. Pushes are QoS 0 fire-and-forget, so
+// without pacing the printer firmware drops some when many trays are pushed
+// back-to-back (e.g. a multi-move or full `fil sync`). Empirically the
+// printer keeps up at ~2/sec — 500ms gives a safety margin.
+const bambuPushTrayMinGap = 500 * time.Millisecond
+
 // BambuAdapter communicates with a Bambu Lab printer via MQTT.
 type BambuAdapter struct {
 	name       string
@@ -18,11 +25,14 @@ type BambuAdapter struct {
 	serial     string
 	accessCode string
 
-	mu              sync.RWMutex
-	client          mqtt.Client
-	state           PrinterState
-	hmsCodes        []HMSCode
-	stateCallbacks  []func(StateChangeEvent)
+	mu             sync.RWMutex
+	client         mqtt.Client
+	state          PrinterState
+	hmsCodes       []HMSCode
+	stateCallbacks []func(StateChangeEvent)
+
+	// pushThrottle paces ams_filament_setting publishes; see bambuPushTrayMinGap.
+	pushThrottle *paceThrottler
 }
 
 // NewBambuAdapter creates a new Bambu printer adapter.
@@ -33,11 +43,12 @@ func NewBambuAdapter(name, ip, serial, accessCode string) *BambuAdapter {
 		serial:     serial,
 		accessCode: accessCode,
 		state: PrinterState{
-			Name:      name,
-			Type:      "bambu",
-			State:     "offline",
+			Name:       name,
+			Type:       "bambu",
+			State:      "offline",
 			ActiveTray: -1,
 		},
+		pushThrottle: newPaceThrottler(bambuPushTrayMinGap),
 	}
 }
 
@@ -93,7 +104,11 @@ func (b *BambuAdapter) Status() PrinterState {
 	return b.state
 }
 
-// PushTray updates filament metadata for a specific AMS tray.
+// PushTray updates filament metadata for a specific AMS tray. Calls are
+// serialized and paced per-printer via pushThrottle so a multi-move or
+// full sync doesn't fire MQTT publishes faster than the printer firmware
+// can apply them. Callers in the move/sync paths therefore don't need to
+// add their own delays.
 func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 	if b.client == nil || !b.client.IsConnected() {
 		return fmt.Errorf("not connected to %s", b.name)
@@ -122,6 +137,8 @@ func (b *BambuAdapter) PushTray(update TrayUpdate) error {
 	if err != nil {
 		return err
 	}
+
+	b.pushThrottle.Wait()
 
 	reqTopic := fmt.Sprintf("device/%s/request", b.serial)
 	token := b.client.Publish(reqTopic, 0, false, payload)
