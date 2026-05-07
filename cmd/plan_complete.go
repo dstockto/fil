@@ -187,6 +187,13 @@ func pickPrinterForComplete(plate models.Plate) string {
 // plan-server. May revisit later to route reads through the server too.
 func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.Plate, printerLocations []string, printerName string) ([]plan.SpoolDeduction, error) {
 	var out []plan.SpoolDeduction
+	// pending tracks how much we've already queued against each spool within
+	// this collection run. findCompleteSpool subtracts these from raw API
+	// remaining weights so a spool that's been fully drained in earlier
+	// iterations drops out of the candidate pool — otherwise the same spool
+	// keeps getting matched on every loop and the user is asked the same
+	// "only has Xg remaining" question forever.
+	pending := map[int]float64{}
 	for _, req := range plate.Needs {
 		fmt.Printf("Filament: %s. Amount used (default %.1fg): ", models.Sanitize(req.Name), req.Amount)
 		var input string
@@ -197,7 +204,7 @@ func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.
 		}
 
 		for used > 0 {
-			matched, manualID, skipped := findCompleteSpool(ctx, apiClient, req, printerLocations, printerName, used)
+			matched, manualID, skipped := findCompleteSpool(ctx, apiClient, req, printerLocations, printerName, used, pending)
 			if skipped {
 				break
 			}
@@ -212,6 +219,7 @@ func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.
 					}
 				}
 				out = append(out, plan.SpoolDeduction{SpoolID: matched.Id, Amount: amount})
+				pending[matched.Id] += amount
 				used -= amount
 				continue
 			}
@@ -219,6 +227,7 @@ func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.
 			// Spoolman. Record the deduction at face value; LocalPlanOps
 			// will surface any Spoolman rejection as an error.
 			out = append(out, plan.SpoolDeduction{SpoolID: manualID, Amount: used})
+			pending[manualID] += used
 			used = 0
 		}
 	}
@@ -229,7 +238,14 @@ func collectDeductions(ctx context.Context, apiClient *api.Client, plate models.
 //   - (spool, 0, false) when a spool was successfully matched
 //   - (nil, manualID, false) when the user typed an unverified spool ID
 //   - (nil, 0, true) when the user opted to skip (blank input)
-func findCompleteSpool(ctx context.Context, apiClient *api.Client, req models.PlateRequirement, printerLocations []string, printerName string, used float64) (*models.FindSpool, int, bool) {
+//
+// pending lets us track deductions that have been queued earlier in the
+// current collectDeductions run but not yet flushed to Spoolman. We subtract
+// those from each candidate's raw RemainingWeight so the same spool isn't
+// re-offered after it's been drained. The returned spool's RemainingWeight
+// reflects the effective remaining (raw - pending) so the caller's
+// "only has Xg" math is correct.
+func findCompleteSpool(ctx context.Context, apiClient *api.Client, req models.PlateRequirement, printerLocations []string, printerName string, used float64, pending map[int]float64) (*models.FindSpool, int, bool) {
 	if len(printerLocations) > 0 {
 		allSpools, _ := apiClient.FindSpoolsByName(ctx, "*", onlyStandardFilament, nil)
 		var candidates []models.FindSpool
@@ -252,17 +268,17 @@ func findCompleteSpool(ctx context.Context, apiClient *api.Client, req models.Pl
 				candidates = append(candidates, s)
 			}
 		}
-		if len(candidates) > 1 {
-			var withWeight []models.FindSpool
-			for _, c := range candidates {
-				if c.RemainingWeight > 0 {
-					withWeight = append(withWeight, c)
-				}
+		// Apply pending deductions: drop spools that are exhausted from
+		// earlier in this run, and reflect remaining capacity on the rest.
+		adjusted := make([]models.FindSpool, 0, len(candidates))
+		for _, c := range candidates {
+			c.RemainingWeight -= pending[c.Id]
+			if c.RemainingWeight <= 0 {
+				continue
 			}
-			if len(withWeight) > 0 {
-				candidates = withWeight
-			}
+			adjusted = append(adjusted, c)
 		}
+		candidates = adjusted
 		if len(candidates) == 1 {
 			fmt.Printf("Using spool #%d (%s) from %s (%.1fg -> %.1fg remaining)\n",
 				candidates[0].Id, models.Sanitize(candidates[0].Filament.Name),
