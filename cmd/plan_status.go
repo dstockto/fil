@@ -232,6 +232,10 @@ func formatTimeInfo(startedAt, estimatedDuration string) string {
 	if err != nil {
 		return ""
 	}
+	// Render in the user's local zone regardless of how the source RFC3339
+	// string was offset. Older plans mix UTC and local-offset stamps; without
+	// this conversion a UTC-stored start time would show as a UTC clock value.
+	started = started.Local()
 
 	startedStr := started.Format("3:04pm")
 

@@ -1107,7 +1107,9 @@ func executeNext(ctx context.Context, apiClient *api.Client, printerName string,
 	}
 	proj.Plates[plate.plateIdx].Status = "in-progress"
 	proj.Plates[plate.plateIdx].Printer = printerName
-	proj.Plates[plate.plateIdx].StartedAt = time.Now().Format(time.RFC3339)
+	// Store as UTC for consistency with cmd/plan_next.go and plan/local_next.go;
+	// formatTimeInfo converts to local at display time.
+	proj.Plates[plate.plateIdx].StartedAt = time.Now().UTC().Format(time.RFC3339)
 	if proj.Status == "todo" {
 		proj.Status = "in-progress"
 	}

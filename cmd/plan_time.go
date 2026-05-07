@@ -126,7 +126,7 @@ var planTimeCmd = &cobra.Command{
 		}
 
 		dp := &plans[selected.discoveredIdx]
-		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].StartedAt = time.Now().Format(time.RFC3339)
+		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].StartedAt = time.Now().UTC().Format(time.RFC3339)
 		dp.Plan.Projects[selected.projectIdx].Plates[selected.plateIdx].EstimatedDuration = durationStr
 
 		if err := PlanOps.SaveAll(cmd.Context(), planFileName(*dp), dp.Plan); err != nil {
