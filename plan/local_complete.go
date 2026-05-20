@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dstockto/fil/api"
 	"github.com/dstockto/fil/models"
 )
 
@@ -28,25 +29,27 @@ func findPlate(plan models.PlanFile, projectName, plateName string) (int, int, e
 }
 
 // fetchSpoolsByID gets the subset of Spools referenced by deductions, keyed
-// by ID. Goes through FindSpoolsByName("*") because that's already in the
-// narrow Spoolman interface — adding a per-ID lookup would expand the seam.
+// by ID. Issues one Spoolman GET /spool/{id} per distinct deduction ID — the
+// deduction path stays O(deductions) instead of paying for a full catalog
+// fetch on every plate completion. A 404 on any ID surfaces as ErrSpoolNotFound
+// in the map's absence; the caller turns that into "spool #N not found".
 func (l *LocalPlanOps) fetchSpoolsByID(ctx context.Context, deductions []SpoolDeduction) (map[int]models.FindSpool, error) {
 	if len(deductions) == 0 {
 		return nil, nil
 	}
-	all, err := l.spoolman.FindSpoolsByName(ctx, l.spoolPattern, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	wanted := map[int]struct{}{}
-	for _, d := range deductions {
-		wanted[d.SpoolID] = struct{}{}
-	}
 	out := map[int]models.FindSpool{}
-	for _, s := range all {
-		if _, ok := wanted[s.Id]; ok {
-			out[s.Id] = s
+	for _, d := range deductions {
+		if _, seen := out[d.SpoolID]; seen {
+			continue
 		}
+		s, err := l.spoolman.FindSpoolByID(ctx, d.SpoolID)
+		if err != nil {
+			if errors.Is(err, api.ErrSpoolNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		out[d.SpoolID] = s
 	}
 	return out, nil
 }

@@ -15,10 +15,12 @@ import (
 // records (spoolID → grams) so assertions can verify the deduction shape; an
 // optional failOn map injects errors for specific spool IDs.
 type fakeSpoolman struct {
-	spools     []models.FindSpool
-	useCalls   map[int]float64
-	patchCalls map[int]map[string]any
-	failOn     map[int]error
+	spools          []models.FindSpool
+	useCalls        map[int]float64
+	patchCalls      map[int]map[string]any
+	failOn          map[int]error
+	findByNameCalls int
+	findByIDCalls   []int
 }
 
 func newFakeSpoolman(spools ...models.FindSpool) *fakeSpoolman {
@@ -31,7 +33,18 @@ func newFakeSpoolman(spools ...models.FindSpool) *fakeSpoolman {
 }
 
 func (f *fakeSpoolman) FindSpoolsByName(_ context.Context, _ string, _ api.SpoolFilter, _ map[string]string) ([]models.FindSpool, error) {
+	f.findByNameCalls++
 	return f.spools, nil
+}
+
+func (f *fakeSpoolman) FindSpoolByID(_ context.Context, id int) (models.FindSpool, error) {
+	f.findByIDCalls = append(f.findByIDCalls, id)
+	for _, s := range f.spools {
+		if s.Id == id {
+			return s, nil
+		}
+	}
+	return models.FindSpool{}, api.ErrSpoolNotFound
 }
 
 func (f *fakeSpoolman) UseFilament(_ context.Context, spoolID int, amount float64) error {

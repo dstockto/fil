@@ -94,6 +94,7 @@ type SpoolmanAPI interface {
 	FindSpoolsByName(ctx context.Context, name string, filter SpoolFilter, query map[string]string) ([]models.FindSpool, error)
 	GetFilamentById(ctx context.Context, id int) (*models.FindSpool, error)
 	FindSpoolsById(ctx context.Context, id int) (*models.FindSpool, error)
+	FindSpoolByID(ctx context.Context, id int) (models.FindSpool, error)
 	UseFilament(ctx context.Context, spoolId int, amount float64) error
 	MoveSpool(ctx context.Context, spoolId int, to string) error
 	PatchSpool(ctx context.Context, spoolId int, updates map[string]any) error
@@ -302,6 +303,18 @@ func (c Client) FindSpoolsById(ctx context.Context, id int) (*models.FindSpool, 
 	}
 
 	return &out, nil
+}
+
+// FindSpoolByID fetches a single spool by ID via Spoolman's /spool/{id}
+// endpoint. Returns ErrSpoolNotFound on 404. Prefer this over FindSpoolsById
+// (note: legacy name, returns a pointer) on new code paths; both share the
+// same HTTP wire.
+func (c Client) FindSpoolByID(ctx context.Context, id int) (models.FindSpool, error) {
+	s, err := c.FindSpoolsById(ctx, id)
+	if err != nil {
+		return models.FindSpool{}, err
+	}
+	return *s, nil
 }
 
 func (c Client) UseFilament(ctx context.Context, spoolId int, amount float64) error {

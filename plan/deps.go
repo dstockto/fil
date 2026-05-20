@@ -13,6 +13,7 @@ import (
 // SpoolmanAPI. *api.Client satisfies this interface incidentally.
 type Spoolman interface {
 	FindSpoolsByName(ctx context.Context, name string, filter api.SpoolFilter, query map[string]string) ([]models.FindSpool, error)
+	FindSpoolByID(ctx context.Context, id int) (models.FindSpool, error)
 	UseFilament(ctx context.Context, spoolID int, amount float64) error
 	PatchSpool(ctx context.Context, spoolID int, updates map[string]any) error
 }

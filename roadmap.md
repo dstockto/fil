@@ -22,10 +22,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 <!-- Items with an active branch/draft PR. Populated by feature-shipper, cleared by roadmap-merge-sync. -->
 
----
-
-## Ready
-
 ### fetchspoolsbyid-per-id-lookup
 - **Acceptance:**
   - Add `FindSpoolByID(ctx context.Context, id int) (models.Spool, error)` to the narrow `Spoolman` interface in `api/`.
@@ -34,6 +30,8 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Regression tests: interface method round-trips a spool; refactored caller makes N per-ID calls (not one catalog call) for N input IDs.
   - Deduction path is O(deductions), not O(catalog).
 - **Source:** gh#9
+- **Branch:** roadmap/fetchspoolsbyid-per-id-lookup
+- **PR:** pending
 
 Identified by `spoolman-quirks-reviewer` when auditing `ec4e296` (plan-complete migration). Not a correctness issue, but a wasteful catalog fetch on every plate completion (~250 spools and growing). The existing inline comment in `local_complete.go` acknowledges this:
 
@@ -41,6 +39,12 @@ Identified by `spoolman-quirks-reviewer` when auditing `ec4e296` (plan-complete 
 > // narrow Spoolman interface — adding a per-ID lookup would expand the seam.
 
 Adding `FindSpoolByID` is the seam expansion that comment is gating against.
+
+---
+
+## Ready
+
+<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
 
 ---
 

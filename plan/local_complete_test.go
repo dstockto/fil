@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dstockto/fil/models"
@@ -273,6 +274,71 @@ func TestLocalCompleteSaveFailureSkipsSpoolman(t *testing.T) {
 	}
 	if len(sm.useCalls) != 0 {
 		t.Errorf("UseFilament called despite save failure: %v", sm.useCalls)
+	}
+}
+
+func TestLocalCompleteFetchesSpoolsPerID(t *testing.T) {
+	// Regression: completion must fetch the deduction spools via per-ID
+	// lookups, not by pulling the entire catalog through FindSpoolsByName.
+	// At ~250 spools that catalog fetch is wasteful on every plate complete.
+	sm := newFakeSpoolman(
+		makeFailSpool(101, "AMS A1", 800, 100, "PLA white"),
+		makeFailSpool(202, "AMS A2", 800, 200, "PETG black"),
+	)
+	store := newMemPlanStore()
+	plan := samplePlan()
+	plan.Projects[0].Plates[0].Needs = []models.PlateRequirement{
+		{FilamentID: 100, Name: "PLA white", Amount: 30},
+		{FilamentID: 200, Name: "PETG black", Amount: 20},
+	}
+	store.plans["test.yaml"] = plan
+	ops := newLocalWithStore(t, sm, store, &recordingHistory{}, NoopNotifier{})
+
+	_, err := ops.Complete(context.Background(), CompleteRequest{
+		Plan: "test.yaml", Project: "Proj", Plate: "P1", Printer: "Bambu X1C",
+		Deductions: []SpoolDeduction{
+			{SpoolID: 101, Amount: 30},
+			{SpoolID: 202, Amount: 20},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if sm.findByNameCalls != 0 {
+		t.Errorf("FindSpoolsByName called %d times during Complete; expected 0 (per-ID path)", sm.findByNameCalls)
+	}
+	if len(sm.findByIDCalls) != 2 {
+		t.Errorf("FindSpoolByID call count = %d, want 2 (one per deduction)", len(sm.findByIDCalls))
+	}
+	gotIDs := map[int]bool{}
+	for _, id := range sm.findByIDCalls {
+		gotIDs[id] = true
+	}
+	if !gotIDs[101] || !gotIDs[202] {
+		t.Errorf("FindSpoolByID called with ids %v, want both 101 and 202", sm.findByIDCalls)
+	}
+}
+
+func TestLocalCompleteUnknownSpoolReportsError(t *testing.T) {
+	// Regression: when a deduction references a spool that Spoolman doesn't
+	// know about, the user-visible "spool #N not found" error must survive
+	// the per-ID refactor. Previously this came from the catalog-filter
+	// branch silently producing !ok; now it must come from ErrSpoolNotFound.
+	sm := newFakeSpoolman(makeFailSpool(101, "AMS A1", 800, 100, "PLA white"))
+	store := newMemPlanStore()
+	store.plans["test.yaml"] = samplePlan()
+	ops := newLocalWithStore(t, sm, store, &recordingHistory{}, NoopNotifier{})
+
+	_, err := ops.Complete(context.Background(), CompleteRequest{
+		Plan: "test.yaml", Project: "Proj", Plate: "P1", Printer: "Bambu X1C",
+		Deductions: []SpoolDeduction{{SpoolID: 999, Amount: 10}},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing spool 999")
+	}
+	if !strings.Contains(err.Error(), "spool #999 not found") {
+		t.Errorf("error %q must include 'spool #999 not found'", err.Error())
 	}
 }
 

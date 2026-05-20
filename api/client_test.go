@@ -145,3 +145,48 @@ func TestPatchFilament_ApiError(t *testing.T) {
 		t.Fatal("expected error on 400, got nil")
 	}
 }
+
+func TestFindSpoolByID_HitsPerIDEndpoint(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/spool/42" {
+			t.Errorf("expected /api/v1/spool/42, got %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		hits++
+		_, _ = w.Write([]byte(`{"id":42,"location":"AMS A1"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, false)
+	spool, err := c.FindSpoolByID(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("FindSpoolByID: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("expected exactly 1 GET to /api/v1/spool/42, got %d", hits)
+	}
+	if spool.Id != 42 {
+		t.Errorf("spool.Id = %d, want 42", spool.Id)
+	}
+	if spool.Location != "AMS A1" {
+		t.Errorf("spool.Location = %q, want %q", spool.Location, "AMS A1")
+	}
+}
+
+func TestFindSpoolByID_NotFoundReturnsSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, false)
+	_, err := c.FindSpoolByID(context.Background(), 999)
+	if !errors.Is(err, ErrSpoolNotFound) {
+		t.Fatalf("expected ErrSpoolNotFound, got %v", err)
+	}
+}
