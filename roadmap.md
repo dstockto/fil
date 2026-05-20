@@ -14,6 +14,8 @@ Automation:
 - `roadmap-groomer` subagent proposes the next Ready item.
 - `feature-shipper` skill implements a Ready item via strict TDD and opens a draft PR.
 
+Drift check (run on demand to verify nothing's missing): `.github/scripts/roadmap_drift.sh`.
+
 ---
 
 ## In Flight
