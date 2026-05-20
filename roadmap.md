@@ -22,26 +22,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 <!-- Items with an active branch/draft PR. Populated by feature-shipper, cleared by roadmap-merge-sync. -->
 
-### fetchspoolsbyid-per-id-lookup
-- **Acceptance:**
-  - Add `FindSpoolByID(ctx context.Context, id int) (models.Spool, error)` to the narrow `Spoolman` interface in `api/`.
-  - Implement against Spoolman's `GET /api/v1/spool/{id}` endpoint in the HTTP client.
-  - Swap `plan/local_complete.go` `fetchSpoolsByID` (currently lines 33–52) to use per-ID calls instead of `FindSpoolsByName("*", nil, nil)` + filter.
-  - Regression tests: interface method round-trips a spool; refactored caller makes N per-ID calls (not one catalog call) for N input IDs.
-  - Deduction path is O(deductions), not O(catalog).
-- **Source:** gh#9
-- **Branch:** roadmap/fetchspoolsbyid-per-id-lookup
-- **PR:** #12
-
-Identified by `spoolman-quirks-reviewer` when auditing `ec4e296` (plan-complete migration). Not a correctness issue, but a wasteful catalog fetch on every plate completion (~250 spools and growing). The existing inline comment in `local_complete.go` acknowledges this:
-
-> // Goes through FindSpoolsByName("*") because that's already in the
-> // narrow Spoolman interface — adding a per-ID lookup would expand the seam.
-
-Adding `FindSpoolByID` is the seam expansion that comment is gating against.
-
----
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -109,3 +89,22 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### fetchspoolsbyid-per-id-lookup
+- **Acceptance:**
+  - Add `FindSpoolByID(ctx context.Context, id int) (models.Spool, error)` to the narrow `Spoolman` interface in `api/`.
+  - Implement against Spoolman's `GET /api/v1/spool/{id}` endpoint in the HTTP client.
+  - Swap `plan/local_complete.go` `fetchSpoolsByID` (currently lines 33–52) to use per-ID calls instead of `FindSpoolsByName("*", nil, nil)` + filter.
+  - Regression tests: interface method round-trips a spool; refactored caller makes N per-ID calls (not one catalog call) for N input IDs.
+  - Deduction path is O(deductions), not O(catalog).
+- **Source:** gh#9
+- **Merged:** 2026-05-20 in #12
+
+Identified by `spoolman-quirks-reviewer` when auditing `ec4e296` (plan-complete migration). Not a correctness issue, but a wasteful catalog fetch on every plate completion (~250 spools and growing). The existing inline comment in `local_complete.go` acknowledges this:
+
+> // Goes through FindSpoolsByName("*") because that's already in the
+> // narrow Spoolman interface — adding a per-ID lookup would expand the seam.
+
+Adding `FindSpoolByID` is the seam expansion that comment is gating against.
+
+---
+
