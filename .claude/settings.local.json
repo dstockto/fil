@@ -37,7 +37,8 @@
       "Bash(awk '{print $NF}')",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(go doc *)"
+      "Bash(go doc *)",
+      "Bash(gh issue *)"
     ]
   }
 }

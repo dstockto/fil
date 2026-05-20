@@ -1,6 +1,5 @@
 /*
 Copyright © 2025 David Stockton <dave@davidstockton.com>
-
 */
 package main
 

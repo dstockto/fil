@@ -19,6 +19,21 @@ gofmt -w ./...                  # Format
 
 No Makefile; standard Go toolchain with `go.mod` (Go 1.23.1). Pure Go SQLite via `modernc.org/sqlite` — no CGO required.
 
+## Testing
+
+- Always write sanity checks as proper Go tests in `_test.go` files, not scratch files in /tmp or one-off scripts.
+- Add regression tests for any bug fix before considering the work complete.
+
+## Config & Settings
+
+- Keep `.claude/settings.json` readable: extract hook commands into wrapper scripts under `.claude/hooks/` rather than inlining deeply nested JSON.
+- When merging config blocks (e.g., Notifications), field-merge rather than wholesale-replace existing sections.
+
+## Verification Before Implementation
+
+- Before implementing against an external protocol, hardware device, or third-party API, verify current behavior empirically (read docs, check actual device output, or ask user to confirm) rather than relying on memory notes.
+- Avoid over-engineering for cases the user's workflow already prevents; ask before adding speculative complexity.
+
 ## Architecture
 
 - **`main.go`** — Entry point, calls `cmd.Execute()`
