@@ -24,7 +24,15 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## Ready
 
-<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
+### workflows-bump-actions-checkout-off-node-20-before-deprecation
+- **Acceptance:**
+  - `.github/workflows/roadmap-merge-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
+  - `.github/workflows/roadmap-issue-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
+  - No other workflow inputs or permissions blocks changed.
+  - Post-merge Actions run for `roadmap-merge-sync.yml` completes without the "Node.js 20 actions are deprecated" warning.
+- **Source:** gh#13
+
+Both roadmap automation workflows pin `actions/checkout@v4` (Node.js 20). GitHub forces Node.js 24 default on 2026-06-02; Node.js 20 is removed on 2026-09-16. `actions/checkout@v6` (Node.js 24, stable since 2026-01-09) is a drop-in: identical inputs, the only v6 behavioral change (token under `$RUNNER_TEMP` instead of `.git/config`) is transparent to `git push`. Audit found no other Node-20 actions in `.github/workflows/`.
 
 ---
 
@@ -85,18 +93,6 @@ Fil takes over spool/filament/vendor management entirely, dropping the Spoolman 
 Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`raspberrypi4.local`) without cert warnings. Copy `root.crt` from the pi (under Caddy's data dir, e.g. `/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt`) → AirDrop/email → install profile → Settings → General → About → Certificate Trust Settings → enable trust for "Caddy Local Authority". One-time setup, ~10-year lifetime.
 
 ---
-
-### workflows-bump-actions-checkout-off-node-20-before-deprecation
-- **Source:** gh#13
-
-The roadmap-merge-sync run that fired after the PR #12 merge surfaced a deprecation warning:
-
-> Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: actions/checkout@v4. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Node.js 20 will be removed from the runner on September 16th, 2026.
-
-Both roadmap workflows pin `actions/checkout@v4`:
-
-- `.github/workflows/roadmap-merge-sync.yml:15`
-- `.github/workflows...
 
 ## Done
 
