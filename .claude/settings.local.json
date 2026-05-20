@@ -46,7 +46,8 @@
       "Bash(python3 roadmap_merge_sync.py fetchspoolsbyid-per-id-lookup 99)",
       "Bash(git fetch *)",
       "Bash(git checkout *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(awk *)"
     ]
   }
 }
