@@ -43,7 +43,10 @@
       "Bash(.claude/hooks/session-start-roadmap.sh)",
       "Read(//private/tmp/**)",
       "Bash(cp /Users/davidstockton/Projects/go/fil/.github/scripts/roadmap_merge_sync.py .)",
-      "Bash(python3 roadmap_merge_sync.py fetchspoolsbyid-per-id-lookup 99)"
+      "Bash(python3 roadmap_merge_sync.py fetchspoolsbyid-per-id-lookup 99)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)"
     ]
   }
 }
