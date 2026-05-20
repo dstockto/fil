@@ -28,7 +28,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Post-merge Actions run for `roadmap-merge-sync.yml` completes without the "Node.js 20 actions are deprecated" warning.
 - **Source:** gh#13
 - **Branch:** roadmap/workflows-bump-actions-checkout-off-node-20-before-deprecation
-- **PR:** pending
+- **PR:** #14
 
 Both roadmap automation workflows pin `actions/checkout@v4` (Node.js 20). GitHub forces Node.js 24 default on 2026-06-02; Node.js 20 is removed on 2026-09-16. `actions/checkout@v6` (Node.js 24, stable since 2026-01-09) is a drop-in: identical inputs, the only v6 behavioral change (token under `$RUNNER_TEMP` instead of `.git/config`) is transparent to `git push`. Audit found no other Node-20 actions in `.github/workflows/`.
 
