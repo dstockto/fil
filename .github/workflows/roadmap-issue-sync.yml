@@ -1,0 +1,50 @@
+name: roadmap-issue-sync
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.event.label.name == 'roadmap'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write issue body to file
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > /tmp/issue_body.txt
+
+      - name: Append issue to Idea Backlog in roadmap.md
+        env:
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: python3 .github/scripts/roadmap_issue_sync.py "$ISSUE_NUM" "$ISSUE_TITLE" /tmp/issue_body.txt
+
+      - name: Commit and push
+        env:
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          if git diff --quiet roadmap.md; then
+            echo "No changes to commit (already ingested or no-op)."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add roadmap.md
+          git commit -m "roadmap: ingest gh#$ISSUE_NUM $ISSUE_TITLE [skip ci]"
+          if ! git push; then
+            echo "Push failed, retrying with rebase..."
+            git pull --rebase origin main
+            git push
+          fi

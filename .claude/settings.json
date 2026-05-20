@@ -25,6 +25,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-start-roadmap.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
