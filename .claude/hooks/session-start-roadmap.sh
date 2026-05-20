@@ -81,7 +81,7 @@ if [ -n "$ready" ]; then
   next_up=$(printf '%s\n' "$ready" | head -1)
   echo "Roadmap: ${ready_count} ready, ${backlog_count} backlog"
   echo "Next up: ${next_up}"
-  echo "Ask the roadmap-groomer agent to propose it."
+  echo "(Status questions answer from this summary. Invoke the roadmap-groomer agent only for a full implementation proposal.)"
   exit 0
 fi
 

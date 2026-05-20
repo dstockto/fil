@@ -1,6 +1,6 @@
 ---
 name: roadmap-groomer
-description: Reads roadmap.md and proposes the next Ready item with a full implementation plan, or files a needs-spec issue if acceptance criteria are unclear. Use when the user asks "what's next on the roadmap", "groom the roadmap", "propose the next item", or names a specific roadmap slug to think about.
+description: Produces a full implementation proposal (files-to-touch, test plan, risks) for a Ready roadmap item, or files a needs-spec issue if acceptance is unclear. Use ONLY when the user wants a proposal or plan — phrases like "propose the next item", "plan the next roadmap item", "groom and plan X", "what should I ship next". Do NOT invoke for status questions like "what's on the roadmap", "what's the next ready item", "list the roadmap" — those are answered directly from the SessionStart hook context. Invoking the groomer for status questions wastes 30-60s on a real implementation plan the user didn't ask for.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
