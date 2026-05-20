@@ -20,20 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-### workflows-bump-actions-checkout-off-node-20-before-deprecation
-- **Acceptance:**
-  - `.github/workflows/roadmap-merge-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
-  - `.github/workflows/roadmap-issue-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
-  - No other workflow inputs or permissions blocks changed.
-  - Post-merge Actions run for `roadmap-merge-sync.yml` completes without the "Node.js 20 actions are deprecated" warning.
-- **Source:** gh#13
-- **Branch:** roadmap/workflows-bump-actions-checkout-off-node-20-before-deprecation
-- **PR:** #14
-
-Both roadmap automation workflows pin `actions/checkout@v4` (Node.js 20). GitHub forces Node.js 24 default on 2026-06-02; Node.js 20 is removed on 2026-09-16. `actions/checkout@v6` (Node.js 24, stable since 2026-01-09) is a drop-in: identical inputs, the only v6 behavioral change (token under `$RUNNER_TEMP` instead of `.git/config`) is transparent to `git push`. Audit found no other Node-20 actions in `.github/workflows/`.
-
----
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -101,6 +87,19 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### workflows-bump-actions-checkout-off-node-20-before-deprecation
+- **Acceptance:**
+  - `.github/workflows/roadmap-merge-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
+  - `.github/workflows/roadmap-issue-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
+  - No other workflow inputs or permissions blocks changed.
+  - Post-merge Actions run for `roadmap-merge-sync.yml` completes without the "Node.js 20 actions are deprecated" warning.
+- **Source:** gh#13
+- **Merged:** 2026-05-20 in #14
+
+Both roadmap automation workflows pin `actions/checkout@v4` (Node.js 20). GitHub forces Node.js 24 default on 2026-06-02; Node.js 20 is removed on 2026-09-16. `actions/checkout@v6` (Node.js 24, stable since 2026-01-09) is a drop-in: identical inputs, the only v6 behavioral change (token under `$RUNNER_TEMP` instead of `.git/config`) is transparent to `git push`. Audit found no other Node-20 actions in `.github/workflows/`.
+
+---
+
 ### fetchspoolsbyid-per-id-lookup
 - **Acceptance:**
   - Add `FindSpoolByID(ctx context.Context, id int) (models.Spool, error)` to the narrow `Spoolman` interface in `api/`.
