@@ -47,37 +47,55 @@ type PlanSummary struct {
 	HasAssembly bool   `json:"has_assembly"`
 }
 
+// apiPrefixes are the URL prefixes the plan server serves. Registered side
+// by side during the /api/v1 → /api/fil migration so a single Caddy
+// wildcard can cover the new prefix; /api/v1 stays live until PR-3 of the
+// migration removes it.
+var apiPrefixes = []string{"/api/v1", "/api/fil"}
+
 // Routes registers all plan API routes on a new ServeMux using Go 1.22+ method routing.
 func (s *PlanServer) Routes() http.Handler {
+	routes := []struct {
+		method  string
+		suffix  string
+		handler http.HandlerFunc
+	}{
+		{"GET", "/plans", s.handleListPlans},
+		{"GET", "/plans/{name}", s.handleGetPlan},
+		{"PUT", "/plans/{name}", s.handlePutPlan},
+		{"DELETE", "/plans/{name}", s.handleDeletePlan},
+		{"POST", "/plans/{name}/pause", s.handlePausePlan},
+		{"POST", "/plans/{name}/resume", s.handleResumePlan},
+		{"POST", "/plans/{name}/archive", s.handleArchivePlan},
+		{"POST", "/plans/{name}/unarchive", s.handleUnarchivePlan},
+		{"PUT", "/plans/{name}/assembly", s.handlePutAssembly},
+		{"GET", "/plans/{name}/assembly", s.handleGetAssembly},
+		{"DELETE", "/plans/{name}/assembly", s.handleDeleteAssembly},
+		{"GET", "/config", s.handleGetConfig},
+		{"PUT", "/config", s.handlePutConfig},
+		{"POST", "/plans/clean-assemblies", s.handleCleanAssemblies},
+		{"GET", "/history", s.handleHistory},
+		{"POST", "/plan-fail", s.handlePlanFail},
+		{"POST", "/plans/{name}/complete", s.handlePlanComplete},
+		{"POST", "/plans/{name}/next", s.handlePlanNext},
+		{"POST", "/plans/{name}/stop", s.handlePlanStop},
+		{"POST", "/plans/{name}/resolve", s.handlePlanResolve},
+		{"POST", "/scan-history", s.handleScanHistoryPost},
+		{"GET", "/scan-history", s.handleScanHistoryGet},
+		{"GET", "/printers", s.handleListPrinters},
+		{"POST", "/printers/{name}/push-tray", s.handlePushTray},
+		{"GET", "/version", s.handleVersion},
+		{"GET", "/doctor", s.handleHealth},
+		{"POST", "/notify/test", s.handleNotifyTest},
+		{"GET", "/say", s.handleSay},
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/plans", s.handleListPlans)
-	mux.HandleFunc("GET /api/v1/plans/{name}", s.handleGetPlan)
-	mux.HandleFunc("PUT /api/v1/plans/{name}", s.handlePutPlan)
-	mux.HandleFunc("DELETE /api/v1/plans/{name}", s.handleDeletePlan)
-	mux.HandleFunc("POST /api/v1/plans/{name}/pause", s.handlePausePlan)
-	mux.HandleFunc("POST /api/v1/plans/{name}/resume", s.handleResumePlan)
-	mux.HandleFunc("POST /api/v1/plans/{name}/archive", s.handleArchivePlan)
-	mux.HandleFunc("POST /api/v1/plans/{name}/unarchive", s.handleUnarchivePlan)
-	mux.HandleFunc("PUT /api/v1/plans/{name}/assembly", s.handlePutAssembly)
-	mux.HandleFunc("GET /api/v1/plans/{name}/assembly", s.handleGetAssembly)
-	mux.HandleFunc("DELETE /api/v1/plans/{name}/assembly", s.handleDeleteAssembly)
-	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
-	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
-	mux.HandleFunc("POST /api/v1/plans/clean-assemblies", s.handleCleanAssemblies)
-	mux.HandleFunc("GET /api/v1/history", s.handleHistory)
-	mux.HandleFunc("POST /api/v1/plan-fail", s.handlePlanFail)
-	mux.HandleFunc("POST /api/v1/plans/{name}/complete", s.handlePlanComplete)
-	mux.HandleFunc("POST /api/v1/plans/{name}/next", s.handlePlanNext)
-	mux.HandleFunc("POST /api/v1/plans/{name}/stop", s.handlePlanStop)
-	mux.HandleFunc("POST /api/v1/plans/{name}/resolve", s.handlePlanResolve)
-	mux.HandleFunc("POST /api/v1/scan-history", s.handleScanHistoryPost)
-	mux.HandleFunc("GET /api/v1/scan-history", s.handleScanHistoryGet)
-	mux.HandleFunc("GET /api/v1/printers", s.handleListPrinters)
-	mux.HandleFunc("POST /api/v1/printers/{name}/push-tray", s.handlePushTray)
-	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
-	mux.HandleFunc("GET /api/v1/doctor", s.handleHealth)
-	mux.HandleFunc("POST /api/v1/notify/test", s.handleNotifyTest)
-	mux.HandleFunc("GET /api/v1/say", s.handleSay)
+	for _, r := range routes {
+		for _, prefix := range apiPrefixes {
+			mux.HandleFunc(r.method+" "+prefix+r.suffix, r.handler)
+		}
+	}
 	return s.versionMiddleware(mux)
 }
 

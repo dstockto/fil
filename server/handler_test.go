@@ -645,3 +645,61 @@ func TestPutAssemblyNoAssembliesDir(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
+
+// TestBothPrefixesRoute asserts every registered route is reachable under
+// both /api/v1 and /api/fil with identical behavior. PR-1 of the prefix
+// migration adds /api/fil/* as a dual-route alongside /api/v1/*; PR-2
+// flips clients, PR-3 removes /api/v1/*. The migration is gated on this
+// test: any divergence in status between the two prefixes is a regression.
+func TestBothPrefixesRoute(t *testing.T) {
+	routes := []struct {
+		method string
+		suffix string
+	}{
+		{http.MethodGet, "/plans"},
+		{http.MethodGet, "/plans/test.yaml"},
+		{http.MethodPut, "/plans/test.yaml"},
+		{http.MethodDelete, "/plans/test.yaml"},
+		{http.MethodPost, "/plans/test.yaml/pause"},
+		{http.MethodPost, "/plans/test.yaml/resume"},
+		{http.MethodPost, "/plans/test.yaml/archive"},
+		{http.MethodPost, "/plans/test.yaml/unarchive"},
+		{http.MethodPut, "/plans/test.yaml/assembly"},
+		{http.MethodGet, "/plans/test.yaml/assembly"},
+		{http.MethodDelete, "/plans/test.yaml/assembly"},
+		{http.MethodGet, "/config"},
+		{http.MethodPut, "/config"},
+		{http.MethodPost, "/plans/clean-assemblies"},
+		{http.MethodGet, "/history"},
+		{http.MethodPost, "/plan-fail"},
+		{http.MethodPost, "/plans/test.yaml/complete"},
+		{http.MethodPost, "/plans/test.yaml/next"},
+		{http.MethodPost, "/plans/test.yaml/stop"},
+		{http.MethodPost, "/plans/test.yaml/resolve"},
+		{http.MethodPost, "/scan-history"},
+		{http.MethodGet, "/scan-history"},
+		{http.MethodGet, "/printers"},
+		{http.MethodPost, "/printers/foo/push-tray"},
+		{http.MethodGet, "/version"},
+		{http.MethodGet, "/doctor"},
+		{http.MethodPost, "/notify/test"},
+		{http.MethodGet, "/say"},
+	}
+
+	for _, r := range routes {
+		t.Run(r.method+" "+r.suffix, func(t *testing.T) {
+			s, _ := setupTestServer(t)
+			mux := s.Routes()
+
+			v1 := httptest.NewRecorder()
+			mux.ServeHTTP(v1, httptest.NewRequest(r.method, "/api/v1"+r.suffix, nil))
+
+			fil := httptest.NewRecorder()
+			mux.ServeHTTP(fil, httptest.NewRequest(r.method, "/api/fil"+r.suffix, nil))
+
+			if v1.Code != fil.Code {
+				t.Errorf("status mismatch for %s %s: v1=%d, fil=%d", r.method, r.suffix, v1.Code, fil.Code)
+			}
+		})
+	}
+}
