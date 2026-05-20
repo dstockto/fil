@@ -131,12 +131,15 @@ gh pr create --draft \
 - [x] golangci-lint run ./... clean
 - [ ] <any manual verification you'd suggest>
 
+Closes #<N>        ← only when the item's `**Source:**` is `gh#<N>`; omit otherwise
 Roadmap-Item: <slug>
 EOF
 )"
 ```
 
 The `Roadmap-Item: <slug>` line is the parseable marker for `roadmap-merge-sync.yml`. It must be on its own line, exact format.
+
+If the Ready item's `**Source:**` bullet is `gh#<N>` (a GitHub issue), include a `Closes #<N>` line in the PR body so GitHub auto-closes the source issue on merge. Skip the line when the source is `memory:`, `direct`, `reviewer:`, or anything else — those don't have a GitHub issue to close.
 
 Capture the PR number from `gh pr create` output.
 
