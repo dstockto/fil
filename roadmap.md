@@ -31,7 +31,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Deduction path is O(deductions), not O(catalog).
 - **Source:** gh#9
 - **Branch:** roadmap/fetchspoolsbyid-per-id-lookup
-- **PR:** pending
+- **PR:** #12
 
 Identified by `spoolman-quirks-reviewer` when auditing `ec4e296` (plan-complete migration). Not a correctness issue, but a wasteful catalog fetch on every plate completion (~250 spools and growing). The existing inline comment in `local_complete.go` acknowledges this:
 
