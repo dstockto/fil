@@ -28,7 +28,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - All existing `/api/v1/*` tests in `server/handler_test.go` continue to pass unchanged.
 - **Source:** memory:2026-04-30
 - **Branch:** roadmap/api-fil-prefix-migration-pr1-dual-routing
-- **PR:** pending
+- **PR:** #16
 
 PR-1 of a 3-PR migration. Goal of this slice: dual-route `/api/v1/*` and `/api/fil/*` on the server so the binary can be redeployed independently. PR-2 will flip client calls + update Caddy; PR-3 will remove `/api/v1/*` server-side. See parent backlog item `api-fil-prefix-migration` for the full migration plan and motivation (single Caddy wildcard for plan-server endpoints).
 
