@@ -86,6 +86,18 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 
 ---
 
+### workflows-bump-actions-checkout-off-node-20-before-deprecation
+- **Source:** gh#13
+
+The roadmap-merge-sync run that fired after the PR #12 merge surfaced a deprecation warning:
+
+> Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: actions/checkout@v4. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Node.js 20 will be removed from the runner on September 16th, 2026.
+
+Both roadmap workflows pin `actions/checkout@v4`:
+
+- `.github/workflows/roadmap-merge-sync.yml:15`
+- `.github/workflows...
+
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
