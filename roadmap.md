@@ -20,22 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-### api-fil-prefix-migration-pr3-remove-v1
-- **Acceptance:**
-  - `server/handler.go` `apiPrefixes` contains only `"/api/fil"`; `"/api/v1"` is removed.
-  - Migration-progress comment on `apiPrefixes` is rewritten to describe the canonical prefix (no more "during the migration" language).
-  - `GET /api/v1/version` (and every other formerly-routed `/api/v1/*` path) returns 404; `GET /api/fil/version` continues to work.
-  - `TestBothPrefixesRoute` in `server/handler_test.go` is rewritten as `TestOnlyFilPrefixRoutes` asserting `/api/fil/*` works AND `/api/v1/*` returns 404.
-  - All other server tests that hit `/api/v1/...` paths are flipped to `/api/fil/...`. Out of scope (must NOT change): Spoolman stub paths in `server/health_test.go:50`, outbound Prusa-printer paths in `server/prusa.go`, Spoolman-client refs in `api/client.go`/`api/health.go`, and the `cmd/clean.go` comment about Spoolman's `/api/v1/setting/...`.
-  - Stale `/api/v1/` references in our plan-server doc comments removed (`server/plan_fail.go:11`, `cmd/doctor.go:121`).
-- **Source:** memory:2026-04-30
-- **Branch:** roadmap/api-fil-prefix-migration-pr3-remove-v1
-- **PR:** #19
-
-Final slice of the 3-PR migration. PR-1 (#16) added dual-routing server-side; PR-2 (#17) flipped clients; Caddy is wildcarded for `/api/fil/*`. All `fil` binaries have been redeployed and no caller still hits `/api/v1/*`, so the server can drop it cleanly with no 404 risk at runtime.
-
----
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -103,6 +87,21 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### api-fil-prefix-migration-pr3-remove-v1
+- **Acceptance:**
+  - `server/handler.go` `apiPrefixes` contains only `"/api/fil"`; `"/api/v1"` is removed.
+  - Migration-progress comment on `apiPrefixes` is rewritten to describe the canonical prefix (no more "during the migration" language).
+  - `GET /api/v1/version` (and every other formerly-routed `/api/v1/*` path) returns 404; `GET /api/fil/version` continues to work.
+  - `TestBothPrefixesRoute` in `server/handler_test.go` is rewritten as `TestOnlyFilPrefixRoutes` asserting `/api/fil/*` works AND `/api/v1/*` returns 404.
+  - All other server tests that hit `/api/v1/...` paths are flipped to `/api/fil/...`. Out of scope (must NOT change): Spoolman stub paths in `server/health_test.go:50`, outbound Prusa-printer paths in `server/prusa.go`, Spoolman-client refs in `api/client.go`/`api/health.go`, and the `cmd/clean.go` comment about Spoolman's `/api/v1/setting/...`.
+  - Stale `/api/v1/` references in our plan-server doc comments removed (`server/plan_fail.go:11`, `cmd/doctor.go:121`).
+- **Source:** memory:2026-04-30
+- **Merged:** 2026-05-21 in #19
+
+Final slice of the 3-PR migration. PR-1 (#16) added dual-routing server-side; PR-2 (#17) flipped clients; Caddy is wildcarded for `/api/fil/*`. All `fil` binaries have been redeployed and no caller still hits `/api/v1/*`, so the server can drop it cleanly with no 404 risk at runtime.
+
+---
+
 ### printer-restart-fires-false-finished-notification
 - **Acceptance:**
   - `server/bambu.go:292` guard changed from `if b.state.State != oldState && oldState != ""` to also exclude `oldState == "offline"`, so the synthetic startup/disconnect `"offline"` state never qualifies as a real prior state for callback firing.
