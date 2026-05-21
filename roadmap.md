@@ -30,7 +30,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Existing tests in `server/bambu_test.go`, `server/prusa_test.go`, and any callers of state-change notifications continue to pass unchanged.
 - **Source:** direct
 - **Branch:** roadmap/printer-restart-fires-false-finished-notification
-- **PR:** pending
+- **PR:** #18
 
 Every plan-server restart triggers an Alexa announcement ("Bambu X1C finished a print") and matching Pushover/ntfy push whenever a Bambu/Prusa is sitting in `FINISH`/`FINISHED` (the natural state between prints until the next job starts). Cause: `NewBambuAdapter` / `NewPrusaAdapter` seed `state.State = "offline"` (server/bambu.go:48, server/prusa.go:36). On (re)connect the first MQTT/HTTP status report transitions `"offline" → "finished"`, which slips past the `oldState != ""` guard, fires the state-change callback, and cmd/serve.go:152 calls `notifier.Speak(...)`. `ConnectionLostHandler` also resets state to `"offline"` (server/bambu.go:67-71), so transient network blips during `FINISH` replay the announcement.
 
