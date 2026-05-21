@@ -38,7 +38,7 @@ type HealthSummary struct {
 	Skip int `json:"skip"`
 }
 
-// HealthReport is what /api/v1/health returns (and what fil doctor emits in --json).
+// HealthReport is what /api/fil/health returns (and what fil doctor emits in --json).
 type HealthReport struct {
 	Version       string        `json:"version,omitempty"`
 	UptimeSeconds int64         `json:"uptime_seconds,omitempty"`
@@ -64,11 +64,11 @@ func (r *HealthReport) Tally() {
 	}
 }
 
-// GetHealth fetches the server-side health report from /api/v1/doctor.
-// Path is /api/v1/doctor (not /health) to avoid collision with generic
+// GetHealth fetches the server-side health report from /api/fil/doctor.
+// Path is /doctor (not /health) to avoid collision with generic
 // reverse-proxy health endpoints.
 func (c *PlanServerClient) GetHealth(ctx context.Context) (*HealthReport, error) {
-	endpoint := c.base + "/api/v1/doctor"
+	endpoint := c.base + "/api/fil/doctor"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

@@ -92,6 +92,28 @@ func TestPostScanEvent_ServerError(t *testing.T) {
 	}
 }
 
+// TestGetHealth_UsesFilPrefix is the regression guard for the
+// /api/v1 → /api/fil migration on the plan-server health endpoint. Was
+// missed in PR #17 (only api/plans_client.go and plan/remote_*.go were
+// flipped); after PR #19 removed /api/v1 server-side, this path 404'd
+// and broke `fil doctor`.
+func TestGetHealth_UsesFilPrefix(t *testing.T) {
+	var hit string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = r.URL.Path
+		_, _ = w.Write([]byte(`{"checked_at":"2026-05-21T00:00:00Z","checks":[]}`))
+	}))
+	defer srv.Close()
+
+	c := NewPlanServerClient(srv.URL, "test", false)
+	if _, err := c.GetHealth(context.Background()); err != nil {
+		t.Fatalf("GetHealth: %v", err)
+	}
+	if hit != "/api/fil/doctor" {
+		t.Errorf("GetHealth hit %q; expected /api/fil/doctor", hit)
+	}
+}
+
 // TestPlanServerClientUsesFilPrefix is the regression guard for the
 // /api/v1 → /api/fil migration. The server has dual-routed both prefixes
 // since PR-1 and Caddy now wildcards /api/fil/* to the plan server, so
