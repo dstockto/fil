@@ -94,7 +94,7 @@ func (c *PlanServerClient) do(req *http.Request) (*http.Response, error) {
 
 // ListPlans returns plan summaries. status can be "" (active), "paused", or "archived".
 func (c *PlanServerClient) ListPlans(ctx context.Context, status string) ([]PlanSummary, error) {
-	endpoint := c.base + "/api/v1/plans"
+	endpoint := c.base + "/api/fil/plans"
 	if status != "" {
 		endpoint += "?status=" + status
 	}
@@ -127,7 +127,7 @@ func (c *PlanServerClient) ListPlans(ctx context.Context, status string) ([]Plan
 // An optional status ("paused", "archived") can be passed to fetch from the
 // corresponding directory on the server. Pass "" for active plans.
 func (c *PlanServerClient) GetPlan(ctx context.Context, name string, status ...string) ([]byte, error) {
-	endpoint := c.base + "/api/v1/plans/" + name
+	endpoint := c.base + "/api/fil/plans/" + name
 	if len(status) > 0 && status[0] != "" {
 		endpoint += "?status=" + status[0]
 	}
@@ -153,7 +153,7 @@ func (c *PlanServerClient) GetPlan(ctx context.Context, name string, status ...s
 
 // GetSharedConfig fetches the shared configuration from the server.
 func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) {
-	endpoint := c.base + "/api/v1/config"
+	endpoint := c.base + "/api/fil/config"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -176,7 +176,7 @@ func (c *PlanServerClient) GetSharedConfig(ctx context.Context) ([]byte, error) 
 
 // PutSharedConfig uploads a shared configuration to the server.
 func (c *PlanServerClient) PutSharedConfig(ctx context.Context, data []byte) error {
-	endpoint := c.base + "/api/v1/config"
+	endpoint := c.base + "/api/fil/config"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(data))
 	if err != nil {
@@ -224,7 +224,7 @@ func compareSemver(a, b string) int {
 // PutAssembly uploads a PDF assembly document for the given plan.
 // Returns the server-side filename that should be stored in the plan YAML's assembly field.
 func (c *PlanServerClient) PutAssembly(ctx context.Context, planName string, pdfData []byte) (string, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/assembly", c.base, planName)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(pdfData))
 	if err != nil {
@@ -255,7 +255,7 @@ func (c *PlanServerClient) PutAssembly(ctx context.Context, planName string, pdf
 
 // GetAssembly downloads the assembly PDF for a plan. Returns the PDF bytes and the filename from Content-Disposition.
 func (c *PlanServerClient) GetAssembly(ctx context.Context, planName string) ([]byte, string, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/assembly", c.base, planName)
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/assembly", c.base, planName)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -300,7 +300,7 @@ type CleanAssembliesResult struct {
 }
 
 func (c *PlanServerClient) CleanAssemblies(ctx context.Context, dryRun bool) (*CleanAssembliesResult, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/clean-assemblies?dry_run=%v", c.base, dryRun)
+	endpoint := fmt.Sprintf("%s/api/fil/plans/clean-assemblies?dry_run=%v", c.base, dryRun)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {
@@ -350,7 +350,7 @@ type PrinterStatus struct {
 
 // GetPrinterStatus fetches the current status of all printers from the server.
 func (c *PlanServerClient) GetPrinterStatus(ctx context.Context) ([]PrinterStatus, error) {
-	endpoint := c.base + "/api/v1/printers"
+	endpoint := c.base + "/api/fil/printers"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -376,7 +376,7 @@ func (c *PlanServerClient) GetPrinterStatus(ctx context.Context) ([]PrinterStatu
 
 // PushTray pushes filament metadata to a specific printer tray via the server.
 func (c *PlanServerClient) PushTray(ctx context.Context, printerName string, update TrayPushRequest) error {
-	endpoint := fmt.Sprintf("%s/api/v1/printers/%s/push-tray", c.base, printerName)
+	endpoint := fmt.Sprintf("%s/api/fil/printers/%s/push-tray", c.base, printerName)
 
 	body, err := json.Marshal(update)
 	if err != nil {
@@ -428,7 +428,7 @@ type ScanEvent struct {
 // Returns an error on non-2xx response; callers should treat the error as
 // non-fatal (history is append-only and the Spoolman write has already happened).
 func (c *PlanServerClient) PostScanEvent(ctx context.Context, ev ScanEvent) error {
-	endpoint := c.base + "/api/v1/scan-history"
+	endpoint := c.base + "/api/fil/scan-history"
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return err
@@ -464,7 +464,7 @@ type NotifyTestResult struct {
 // configured notification channel with a canned message. Returns per-channel
 // outcomes so the CLI can print which channels succeeded, skipped, or failed.
 func (c *PlanServerClient) TestNotify(ctx context.Context, message string, force bool) (*NotifyTestResult, error) {
-	endpoint := c.base + "/api/v1/notify/test"
+	endpoint := c.base + "/api/fil/notify/test"
 	payload := map[string]any{}
 	if message != "" {
 		payload["message"] = message
@@ -547,7 +547,7 @@ type HistoryFilament struct {
 
 // GetHistory fetches print history from the server with optional filters.
 func (c *PlanServerClient) GetHistory(ctx context.Context, since, until, printer string, limit int) ([]HistoryEntry, error) {
-	endpoint := c.base + "/api/v1/history"
+	endpoint := c.base + "/api/fil/history"
 
 	q := url.Values{}
 	if since != "" {

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// Resolve POSTs a ResolveRequest to /api/v1/plans/{name}/resolve on the
+// Resolve POSTs a ResolveRequest to /api/fil/plans/{name}/resolve on the
 // plan-server. Empty Resolutions short-circuits before any HTTP call.
 func (r *RemotePlanOps) Resolve(ctx context.Context, req ResolveRequest) error {
 	if req.Plan == "" {
@@ -20,7 +20,7 @@ func (r *RemotePlanOps) Resolve(ctx context.Context, req ResolveRequest) error {
 	if len(req.Resolutions) == 0 {
 		return nil
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/resolve", r.base, url.PathEscape(req.Plan))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/resolve", r.base, url.PathEscape(req.Plan))
 	body, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal resolve request: %w", err)

@@ -20,8 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-## Ready
-
 ### api-fil-prefix-migration-pr2-client-flip
 - **Acceptance:**
   - Every plan-server URL in `api/plans_client.go` and `plan/remote_*.go` changed from `/api/v1/...` to `/api/fil/...`.
@@ -29,8 +27,16 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - A new regression test asserts at least one representative endpoint actually hits `/api/fil/...` (so a future accidental revert to `/api/v1/...` would fail).
   - Spoolman client (`api/client.go`), Prusa outbound (`server/prusa.go`), and the plan-server `Routes()` registration (`server/handler.go`) are NOT touched — those are out of scope for PR-2.
 - **Source:** memory:2026-04-30
+- **Branch:** roadmap/api-fil-prefix-migration-pr2-client-flip
+- **PR:** pending
 
 PR-2 of a 3-PR migration. PR-1 (#16) added server-side dual-routing; Caddy now wildcards `/api/fil/*` to the plan server. This slice flips the client side. PR-3 will remove `/api/v1/*` from the server once we're confident nothing still calls it. Safe to ship right now because both prefixes are live end-to-end: server answers both, Caddy routes both.
+
+---
+
+## Ready
+
+<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
 
 ---
 

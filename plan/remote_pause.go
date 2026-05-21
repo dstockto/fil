@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-// Pause hits the existing /api/v1/plans/{name}/pause endpoint on the
+// Pause hits the existing /api/fil/plans/{name}/pause endpoint on the
 // plan-server.
 func (r *RemotePlanOps) Pause(ctx context.Context, name string) error {
 	return r.lifecycleAction(ctx, name, "pause")
 }
 
-// Resume hits /api/v1/plans/{name}/resume.
+// Resume hits /api/fil/plans/{name}/resume.
 func (r *RemotePlanOps) Resume(ctx context.Context, name string) error {
 	return r.lifecycleAction(ctx, name, "resume")
 }
@@ -27,7 +27,7 @@ func (r *RemotePlanOps) lifecycleAction(ctx context.Context, name, action string
 	if name == "" {
 		return fmt.Errorf("plan name is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/%s", r.base, url.PathEscape(name), action)
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/%s", r.base, url.PathEscape(name), action)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("build %s request: %w", action, err)

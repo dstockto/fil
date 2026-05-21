@@ -11,13 +11,13 @@ import (
 	"strings"
 )
 
-// Complete POSTs the CompleteRequest to /api/v1/plans/{name}/complete on the
+// Complete POSTs the CompleteRequest to /api/fil/plans/{name}/complete on the
 // plan-server, which runs its own LocalPlanOps under the hood.
 func (r *RemotePlanOps) Complete(ctx context.Context, req CompleteRequest) (CompleteResult, error) {
 	if req.Plan == "" {
 		return CompleteResult{}, fmt.Errorf("plan name is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/complete", r.base, url.PathEscape(req.Plan))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/complete", r.base, url.PathEscape(req.Plan))
 	body, err := json.Marshal(req)
 	if err != nil {
 		return CompleteResult{}, fmt.Errorf("marshal complete request: %w", err)

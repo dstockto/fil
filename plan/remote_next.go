@@ -11,12 +11,12 @@ import (
 	"strings"
 )
 
-// Next POSTs a NextRequest to /api/v1/plans/{name}/next on the plan-server.
+// Next POSTs a NextRequest to /api/fil/plans/{name}/next on the plan-server.
 func (r *RemotePlanOps) Next(ctx context.Context, req NextRequest) (NextResult, error) {
 	if req.Plan == "" {
 		return NextResult{}, fmt.Errorf("plan name is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/next", r.base, url.PathEscape(req.Plan))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/next", r.base, url.PathEscape(req.Plan))
 	body, err := json.Marshal(req)
 	if err != nil {
 		return NextResult{}, fmt.Errorf("marshal next request: %w", err)

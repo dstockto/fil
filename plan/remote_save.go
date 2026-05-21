@@ -15,7 +15,7 @@ import (
 
 // SaveAll runs the SaveAll-time color backfill (best-effort, requires the
 // optional Spoolman dep), marshals the plan to YAML, and PUTs it to
-// /api/v1/plans/{name}.
+// /api/fil/plans/{name}.
 func (r *RemotePlanOps) SaveAll(ctx context.Context, name string, plan models.PlanFile) error {
 	if name == "" {
 		return fmt.Errorf("plan name is required")
@@ -29,7 +29,7 @@ func (r *RemotePlanOps) SaveAll(ctx context.Context, name string, plan models.Pl
 	return r.putPlanBytes(ctx, name, out)
 }
 
-// SaveBytes PUTs raw bytes to /api/v1/plans/{name}, bypassing marshal +
+// SaveBytes PUTs raw bytes to /api/fil/plans/{name}, bypassing marshal +
 // backfill so $EDITOR-driven flows preserve formatting exactly.
 func (r *RemotePlanOps) SaveBytes(ctx context.Context, name string, data []byte) error {
 	if name == "" {
@@ -40,7 +40,7 @@ func (r *RemotePlanOps) SaveBytes(ctx context.Context, name string, data []byte)
 
 // putPlanBytes is the shared HTTP shape for both SaveAll and SaveBytes.
 func (r *RemotePlanOps) putPlanBytes(ctx context.Context, name string, data []byte) error {
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s", r.base, url.PathEscape(name))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s", r.base, url.PathEscape(name))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("build save request: %w", err)
