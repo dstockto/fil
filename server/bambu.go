@@ -173,7 +173,13 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 
 	if gcodeState, ok := printData["gcode_state"].(string); ok {
 		b.state.State = normalizeState(gcodeState)
-		if b.state.State == "finished" && oldState != "finished" {
+		// LastFinishedAt only tracks real print-completion transitions.
+		// The constructor seeds State="offline" and ConnectionLostHandler resets
+		// it to "offline" on MQTT disconnect, so the first report after
+		// (re)connect would otherwise stamp this on every restart when the
+		// printer is parked at FINISH between prints — silently corrupting
+		// FinishedAt in plan history.
+		if b.state.State == "finished" && oldState != "finished" && oldState != "" && oldState != "offline" {
 			b.state.LastFinishedAt = time.Now()
 		}
 	}
@@ -289,8 +295,12 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 
 	// Fire state change callbacks
 	fireCallbacks := false
-	if b.state.State != oldState && oldState != "" {
-		// State changed — always fire
+	if b.state.State != oldState && oldState != "" && oldState != "offline" {
+		// State changed — always fire. "offline" is excluded because the
+		// constructor seeds it and ConnectionLostHandler resets to it, so
+		// offline->X is "first observation after (re)connect," not a real
+		// transition; firing on it would announce "print finished" on every
+		// server restart whenever the printer is parked at FINISH.
 		fireCallbacks = true
 	} else if b.state.State == "paused" && hasNewHMSCodes(prevHMS, b.hmsCodes) {
 		// Already paused but new HMS codes appeared — fire to notify about additional faults
