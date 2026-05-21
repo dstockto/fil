@@ -123,13 +123,25 @@ func (p *PrusaAdapter) poll() error {
 		}
 	}
 
-	// Fire state change callbacks
+	p.dispatchStateChange(oldState)
+	return nil
+}
+
+// dispatchStateChange fires registered callbacks if the current state differs
+// from oldState. Extracted from poll() so the transition-detection logic is
+// testable without standing up a digest-auth HTTP mock.
+func (p *PrusaAdapter) dispatchStateChange(oldState string) {
 	p.mu.RLock()
 	newState := p.state.State
 	callbacks := p.stateCallbacks
 	p.mu.RUnlock()
 
-	if newState != oldState && oldState != "" {
+	if newState != oldState && oldState != "" && oldState != "offline" {
+		// "offline" is excluded because the constructor seeds it and poll()
+		// resets to it on fetch error, so offline->X is "first observation
+		// after (re)connect," not a real transition; firing on it would
+		// announce "print finished" on every server restart whenever the
+		// printer is parked at FINISHED.
 		event := StateChangeEvent{
 			OldState: oldState,
 			NewState: newState,
@@ -138,8 +150,6 @@ func (p *PrusaAdapter) poll() error {
 			go cb(event)
 		}
 	}
-
-	return nil
 }
 
 // applyStatusUpdate updates the printer state from a parsed /api/v1/status
@@ -153,7 +163,13 @@ func (p *PrusaAdapter) applyStatusUpdate(status map[string]interface{}) string {
 	if printerData, ok := status["printer"].(map[string]interface{}); ok {
 		if state, ok := printerData["state"].(string); ok {
 			p.state.State = normalizePrusaState(state)
-			if p.state.State == "finished" && oldState != "finished" {
+			// LastFinishedAt only tracks real print-completion transitions.
+			// The constructor seeds State="offline" and poll() resets to
+			// "offline" on fetch error, so the first status after (re)connect
+			// would otherwise stamp this on every restart when the printer
+			// is parked at FINISHED — silently corrupting FinishedAt in plan
+			// history.
+			if p.state.State == "finished" && oldState != "finished" && oldState != "" && oldState != "offline" {
 				p.state.LastFinishedAt = time.Now()
 			}
 		}
@@ -173,7 +189,7 @@ func (p *PrusaAdapter) fetch(path string) (map[string]interface{}, error) {
 	url := fmt.Sprintf("http://%s%s", p.ip, path)
 
 	client := &http.Client{
-		Timeout:   5 * time.Second,
+		Timeout: 5 * time.Second,
 		Transport: &digest.Transport{
 			Username: p.username,
 			Password: p.password,
