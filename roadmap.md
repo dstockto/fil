@@ -20,20 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-### api-fil-prefix-migration-pr1-dual-routing
-- **Acceptance:**
-  - `server/handler.go` `Routes()` registers every existing `/api/v1/<suffix>` route under `/api/fil/<suffix>` as well, routing to the same handler.
-  - Refactor extracts a route table (slice of `{method+suffix, handler}`) and registers it under both prefixes via a loop; no handler bodies change.
-  - New `TestBothPrefixesRoute` table-driven test asserts that every endpoint returns the same HTTP status under both prefixes.
-  - All existing `/api/v1/*` tests in `server/handler_test.go` continue to pass unchanged.
-- **Source:** memory:2026-04-30
-- **Branch:** roadmap/api-fil-prefix-migration-pr1-dual-routing
-- **PR:** #16
-
-PR-1 of a 3-PR migration. Goal of this slice: dual-route `/api/v1/*` and `/api/fil/*` on the server so the binary can be redeployed independently. PR-2 will flip client calls + update Caddy; PR-3 will remove `/api/v1/*` server-side. See parent backlog item `api-fil-prefix-migration` for the full migration plan and motivation (single Caddy wildcard for plan-server endpoints).
-
----
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -101,6 +87,19 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### api-fil-prefix-migration-pr1-dual-routing
+- **Acceptance:**
+  - `server/handler.go` `Routes()` registers every existing `/api/v1/<suffix>` route under `/api/fil/<suffix>` as well, routing to the same handler.
+  - Refactor extracts a route table (slice of `{method+suffix, handler}`) and registers it under both prefixes via a loop; no handler bodies change.
+  - New `TestBothPrefixesRoute` table-driven test asserts that every endpoint returns the same HTTP status under both prefixes.
+  - All existing `/api/v1/*` tests in `server/handler_test.go` continue to pass unchanged.
+- **Source:** memory:2026-04-30
+- **Merged:** 2026-05-21 in #16
+
+PR-1 of a 3-PR migration. Goal of this slice: dual-route `/api/v1/*` and `/api/fil/*` on the server so the binary can be redeployed independently. PR-2 will flip client calls + update Caddy; PR-3 will remove `/api/v1/*` server-side. See parent backlog item `api-fil-prefix-migration` for the full migration plan and motivation (single Caddy wildcard for plan-server endpoints).
+
+---
+
 ### workflows-bump-actions-checkout-off-node-20-before-deprecation
 - **Acceptance:**
   - `.github/workflows/roadmap-merge-sync.yml:15` changed from `actions/checkout@v4` to `actions/checkout@v6`.
