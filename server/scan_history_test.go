@@ -33,7 +33,7 @@ func TestHandleScanHistoryPost_Appends(t *testing.T) {
 	}
 	body, _ := json.Marshal(ev)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scan-history", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/scan-history", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	s.handleScanHistoryPost(w, req)
 
@@ -65,7 +65,7 @@ func TestHandleScanHistoryPost_RejectsMissingAction(t *testing.T) {
 	s, _ := newScanServer(t)
 
 	body, _ := json.Marshal(ScanEvent{SpoolID: 1})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scan-history", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/scan-history", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	s.handleScanHistoryPost(w, req)
 
@@ -77,7 +77,7 @@ func TestHandleScanHistoryPost_RejectsMissingAction(t *testing.T) {
 func TestHandleScanHistoryPost_RejectsBadJSON(t *testing.T) {
 	s, _ := newScanServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scan-history", strings.NewReader("not json"))
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/scan-history", strings.NewReader("not json"))
 	w := httptest.NewRecorder()
 	s.handleScanHistoryPost(w, req)
 
@@ -89,7 +89,7 @@ func TestHandleScanHistoryPost_RejectsBadJSON(t *testing.T) {
 func TestHandleScanHistoryGet_EmptyFile(t *testing.T) {
 	s, _ := newScanServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/scan-history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/scan-history", nil)
 	w := httptest.NewRecorder()
 	s.handleScanHistoryGet(w, req)
 
@@ -117,7 +117,7 @@ func TestHandleScanHistoryGet_FiltersAndReturns(t *testing.T) {
 	writeEvent(now, 3)
 
 	// limit=2 → most recent two
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/scan-history?limit=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/scan-history?limit=2", nil)
 	w := httptest.NewRecorder()
 	s.handleScanHistoryGet(w, req)
 

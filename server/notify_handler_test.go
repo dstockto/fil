@@ -12,7 +12,7 @@ func TestNotifyTestNoChannelsConfigured(t *testing.T) {
 	s, _ := setupTestServer(t)
 	s.Notifier = NewNotifier(NotificationConfig{})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notify/test", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/notify/test", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	s.Routes().ServeHTTP(w, req)
 
@@ -48,7 +48,7 @@ func TestNotifyTestFiresVoiceMonkey(t *testing.T) {
 	})
 
 	body := strings.NewReader(`{"message":"hello echo"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notify/test", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/notify/test", body)
 	w := httptest.NewRecorder()
 	s.Routes().ServeHTTP(w, req)
 
@@ -81,7 +81,7 @@ func TestNotifyTestRespectsQuietHours(t *testing.T) {
 		QuietEnd:          "23:59",
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notify/test", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/notify/test", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	s.Routes().ServeHTTP(w, req)
 
@@ -115,7 +115,7 @@ func TestNotifyTestForceOverridesQuietHours(t *testing.T) {
 	})
 
 	body := strings.NewReader(`{"force":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notify/test", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/notify/test", body)
 	w := httptest.NewRecorder()
 	s.Routes().ServeHTTP(w, req)
 

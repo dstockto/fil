@@ -47,11 +47,11 @@ type PlanSummary struct {
 	HasAssembly bool   `json:"has_assembly"`
 }
 
-// apiPrefixes are the URL prefixes the plan server serves. Registered side
-// by side during the /api/v1 → /api/fil migration so a single Caddy
-// wildcard can cover the new prefix; /api/v1 stays live until PR-3 of the
-// migration removes it.
-var apiPrefixes = []string{"/api/v1", "/api/fil"}
+// apiPrefixes is the canonical URL prefix the plan server serves. The
+// route table is registered under each prefix in the loop; today there is
+// only one, but the dual-prefix shape is retained in case a future prefix
+// migration needs to overlap again.
+var apiPrefixes = []string{"/api/fil"}
 
 // Routes registers all plan API routes on a new ServeMux using Go 1.22+ method routing.
 func (s *PlanServer) Routes() http.Handler {

@@ -178,7 +178,7 @@ func TestSayHandlerReadsPlanYAML(t *testing.T) {
 	}
 	s := &PlanServer{PlansDir: dir}
 
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/say", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/fil/say", nil)
 	w := httptest.NewRecorder()
 	s.handleSay(w, r)
 

@@ -69,7 +69,7 @@ func TestListPlansEmpty(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -89,7 +89,7 @@ func TestPutAndGetPlan(t *testing.T) {
 	mux := s.Routes()
 
 	// PUT
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml", strings.NewReader(testPlanYAML))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/plans/test.yaml", strings.NewReader(testPlanYAML))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -98,7 +98,7 @@ func TestPutAndGetPlan(t *testing.T) {
 	}
 
 	// GET
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/plans/test.yaml", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/fil/plans/test.yaml", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -121,7 +121,7 @@ func TestListPlansWithData(t *testing.T) {
 	// Write a plan file
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -151,7 +151,7 @@ func TestDeletePlan(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/fil/plans/test.yaml", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -169,7 +169,7 @@ func TestDeletePlanNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/nonexistent.yaml", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/fil/plans/nonexistent.yaml", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -184,7 +184,7 @@ func TestPausePlan(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/test.yaml/pause", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/test.yaml/pause", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -207,7 +207,7 @@ func TestResumePlan(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(s.PauseDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/test.yaml/resume", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/test.yaml/resume", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -229,7 +229,7 @@ func TestArchivePlan(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/test.yaml/archive", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/test.yaml/archive", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -259,7 +259,7 @@ func TestUnarchivePlan(t *testing.T) {
 	archivedName := "test-20260328150405.yaml"
 	_ = os.WriteFile(filepath.Join(s.ArchiveDir, archivedName), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/"+archivedName+"/unarchive", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/"+archivedName+"/unarchive", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -282,7 +282,7 @@ func TestGetPlanNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans/nonexistent.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans/nonexistent.yaml", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -295,7 +295,7 @@ func TestPutPlanInvalidYAML(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/bad.yaml", strings.NewReader("{{{{not yaml"))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/plans/bad.yaml", strings.NewReader("{{{{not yaml"))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -310,7 +310,7 @@ func TestListPausedPlans(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(s.PauseDir, "paused.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans?status=paused", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans?status=paused", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -332,7 +332,7 @@ func TestGetPausedPlan(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(s.PauseDir, "paused.yaml"), []byte(testPlanYAML), 0644)
 
 	// GET without status should 404 (not in plans dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans/paused.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans/paused.yaml", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -341,7 +341,7 @@ func TestGetPausedPlan(t *testing.T) {
 	}
 
 	// GET with status=paused should succeed
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/plans/paused.yaml?status=paused", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/fil/plans/paused.yaml?status=paused", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -358,7 +358,7 @@ func TestPausePlanNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/nonexistent.yaml/pause", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/nonexistent.yaml/pause", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -371,7 +371,7 @@ func TestResumePlanNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/plans/nonexistent.yaml/resume", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/plans/nonexistent.yaml/resume", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -384,7 +384,7 @@ func TestGetConfigEmpty(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/config", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -407,7 +407,7 @@ func TestPutAndGetConfig(t *testing.T) {
 	configJSON := `{"api_base":"http://spoolman:7912","location_aliases":{"A":"AMS A"}}`
 
 	// PUT
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader(configJSON))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/config", strings.NewReader(configJSON))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -416,7 +416,7 @@ func TestPutAndGetConfig(t *testing.T) {
 	}
 
 	// GET
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/fil/config", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -433,7 +433,7 @@ func TestPutConfigInvalidJSON(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/config", strings.NewReader("not json"))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/config", strings.NewReader("not json"))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -447,7 +447,7 @@ func TestGetConfigNoConfigDir(t *testing.T) {
 	s.ConfigDir = ""
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/config", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -466,7 +466,7 @@ func TestPutAndGetAssembly(t *testing.T) {
 	pdfContent := "%PDF-1.4 fake pdf content for testing"
 
 	// PUT assembly
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader(pdfContent))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/plans/test.yaml/assembly", strings.NewReader(pdfContent))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -496,7 +496,7 @@ func TestPutAndGetAssembly(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
 
 	// GET assembly
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/plans/test.yaml/assembly", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/fil/plans/test.yaml/assembly", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -519,7 +519,7 @@ func TestGetAssemblyNotFound(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans/nonexistent.yaml/assembly", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans/nonexistent.yaml/assembly", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -537,7 +537,7 @@ func TestDeleteAssembly(t *testing.T) {
 	planWithAssembly := "assembly: test-20260319120000.pdf\n" + testPlanYAML
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml/assembly", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/fil/plans/test.yaml/assembly", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -558,7 +558,7 @@ func TestDeleteAssemblyNotFound(t *testing.T) {
 	// Plan exists but has no assembly
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(testPlanYAML), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml/assembly", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/fil/plans/test.yaml/assembly", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -571,7 +571,7 @@ func TestPutAssemblyInvalidPDF(t *testing.T) {
 	s, _ := setupTestServer(t)
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader("not a pdf"))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/plans/test.yaml/assembly", strings.NewReader("not a pdf"))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -588,7 +588,7 @@ func TestListPlansHasAssembly(t *testing.T) {
 	planWithAssembly := "assembly: test-20260319120000.pdf\n" + testPlanYAML
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/fil/plans", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -615,7 +615,7 @@ func TestDeletePlanCleansUpAssembly(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(s.PlansDir, "test.yaml"), []byte(planWithAssembly), 0644)
 	_ = os.WriteFile(filepath.Join(s.AssembliesDir, "test-20260319120000.pdf"), []byte("%PDF-1.4 test"), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/plans/test.yaml", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/fil/plans/test.yaml", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -637,7 +637,7 @@ func TestPutAssemblyNoAssembliesDir(t *testing.T) {
 	s.AssembliesDir = ""
 	mux := s.Routes()
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/plans/test.yaml/assembly", strings.NewReader("%PDF-1.4 test"))
+	req := httptest.NewRequest(http.MethodPut, "/api/fil/plans/test.yaml/assembly", strings.NewReader("%PDF-1.4 test"))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -646,12 +646,12 @@ func TestPutAssemblyNoAssembliesDir(t *testing.T) {
 	}
 }
 
-// TestBothPrefixesRoute asserts every registered route is reachable under
-// both /api/v1 and /api/fil with identical behavior. PR-1 of the prefix
-// migration adds /api/fil/* as a dual-route alongside /api/v1/*; PR-2
-// flips clients, PR-3 removes /api/v1/*. The migration is gated on this
-// test: any divergence in status between the two prefixes is a regression.
-func TestBothPrefixesRoute(t *testing.T) {
+// TestOnlyFilPrefixRoutes pins the post-migration invariant: every former
+// /api/v1 path now 404s. Only checks the /api/v1 side — the per-endpoint
+// tests below already exercise /api/fil with concrete fixtures and assert
+// real status codes. An accidental re-registration of /api/v1 in
+// apiPrefixes would flip this red.
+func TestOnlyFilPrefixRoutes(t *testing.T) {
 	routes := []struct {
 		method string
 		suffix string
@@ -693,13 +693,26 @@ func TestBothPrefixesRoute(t *testing.T) {
 
 			v1 := httptest.NewRecorder()
 			mux.ServeHTTP(v1, httptest.NewRequest(r.method, "/api/v1"+r.suffix, nil))
-
-			fil := httptest.NewRecorder()
-			mux.ServeHTTP(fil, httptest.NewRequest(r.method, "/api/fil"+r.suffix, nil))
-
-			if v1.Code != fil.Code {
-				t.Errorf("status mismatch for %s %s: v1=%d, fil=%d", r.method, r.suffix, v1.Code, fil.Code)
+			if v1.Code != http.StatusNotFound {
+				t.Errorf("/api/v1%s %s returned %d; expected 404 (prefix removed in PR-3)", r.suffix, r.method, v1.Code)
 			}
 		})
+	}
+}
+
+// TestV1PrefixReturns404 is the smoke test for PR-3 of the prefix
+// migration: once /api/v1 is removed from apiPrefixes, every formerly
+// routed v1 path 404s. Kept alongside the broader table-driven test as a
+// fast targeted check for the most-frequently-hit endpoint.
+func TestV1PrefixReturns404(t *testing.T) {
+	s, _ := setupTestServer(t)
+	mux := s.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("GET /api/v1/version returned %d; expected 404 after PR-3 removes /api/v1", w.Code)
 	}
 }

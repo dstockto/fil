@@ -86,7 +86,7 @@ func TestHandleHealth_ReturnsJSON(t *testing.T) {
 	srv := httptest.NewServer(s.Routes())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/v1/doctor")
+	resp, err := http.Get(srv.URL + "/api/fil/doctor")
 	if err != nil {
 		t.Fatal(err)
 	}
