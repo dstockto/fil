@@ -9,25 +9,25 @@ import (
 	"strings"
 )
 
-// Archive hits /api/v1/plans/{name}/archive — same lifecycleAction shape as
+// Archive hits /api/fil/plans/{name}/archive — same lifecycleAction shape as
 // Pause/Resume.
 func (r *RemotePlanOps) Archive(ctx context.Context, name string) error {
 	return r.lifecycleAction(ctx, name, "archive")
 }
 
-// Unarchive hits /api/v1/plans/{name}/unarchive.
+// Unarchive hits /api/fil/plans/{name}/unarchive.
 func (r *RemotePlanOps) Unarchive(ctx context.Context, name string) error {
 	return r.lifecycleAction(ctx, name, "unarchive")
 }
 
-// Delete hits DELETE /api/v1/plans/{name}. Treats 204 and 404 as success
+// Delete hits DELETE /api/fil/plans/{name}. Treats 204 and 404 as success
 // (the plan is gone either way), matching the previous api.PlanServerClient
 // semantics.
 func (r *RemotePlanOps) Delete(ctx context.Context, name string) error {
 	if name == "" {
 		return fmt.Errorf("plan name is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s", r.base, url.PathEscape(name))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s", r.base, url.PathEscape(name))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("build delete request: %w", err)

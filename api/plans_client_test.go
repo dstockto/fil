@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,8 +54,8 @@ func TestPostScanEvent_Success(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/v1/scan-history" {
-			t.Errorf("expected /api/v1/scan-history, got %s", r.URL.Path)
+		if r.URL.Path != "/api/fil/scan-history" {
+			t.Errorf("expected /api/fil/scan-history, got %s", r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
@@ -88,5 +89,33 @@ func TestPostScanEvent_ServerError(t *testing.T) {
 	err := c.PostScanEvent(context.Background(), ScanEvent{Action: "commit"})
 	if err == nil {
 		t.Fatal("expected error on 500, got nil")
+	}
+}
+
+// TestPlanServerClientUsesFilPrefix is the regression guard for the
+// /api/v1 → /api/fil migration. The server has dual-routed both prefixes
+// since PR-1 and Caddy now wildcards /api/fil/* to the plan server, so
+// the client side must call /api/fil. If a future change accidentally
+// reintroduces /api/v1 in a client URL, this test catches it.
+func TestPlanServerClientUsesFilPrefix(t *testing.T) {
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewPlanServerClient(srv.URL, "test", false)
+	if err := c.PostScanEvent(context.Background(), ScanEvent{Action: "commit"}); err != nil {
+		t.Fatalf("PostScanEvent: %v", err)
+	}
+
+	if len(hits) == 0 {
+		t.Fatal("expected at least one hit, got none")
+	}
+	for _, p := range hits {
+		if !strings.HasPrefix(p, "/api/fil/") {
+			t.Errorf("client hit %q; expected /api/fil/ prefix", p)
+		}
 	}
 }

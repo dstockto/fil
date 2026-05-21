@@ -11,12 +11,12 @@ import (
 	"strings"
 )
 
-// Stop POSTs a StopRequest to /api/v1/plans/{name}/stop on the plan-server.
+// Stop POSTs a StopRequest to /api/fil/plans/{name}/stop on the plan-server.
 func (r *RemotePlanOps) Stop(ctx context.Context, req StopRequest) error {
 	if req.Plan == "" {
 		return fmt.Errorf("plan name is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/plans/%s/stop", r.base, url.PathEscape(req.Plan))
+	endpoint := fmt.Sprintf("%s/api/fil/plans/%s/stop", r.base, url.PathEscape(req.Plan))
 	body, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal stop request: %w", err)

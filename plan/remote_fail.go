@@ -14,7 +14,7 @@ import (
 // success. The server runs its own LocalPlanOps under the hood; the CLI does
 // not see per-spool allocations in Remote Mode (server returns 204).
 func (r *RemotePlanOps) Fail(ctx context.Context, req FailRequest) (FailResult, error) {
-	endpoint := r.base + "/api/v1/plan-fail"
+	endpoint := r.base + "/api/fil/plan-fail"
 	body, err := json.Marshal(req)
 	if err != nil {
 		return FailResult{}, fmt.Errorf("marshal fail request: %w", err)
