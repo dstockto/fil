@@ -30,7 +30,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Stale `/api/v1/` references in our plan-server doc comments removed (`server/plan_fail.go:11`, `cmd/doctor.go:121`).
 - **Source:** memory:2026-04-30
 - **Branch:** roadmap/api-fil-prefix-migration-pr3-remove-v1
-- **PR:** pending
+- **PR:** #19
 
 Final slice of the 3-PR migration. PR-1 (#16) added dual-routing server-side; PR-2 (#17) flipped clients; Caddy is wildcarded for `/api/fil/*`. All `fil` binaries have been redeployed and no caller still hits `/api/v1/*`, so the server can drop it cleanly with no 404 risk at runtime.
 
