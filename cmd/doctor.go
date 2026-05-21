@@ -118,7 +118,7 @@ func runDoctor(ctx context.Context, skip map[string]bool, perCheckTimeout time.D
 		checks = append(checks, clientSpoolmanCheck(ctx, perCheckTimeout))
 	}
 
-	// Printer mismatches (client-side cross-check using /api/v1/printers + Spoolman).
+	// Printer mismatches (client-side cross-check using /api/fil/printers + Spoolman).
 	if !skip["printers"] && Cfg != nil && Cfg.PlansServer != "" && Cfg.ApiBase != "" {
 		checks = append(checks, mismatchCheck(ctx, perCheckTimeout))
 	}

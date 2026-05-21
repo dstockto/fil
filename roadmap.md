@@ -20,8 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-## Ready
-
 ### api-fil-prefix-migration-pr3-remove-v1
 - **Acceptance:**
   - `server/handler.go` `apiPrefixes` contains only `"/api/fil"`; `"/api/v1"` is removed.
@@ -31,8 +29,16 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - All other server tests that hit `/api/v1/...` paths are flipped to `/api/fil/...`. Out of scope (must NOT change): Spoolman stub paths in `server/health_test.go:50`, outbound Prusa-printer paths in `server/prusa.go`, Spoolman-client refs in `api/client.go`/`api/health.go`, and the `cmd/clean.go` comment about Spoolman's `/api/v1/setting/...`.
   - Stale `/api/v1/` references in our plan-server doc comments removed (`server/plan_fail.go:11`, `cmd/doctor.go:121`).
 - **Source:** memory:2026-04-30
+- **Branch:** roadmap/api-fil-prefix-migration-pr3-remove-v1
+- **PR:** pending
 
 Final slice of the 3-PR migration. PR-1 (#16) added dual-routing server-side; PR-2 (#17) flipped clients; Caddy is wildcarded for `/api/fil/*`. All `fil` binaries have been redeployed and no caller still hits `/api/v1/*`, so the server can drop it cleanly with no 404 risk at runtime.
+
+---
+
+## Ready
+
+<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
 
 ---
 

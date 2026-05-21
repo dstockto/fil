@@ -136,7 +136,7 @@ func postPlanFail(t *testing.T, s *PlanServer, req plan.FailRequest) *httptest.R
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/plan-fail", bytes.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/api/fil/plan-fail", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	s.handlePlanFail(w, r)
 	return w

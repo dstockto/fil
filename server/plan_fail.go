@@ -8,7 +8,7 @@ import (
 	"github.com/dstockto/fil/plan"
 )
 
-// validCauses is the closed enum of failure causes accepted by /api/v1/plan-fail.
+// validCauses is the closed enum of failure causes accepted by /api/fil/plan-fail.
 var validCauses = map[string]struct{}{
 	"bed_adhesion":    {},
 	"spaghetti":       {},
