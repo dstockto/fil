@@ -20,24 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-### printer-restart-fires-false-finished-notification
-- **Acceptance:**
-  - `server/bambu.go:292` guard changed from `if b.state.State != oldState && oldState != ""` to also exclude `oldState == "offline"`, so the synthetic startup/disconnect `"offline"` state never qualifies as a real prior state for callback firing.
-  - `server/prusa.go:132` same change.
-  - `LastFinishedAt = time.Now()` (server/bambu.go:176-178 and server/prusa.go:156-159) no longer stamps when the prior state is `""` or `"offline"`, so plan-history `FinishedAt` (server/history.go:112-121) isn't overwritten on every restart.
-  - New regression test in `server/bambu_test.go`: construct a fresh `BambuAdapter` (initial state `"offline"`), drive `handleReport` with `gcode_state: "FINISH"`, assert (a) no state callback fires and (b) `LastFinishedAt` remains zero. Mirror test in `server/prusa_test.go` for the Prusa adapter.
-  - New regression test: drive `offline → FINISH → RUNNING → FINISH` (Bambu) and `offline → FINISHED → PRINTING → FINISHED` (Prusa); assert exactly one callback fires (on the second `FINISH`) and `LastFinishedAt` is set then, not on the first.
-  - Existing tests in `server/bambu_test.go`, `server/prusa_test.go`, and any callers of state-change notifications continue to pass unchanged.
-- **Source:** direct
-- **Branch:** roadmap/printer-restart-fires-false-finished-notification
-- **PR:** #18
-
-Every plan-server restart triggers an Alexa announcement ("Bambu X1C finished a print") and matching Pushover/ntfy push whenever a Bambu/Prusa is sitting in `FINISH`/`FINISHED` (the natural state between prints until the next job starts). Cause: `NewBambuAdapter` / `NewPrusaAdapter` seed `state.State = "offline"` (server/bambu.go:48, server/prusa.go:36). On (re)connect the first MQTT/HTTP status report transitions `"offline" → "finished"`, which slips past the `oldState != ""` guard, fires the state-change callback, and cmd/serve.go:152 calls `notifier.Speak(...)`. `ConnectionLostHandler` also resets state to `"offline"` (server/bambu.go:67-71), so transient network blips during `FINISH` replay the announcement.
-
-Latent since 2026-04-04 (3416846, adapters introduced); audible since 2026-04-23 (9d97558, voicemonkey wired). Confirmed 2026-05-20 via `GET /api/fil/printers` — X1C reports `state: "finished"` and a `last_finished_at` that matches the most recent redeploy timestamp, not the actual print completion.
-
-Second-order: same flawed guard at server/bambu.go:176-178 stamps `LastFinishedAt = time.Now()` whenever `oldState != "finished" && new == "finished"`, so the timestamp is overwritten on every restart while the printer is parked at `FINISH`. That value feeds plan-history `FinishedAt` (server/history.go:112-121), so print-completion times in history are being silently corrupted to "whenever the server last restarted while the print was still parked at FINISH." Same fix shape fixes both.
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -105,6 +87,23 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### printer-restart-fires-false-finished-notification
+- **Acceptance:**
+  - `server/bambu.go:292` guard changed from `if b.state.State != oldState && oldState != ""` to also exclude `oldState == "offline"`, so the synthetic startup/disconnect `"offline"` state never qualifies as a real prior state for callback firing.
+  - `server/prusa.go:132` same change.
+  - `LastFinishedAt = time.Now()` (server/bambu.go:176-178 and server/prusa.go:156-159) no longer stamps when the prior state is `""` or `"offline"`, so plan-history `FinishedAt` (server/history.go:112-121) isn't overwritten on every restart.
+  - New regression test in `server/bambu_test.go`: construct a fresh `BambuAdapter` (initial state `"offline"`), drive `handleReport` with `gcode_state: "FINISH"`, assert (a) no state callback fires and (b) `LastFinishedAt` remains zero. Mirror test in `server/prusa_test.go` for the Prusa adapter.
+  - New regression test: drive `offline → FINISH → RUNNING → FINISH` (Bambu) and `offline → FINISHED → PRINTING → FINISHED` (Prusa); assert exactly one callback fires (on the second `FINISH`) and `LastFinishedAt` is set then, not on the first.
+  - Existing tests in `server/bambu_test.go`, `server/prusa_test.go`, and any callers of state-change notifications continue to pass unchanged.
+- **Source:** direct
+- **Merged:** 2026-05-21 in #18
+
+Every plan-server restart triggers an Alexa announcement ("Bambu X1C finished a print") and matching Pushover/ntfy push whenever a Bambu/Prusa is sitting in `FINISH`/`FINISHED` (the natural state between prints until the next job starts). Cause: `NewBambuAdapter` / `NewPrusaAdapter` seed `state.State = "offline"` (server/bambu.go:48, server/prusa.go:36). On (re)connect the first MQTT/HTTP status report transitions `"offline" → "finished"`, which slips past the `oldState != ""` guard, fires the state-change callback, and cmd/serve.go:152 calls `notifier.Speak(...)`. `ConnectionLostHandler` also resets state to `"offline"` (server/bambu.go:67-71), so transient network blips during `FINISH` replay the announcement.
+
+Latent since 2026-04-04 (3416846, adapters introduced); audible since 2026-04-23 (9d97558, voicemonkey wired). Confirmed 2026-05-20 via `GET /api/fil/printers` — X1C reports `state: "finished"` and a `last_finished_at` that matches the most recent redeploy timestamp, not the actual print completion.
+
+Second-order: same flawed guard at server/bambu.go:176-178 stamps `LastFinishedAt = time.Now()` whenever `oldState != "finished" && new == "finished"`, so the timestamp is overwritten on every restart while the printer is parked at `FINISH`. That value feeds plan-history `FinishedAt` (server/history.go:112-121), so print-completion times in history are being silently corrupted to "whenever the server last restarted while the print was still parked at FINISH." Same fix shape fixes both.
+
 ### api-fil-prefix-migration-pr2-client-flip
 - **Acceptance:**
   - Every plan-server URL in `api/plans_client.go` and `plan/remote_*.go` changed from `/api/v1/...` to `/api/fil/...`.
