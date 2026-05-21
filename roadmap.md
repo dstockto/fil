@@ -84,6 +84,14 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 
 ---
 
+### add-grep-based-regression-test-for-plan-server-client-url-prefixes
+- **Source:** gh#21
+
+## Context
+PR #17 (api-fil-prefix-migration PR-2) was supposed to flip every plan-server URL from `/api/v1/*` to `/api/fil/*`. The acceptance criteria listed specific files (`api/plans_client.go`, `plan/remote_*.go`) instead of stating the invariant: *no plan-server client method in the* `api/` *or* `plan/` *packages should construct a URL containing* `/api/v1`.
+
+`api/health.go`'s `GetHealth` was missed. PR #19 (PR-3) then removed `/api/v1` server-side, breaking `fil doctor` in production. Hotfi...
+
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
