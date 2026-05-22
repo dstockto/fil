@@ -49,7 +49,11 @@
       "Bash(git pull *)",
       "Bash(awk *)",
       "Bash(gofmt -l .)",
-      "Bash(go list *)"
+      "Bash(go list *)",
+      "Bash(git push *)",
+      "Bash(gofmt *)",
+      "Bash(git stash *)",
+      "Bash(gh pr *)"
     ]
   }
 }
