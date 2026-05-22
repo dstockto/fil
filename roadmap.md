@@ -34,11 +34,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 `plan/local_complete.go:88` clears `plate.Printer = ""` but doesn't refresh the `locations_spoolorders` Spoolman setting. Today this is harmless because completion doesn't physically move any spool. The footgun reopens the moment any auto-unload-on-complete behavior is added. Pin this so whoever adds that doesn't reinvent the bug. See `cmd/move.go:394`, `cmd/archive.go:160` for the pattern (`PostSettingObject(ctx, "locations_spoolorders", orders)` after the mutation).
 
-### api-fil-prefix-migration
-- **Source:** memory:2026-04-30
-
-Move plan-server endpoints from `/api/v1/*` to `/api/fil/*` so a single Caddy wildcard covers them and future endpoints don't need Caddyfile edits. Mechanical change across `server/handler.go` (30+ route registrations) and `api/plans_client.go`. Three-PR migration: (1) add `/api/fil/*` as a second prefix server-side (dual-routing), (2) flip client calls + update Caddy, (3) remove `/api/v1/*` server-side. Brief cutover window where old binaries 404 between (2) and binary redeploy.
-
 ### dirigera-print-completion-blink
 - **Source:** memory:2026-04-16
 
