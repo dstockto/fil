@@ -20,24 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-### plan-history-zero-prints-display
-- **Acceptance:**
-  - Extract daily-summary computation in `cmd/plan_history.go` into a pure function `buildDailySummary(entries []api.HistoryEntry) []daySummary` (returns a slice sorted ascending by date). `printDailySummary` becomes a thin wrapper that calls `buildDailySummary` and prints.
-  - Single-day bucketing: each merged per-printer interval's full duration is added to the day of its completion (`iv.end`'s calendar date), not split across days via `splitDurationByDay`.
-  - Delete `splitDurationByDay` (no other caller).
-  - Delete `TestSplitDurationByDay` in `cmd/plan_history_test.go`.
-  - `mergeIntervals` and `TestMergeIntervals` stay unchanged — overlapping intervals from multi-plate batch prints still need deduping.
-  - New regression test `TestBuildDailySummaryNoZeroPrintRows` in `cmd/plan_history_test.go`:
-    - Given a single entry with `StartedAt` on day N and `FinishedAt` on day N+4, assert exactly ONE row is produced (day N+4), no rows for days N..N+3, and the row's duration equals the full interval length.
-    - Given two overlapping entries on the same printer that complete on the same day, assert one row with merged duration (no double-count).
-    - Given two entries on different days, assert two rows, each with the correct per-entry duration.
-  - Out of scope: historical JSONL cleanup of pre-#18 corrupted entries. Entries with anomalous `FinishedAt`/`StartedAt` values continue to display whatever the data says.
-- **Source:** gh#10
-- **Branch:** roadmap/plan-history-zero-prints-display
-- **PR:** #23
-
-Resolves the `**Needs-spec:**` question from the original idea-backlog entry: two separate concerns were entangled. (1) `printDailySummary` distributes each merged interval across every calendar day it touches via `splitDurationByDay`, creating zero-print rows on intermediate days — that's the code bug fixed here. (2) The "30m for 41g" and "23h59m for 26g" anomalies on real-print days are almost certainly data corruption from the printer-restart bug fixed in PR #18 (which overwrote `LastFinishedAt = time.Now()` on every server restart while parked at FINISH); going-forward data is already clean post-#18, and historical JSONL repair is deferred.
-
 ## Ready
 
 <!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
@@ -99,6 +81,23 @@ Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`
 ## Done
 
 <!-- Items merged within the last 20 entries; older are trimmed by roadmap-merge-sync.yml. Format: `### <slug>` + `**Merged:** YYYY-MM-DD in #<N>`. -->
+### plan-history-zero-prints-display
+- **Acceptance:**
+  - Extract daily-summary computation in `cmd/plan_history.go` into a pure function `buildDailySummary(entries []api.HistoryEntry) []daySummary` (returns a slice sorted ascending by date). `printDailySummary` becomes a thin wrapper that calls `buildDailySummary` and prints.
+  - Single-day bucketing: each merged per-printer interval's full duration is added to the day of its completion (`iv.end`'s calendar date), not split across days via `splitDurationByDay`.
+  - Delete `splitDurationByDay` (no other caller).
+  - Delete `TestSplitDurationByDay` in `cmd/plan_history_test.go`.
+  - `mergeIntervals` and `TestMergeIntervals` stay unchanged — overlapping intervals from multi-plate batch prints still need deduping.
+  - New regression test `TestBuildDailySummaryNoZeroPrintRows` in `cmd/plan_history_test.go`:
+    - Given a single entry with `StartedAt` on day N and `FinishedAt` on day N+4, assert exactly ONE row is produced (day N+4), no rows for days N..N+3, and the row's duration equals the full interval length.
+    - Given two overlapping entries on the same printer that complete on the same day, assert one row with merged duration (no double-count).
+    - Given two entries on different days, assert two rows, each with the correct per-entry duration.
+  - Out of scope: historical JSONL cleanup of pre-#18 corrupted entries. Entries with anomalous `FinishedAt`/`StartedAt` values continue to display whatever the data says.
+- **Source:** gh#10
+- **Merged:** 2026-05-22 in #23
+
+Resolves the `**Needs-spec:**` question from the original idea-backlog entry: two separate concerns were entangled. (1) `printDailySummary` distributes each merged interval across every calendar day it touches via `splitDurationByDay`, creating zero-print rows on intermediate days — that's the code bug fixed here. (2) The "30m for 41g" and "23h59m for 26g" anomalies on real-print days are almost certainly data corruption from the printer-restart bug fixed in PR #18 (which overwrote `LastFinishedAt = time.Now()` on every server restart while parked at FINISH); going-forward data is already clean post-#18, and historical JSONL repair is deferred.
+
 ### add-grep-based-regression-test-for-plan-server-client-url-prefixes
 - **Acceptance:**
   - New test `TestNoPlanServerClientV1URLs` lives in `api/url_prefix_test.go` (new file, package `api`).
