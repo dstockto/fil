@@ -28,12 +28,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## Idea Backlog
 
-### locations-spoolorders-refresh-on-complete
-- **Source:** gh#8
-- **Blocked:** latent — leave as-is until auto-unload-on-complete behavior is added
-
-`plan/local_complete.go:88` clears `plate.Printer = ""` but doesn't refresh the `locations_spoolorders` Spoolman setting. Today this is harmless because completion doesn't physically move any spool. The footgun reopens the moment any auto-unload-on-complete behavior is added. Pin this so whoever adds that doesn't reinvent the bug. See `cmd/move.go:394`, `cmd/archive.go:160` for the pattern (`PostSettingObject(ctx, "locations_spoolorders", orders)` after the mutation).
-
 ### dirigera-print-completion-blink
 - **Source:** memory:2026-04-16
 
