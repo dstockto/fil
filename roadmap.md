@@ -22,7 +22,21 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## Ready
 
-<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
+### plan-history-zero-prints-display
+- **Acceptance:**
+  - Extract daily-summary computation in `cmd/plan_history.go` into a pure function `buildDailySummary(entries []api.HistoryEntry) []daySummary` (returns a slice sorted ascending by date). `printDailySummary` becomes a thin wrapper that calls `buildDailySummary` and prints.
+  - Single-day bucketing: each merged per-printer interval's full duration is added to the day of its completion (`iv.end`'s calendar date), not split across days via `splitDurationByDay`.
+  - Delete `splitDurationByDay` (no other caller).
+  - Delete `TestSplitDurationByDay` in `cmd/plan_history_test.go`.
+  - `mergeIntervals` and `TestMergeIntervals` stay unchanged — overlapping intervals from multi-plate batch prints still need deduping.
+  - New regression test `TestBuildDailySummaryNoZeroPrintRows` in `cmd/plan_history_test.go`:
+    - Given a single entry with `StartedAt` on day N and `FinishedAt` on day N+4, assert exactly ONE row is produced (day N+4), no rows for days N..N+3, and the row's duration equals the full interval length.
+    - Given two overlapping entries on the same printer that complete on the same day, assert one row with merged duration (no double-count).
+    - Given two entries on different days, assert two rows, each with the correct per-entry duration.
+  - Out of scope: historical JSONL cleanup of pre-#18 corrupted entries. Entries with anomalous `FinishedAt`/`StartedAt` values continue to display whatever the data says.
+- **Source:** gh#10
+
+Resolves the `**Needs-spec:**` question from the original idea-backlog entry: two separate concerns were entangled. (1) `printDailySummary` distributes each merged interval across every calendar day it touches via `splitDurationByDay`, creating zero-print rows on intermediate days — that's the code bug fixed here. (2) The "30m for 41g" and "23h59m for 26g" anomalies on real-print days are almost certainly data corruption from the printer-restart bug fixed in PR #18 (which overwrote `LastFinishedAt = time.Now()` on every server restart while parked at FINISH); going-forward data is already clean post-#18, and historical JSONL repair is deferred.
 
 ---
 
@@ -33,12 +47,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 - **Blocked:** latent — leave as-is until auto-unload-on-complete behavior is added
 
 `plan/local_complete.go:88` clears `plate.Printer = ""` but doesn't refresh the `locations_spoolorders` Spoolman setting. Today this is harmless because completion doesn't physically move any spool. The footgun reopens the moment any auto-unload-on-complete behavior is added. Pin this so whoever adds that doesn't reinvent the bug. See `cmd/move.go:394`, `cmd/archive.go:160` for the pattern (`PostSettingObject(ctx, "locations_spoolorders", orders)` after the mutation).
-
-### plan-history-zero-prints-display
-- **Source:** gh#10
-- **Needs-spec:** is the zero-prints showing "24h00m" the same root cause as the suspicious-duration entries (30m/41g, 23h59m/26g), or two separate bugs? Acceptance criteria depend on the answer.
-
-`fil p h` shows `24h00m` on days with no prints, which should be `0` or omitted. Some calculated durations also look wrong on real-print days. Until the scope is decided, the groomer should refuse to ship this and file a `needs-spec` follow-up.
 
 ### api-fil-prefix-migration
 - **Source:** memory:2026-04-30
