@@ -8,99 +8,6 @@ import (
 	"github.com/dstockto/fil/api"
 )
 
-func TestSplitDurationByDay(t *testing.T) {
-	tz := time.FixedZone("test", -5*3600) // stable offset, no DST
-	at := func(layout string) time.Time {
-		ts, err := time.ParseInLocation("2006-01-02 15:04", layout, tz)
-		if err != nil {
-			t.Fatalf("parse %q: %v", layout, err)
-		}
-		return ts
-	}
-
-	tests := []struct {
-		name  string
-		start time.Time
-		end   time.Time
-		want  map[string]time.Duration
-	}{
-		{
-			name:  "single day",
-			start: at("2026-04-16 09:00"),
-			end:   at("2026-04-16 14:30"),
-			want:  map[string]time.Duration{"2026-04-16": 5*time.Hour + 30*time.Minute},
-		},
-		{
-			name:  "crosses midnight once",
-			start: at("2026-04-15 22:00"),
-			end:   at("2026-04-16 03:00"),
-			want: map[string]time.Duration{
-				"2026-04-15": 2 * time.Hour,
-				"2026-04-16": 3 * time.Hour,
-			},
-		},
-		{
-			name:  "spans three days",
-			start: at("2026-04-14 23:00"),
-			end:   at("2026-04-17 02:30"),
-			want: map[string]time.Duration{
-				"2026-04-14": 1 * time.Hour,
-				"2026-04-15": 24 * time.Hour,
-				"2026-04-16": 24 * time.Hour,
-				"2026-04-17": 2*time.Hour + 30*time.Minute,
-			},
-		},
-		{
-			name:  "starts exactly at midnight",
-			start: at("2026-04-16 00:00"),
-			end:   at("2026-04-16 08:00"),
-			want:  map[string]time.Duration{"2026-04-16": 8 * time.Hour},
-		},
-		{
-			name:  "ends exactly at midnight",
-			start: at("2026-04-15 20:00"),
-			end:   at("2026-04-16 00:00"),
-			want:  map[string]time.Duration{"2026-04-15": 4 * time.Hour},
-		},
-		{
-			name:  "zero-length interval",
-			start: at("2026-04-16 09:00"),
-			end:   at("2026-04-16 09:00"),
-			want:  map[string]time.Duration{},
-		},
-		{
-			name:  "end before start",
-			start: at("2026-04-16 12:00"),
-			end:   at("2026-04-16 09:00"),
-			want:  map[string]time.Duration{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := splitDurationByDay(tt.start, tt.end)
-			if len(got) != len(tt.want) {
-				t.Fatalf("got %d buckets, want %d: got=%v want=%v", len(got), len(tt.want), got, tt.want)
-			}
-			for date, want := range tt.want {
-				if got[date] != want {
-					t.Errorf("bucket %s: got %v, want %v", date, got[date], want)
-				}
-			}
-			// Sum must equal end.Sub(start) whenever end>start.
-			if tt.end.After(tt.start) {
-				var sum time.Duration
-				for _, d := range got {
-					sum += d
-				}
-				if sum != tt.end.Sub(tt.start) {
-					t.Errorf("sum of buckets %v != total %v", sum, tt.end.Sub(tt.start))
-				}
-			}
-		})
-	}
-}
-
 func TestMergeIntervals(t *testing.T) {
 	tz := time.FixedZone("test", 0)
 	at := func(layout string) time.Time {
@@ -227,6 +134,122 @@ func TestCompletionTimePrefersFinishedAt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildDailySummaryNoZeroPrintRows(t *testing.T) {
+	tz := time.FixedZone("test", 0)
+	rfc := func(s string) string {
+		ts, err := time.ParseInLocation("2006-01-02 15:04", s, tz)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return ts.Format(time.RFC3339)
+	}
+
+	t.Run("single entry spanning multiple days produces one row on completion day", func(t *testing.T) {
+		entries := []api.HistoryEntry{{
+			Printer:    "X1C",
+			StartedAt:  rfc("2026-05-09 14:00"),
+			FinishedAt: rfc("2026-05-13 14:00"),
+			Filament:   []api.HistoryFilament{{Amount: 100}},
+		}}
+		got := buildDailySummary(entries)
+		if len(got) != 1 {
+			t.Fatalf("got %d rows, want 1: %+v", len(got), got)
+		}
+		if got[0].date != "2026-05-13" {
+			t.Errorf("date: got %s, want 2026-05-13", got[0].date)
+		}
+		if got[0].prints != 1 {
+			t.Errorf("prints: got %d, want 1", got[0].prints)
+		}
+		wantDur := 4 * 24 * time.Hour
+		if got[0].duration != wantDur {
+			t.Errorf("duration: got %v, want %v", got[0].duration, wantDur)
+		}
+		if got[0].filament != 100 {
+			t.Errorf("filament: got %v, want 100", got[0].filament)
+		}
+	})
+
+	t.Run("two entries on different days produce two rows", func(t *testing.T) {
+		entries := []api.HistoryEntry{
+			{
+				Printer:    "X1C",
+				StartedAt:  rfc("2026-05-08 09:00"),
+				FinishedAt: rfc("2026-05-08 11:00"),
+				Filament:   []api.HistoryFilament{{Amount: 25}},
+			},
+			{
+				Printer:    "X1C",
+				StartedAt:  rfc("2026-05-10 14:00"),
+				FinishedAt: rfc("2026-05-10 18:00"),
+				Filament:   []api.HistoryFilament{{Amount: 60}},
+			},
+		}
+		got := buildDailySummary(entries)
+		if len(got) != 2 {
+			t.Fatalf("got %d rows, want 2: %+v", len(got), got)
+		}
+		// Sorted ascending by date.
+		if got[0].date != "2026-05-08" {
+			t.Errorf("rows[0].date: got %s, want 2026-05-08", got[0].date)
+		}
+		if got[0].duration != 2*time.Hour {
+			t.Errorf("rows[0].duration: got %v, want 2h", got[0].duration)
+		}
+		if got[0].filament != 25 {
+			t.Errorf("rows[0].filament: got %v, want 25", got[0].filament)
+		}
+		if got[1].date != "2026-05-10" {
+			t.Errorf("rows[1].date: got %s, want 2026-05-10", got[1].date)
+		}
+		if got[1].duration != 4*time.Hour {
+			t.Errorf("rows[1].duration: got %v, want 4h", got[1].duration)
+		}
+		if got[1].filament != 60 {
+			t.Errorf("rows[1].filament: got %v, want 60", got[1].filament)
+		}
+		// Critically: no row for 2026-05-09 (the gap day with no completions).
+	})
+
+	t.Run("two overlapping entries same printer same day merged once", func(t *testing.T) {
+		// A multi-plate batch print: both plates share the same wall-clock
+		// window on the same printer. mergeIntervals collapses them so the
+		// shared duration isn't counted twice.
+		entries := []api.HistoryEntry{
+			{
+				Printer:    "X1C",
+				StartedAt:  rfc("2026-05-09 09:00"),
+				FinishedAt: rfc("2026-05-09 12:00"),
+				Filament:   []api.HistoryFilament{{Amount: 30}},
+			},
+			{
+				Printer:    "X1C",
+				StartedAt:  rfc("2026-05-09 10:00"),
+				FinishedAt: rfc("2026-05-09 11:00"),
+				Filament:   []api.HistoryFilament{{Amount: 20}},
+			},
+		}
+		got := buildDailySummary(entries)
+		if len(got) != 1 {
+			t.Fatalf("got %d rows, want 1: %+v", len(got), got)
+		}
+		if got[0].date != "2026-05-09" {
+			t.Errorf("date: got %s, want 2026-05-09", got[0].date)
+		}
+		if got[0].prints != 2 {
+			t.Errorf("prints: got %d, want 2", got[0].prints)
+		}
+		// Merged interval is 09:00–12:00 = 3h, not 3h+1h = 4h.
+		wantDur := 3 * time.Hour
+		if got[0].duration != wantDur {
+			t.Errorf("duration: got %v, want %v (should not double-count overlap)", got[0].duration, wantDur)
+		}
+		if got[0].filament != 50 {
+			t.Errorf("filament: got %v, want 50", got[0].filament)
+		}
+	})
 }
 
 func TestCalcDurationUsesFinishedAt(t *testing.T) {
