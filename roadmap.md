@@ -20,8 +20,6 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## In Flight
 
-## Ready
-
 ### add-grep-based-regression-test-for-plan-server-client-url-prefixes
 - **Acceptance:**
   - New test `TestNoPlanServerClientV1URLs` lives in `api/url_prefix_test.go` (new file, package `api`).
@@ -33,8 +31,14 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - No production code changes; test is green on current `main`.
   - Stdlib only — no new dependencies (`go/parser`, `go/ast`, `go/token`, `runtime`, `path/filepath`).
 - **Source:** gh#21
+- **Branch:** roadmap/add-grep-based-regression-test-for-plan-server-client-url-prefixes
+- **PR:** pending
 
 Closes the loop on the production miss described in gh#21: PR #17 listed specific files instead of stating the invariant; `api/health.go`'s `GetHealth` was missed and PR #19 then broke `fil doctor` in production. A structural enumeration test prevents the same shape of miss in the future. Complements existing runtime probes `TestGetHealth_UsesFilPrefix` and `TestPlanServerClientUsesFilPrefix` in `api/plans_client_test.go`.
+
+## Ready
+
+<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
 
 ---
 
