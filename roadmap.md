@@ -34,7 +34,7 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
   - Out of scope: historical JSONL cleanup of pre-#18 corrupted entries. Entries with anomalous `FinishedAt`/`StartedAt` values continue to display whatever the data says.
 - **Source:** gh#10
 - **Branch:** roadmap/plan-history-zero-prints-display
-- **PR:** pending
+- **PR:** #23
 
 Resolves the `**Needs-spec:**` question from the original idea-backlog entry: two separate concerns were entangled. (1) `printDailySummary` distributes each merged interval across every calendar day it touches via `splitDurationByDay`, creating zero-print rows on intermediate days — that's the code bug fixed here. (2) The "30m for 41g" and "23h59m for 26g" anomalies on real-print days are almost certainly data corruption from the printer-restart bug fixed in PR #18 (which overwrote `LastFinishedAt = time.Now()` on every server restart while parked at FINISH); going-forward data is already clean post-#18, and historical JSONL repair is deferred.
 
