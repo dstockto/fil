@@ -126,7 +126,15 @@ type daySummary struct {
 	filament float64
 }
 
-func printDailySummary(entries []api.HistoryEntry) {
+// buildDailySummary computes per-day print stats from history entries.
+// Returns a slice sorted ascending by date.
+//
+// Each row corresponds to a day where at least one entry completed; the
+// start day and any intermediate days of a multi-day interval do NOT get
+// their own row. Bucketing the full interval to the completion day avoids
+// the "0 prints, 24h00m" output that arose when duration was split across
+// every calendar day the interval touched.
+func buildDailySummary(entries []api.HistoryEntry) []daySummary {
 	dayMap := map[string]*daySummary{}
 	getDay := func(date string) *daySummary {
 		if d, ok := dayMap[date]; ok {
@@ -168,9 +176,7 @@ func printDailySummary(entries []api.HistoryEntry) {
 
 	distribute := func(ivs []interval) {
 		for _, iv := range ivs {
-			for date, dur := range splitDurationByDay(iv.start, iv.end) {
-				getDay(date).duration += dur
-			}
+			getDay(iv.end.Format("2006-01-02")).duration += iv.end.Sub(iv.start)
 		}
 	}
 	for _, ivs := range perPrinter {
@@ -184,12 +190,21 @@ func printDailySummary(entries []api.HistoryEntry) {
 	}
 	sort.Strings(dates)
 
+	out := make([]daySummary, 0, len(dates))
+	for _, date := range dates {
+		out = append(out, *dayMap[date])
+	}
+	return out
+}
+
+func printDailySummary(entries []api.HistoryEntry) {
+	summary := buildDailySummary(entries)
+
 	totalPrints := 0
 	var totalDuration time.Duration
 	totalFilament := 0.0
 
-	for _, date := range dates {
-		d := dayMap[date]
+	for _, d := range summary {
 		fmt.Printf("  %s  %d print(s), %s, %.0fg filament\n",
 			d.date,
 			d.prints,
@@ -231,29 +246,6 @@ func mergeIntervals(ivs []interval) []interval {
 		}
 	}
 	return merged
-}
-
-// splitDurationByDay distributes the interval [start, end) across local-date
-// buckets, returning the duration that fell within each calendar day. Dates
-// use the start's timezone so the keys align with how entries are bucketed
-// elsewhere in this file.
-func splitDurationByDay(start, end time.Time) map[string]time.Duration {
-	result := map[string]time.Duration{}
-	if !end.After(start) {
-		return result
-	}
-	cursor := start
-	for cursor.Before(end) {
-		y, m, d := cursor.Date()
-		nextMidnight := time.Date(y, m, d, 0, 0, 0, 0, cursor.Location()).AddDate(0, 0, 1)
-		segEnd := nextMidnight
-		if end.Before(segEnd) {
-			segEnd = end
-		}
-		result[cursor.Format("2006-01-02")] += segEnd.Sub(cursor)
-		cursor = segEnd
-	}
-	return result
 }
 
 // completionTime returns the time the print actually finished. Prefers the
