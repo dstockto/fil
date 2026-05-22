@@ -22,7 +22,19 @@ Drift check (run on demand to verify nothing's missing): `.github/scripts/roadma
 
 ## Ready
 
-<!-- No items currently Ready. Add new items here with **Acceptance:** to mark them shippable. -->
+### add-grep-based-regression-test-for-plan-server-client-url-prefixes
+- **Acceptance:**
+  - New test `TestNoPlanServerClientV1URLs` lives in `api/url_prefix_test.go` (new file, package `api`).
+  - Test parses these files via `go/parser.ParseFile`: `api/plans_client.go`, `api/health.go`, and every `plan/remote_*.go` (located by `filepath.Glob`, so future `remote_*.go` files are picked up automatically).
+  - Test walks each file's AST via `ast.Inspect`, collecting `*ast.BasicLit` nodes with `token.STRING`, and asserts none contain the substring `/api/v1`.
+  - Failure message names the file and line: e.g. `plans_client.go:97: string literal contains /api/v1: "/api/v1/plans"`.
+  - Source files are located relative to the test file via `runtime.Caller(0)`, so the test works regardless of `go test` invocation directory (including CI).
+  - Out of scope: Spoolman URLs in `api/client.go` and outbound Prusa URLs in `server/prusa.go` are NOT scanned — both legitimately use `/api/v1`.
+  - No production code changes; test is green on current `main`.
+  - Stdlib only — no new dependencies (`go/parser`, `go/ast`, `go/token`, `runtime`, `path/filepath`).
+- **Source:** gh#21
+
+Closes the loop on the production miss described in gh#21: PR #17 listed specific files instead of stating the invariant; `api/health.go`'s `GetHealth` was missed and PR #19 then broke `fil doctor` in production. A structural enumeration test prevents the same shape of miss in the future. Complements existing runtime probes `TestGetHealth_UsesFilPrefix` and `TestPlanServerClientUsesFilPrefix` in `api/plans_client_test.go`.
 
 ---
 
@@ -83,14 +95,6 @@ Fil takes over spool/filament/vendor management entirely, dropping the Spoolman 
 Install Caddy's root CA on the iPhone so iOS Shortcut can hit HTTPS endpoints (`raspberrypi4.local`) without cert warnings. Copy `root.crt` from the pi (under Caddy's data dir, e.g. `/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt`) → AirDrop/email → install profile → Settings → General → About → Certificate Trust Settings → enable trust for "Caddy Local Authority". One-time setup, ~10-year lifetime.
 
 ---
-
-### add-grep-based-regression-test-for-plan-server-client-url-prefixes
-- **Source:** gh#21
-
-## Context
-PR #17 (api-fil-prefix-migration PR-2) was supposed to flip every plan-server URL from `/api/v1/*` to `/api/fil/*`. The acceptance criteria listed specific files (`api/plans_client.go`, `plan/remote_*.go`) instead of stating the invariant: *no plan-server client method in the* `api/` *or* `plan/` *packages should construct a URL containing* `/api/v1`.
-
-`api/health.go`'s `GetHealth` was missed. PR #19 (PR-3) then removed `/api/v1` server-side, breaking `fil doctor` in production. Hotfi...
 
 ## Done
 
