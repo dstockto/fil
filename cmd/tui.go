@@ -1967,8 +1967,12 @@ func (m tuiModel) renderActivePrinter(b *strings.Builder, name string, width int
 	infos := m.printerMap[name]
 	live, hasLive := m.printerStatuses[name]
 
-	// Progress bar when we have live data with progress
-	if hasLive && live.Progress > 0 && (live.State == "printing" || live.State == "paused" || live.State == "failed") {
+	// Progress bar whenever the printer is in a printing/paused/failed state.
+	// We intentionally do NOT gate on Progress > 0: a genuine print sits at 0%
+	// for the first several minutes (warmup + early layers), and the Prusa
+	// adapter only reports progress once /api/v1/job returns it. Showing an
+	// empty bar with "0%" + ETA there beats showing nothing.
+	if hasLive && (live.State == "printing" || live.State == "paused" || live.State == "failed") {
 		b.WriteString(m.renderProgressLine(name, live, width))
 		switch live.State {
 		case "paused":
@@ -2123,4 +2127,3 @@ func tuiActiveTrayColor(status api.PrinterStatus) string {
 	}
 	return ""
 }
-
