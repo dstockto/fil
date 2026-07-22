@@ -37,16 +37,23 @@ type spoolExport struct {
 
 // toExport flattens a FindSpool into the export shape. ColorHex is normalized
 // to a leading '#'.
+//
+// Every string field is run through models.Sanitize, not just Location: the
+// JSON encoder would escape control characters either way, but a consumer that
+// echoes name or vendor to a terminal would then replay whatever escape
+// sequence Spoolman happened to store. The trade-off is that these values are
+// display-safe rather than byte-identical to Spoolman's, so don't treat an
+// exported location as a key to write back through `fil move`.
 func toExport(s models.FindSpool) spoolExport {
-	hex := strings.TrimSpace(s.Filament.ColorHex)
+	hex := strings.TrimSpace(models.Sanitize(s.Filament.ColorHex))
 	if hex != "" && !strings.HasPrefix(hex, "#") {
 		hex = "#" + hex
 	}
 	return spoolExport{
 		ID:         s.Id,
-		Name:       s.Filament.Name,
-		Vendor:     s.Filament.Vendor.Name,
-		Material:   s.Filament.Material,
+		Name:       models.Sanitize(s.Filament.Name),
+		Vendor:     models.Sanitize(s.Filament.Vendor.Name),
+		Material:   models.Sanitize(s.Filament.Material),
 		ColorHex:   hex,
 		Location:   models.Sanitize(s.Location),
 		RemainingG: s.RemainingWeight,
@@ -166,6 +173,12 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	var jsonSpools []spoolExport
+	// One spool can match several search terms (`fil find blue matte`). The text
+	// path prints it once under each term's header, where the repeat is legible
+	// as such; a flat JSON array has no headers, so the same spool would just
+	// appear twice and silently inflate any consumer that counts spools or sums
+	// remaining_g. Emit each spool at most once, keeping first-match order.
+	jsonSeen := map[int]bool{}
 
 	// All result output goes through out (stdout) and all progress chatter
 	// through msgs (stderr). Nothing in this function may write to os.Stdout
@@ -373,6 +386,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 		if jsonOut {
 			for _, s := range spools {
+				if jsonSeen[s.Id] {
+					continue
+				}
+				jsonSeen[s.Id] = true
 				jsonSpools = append(jsonSpools, toExport(s))
 			}
 			continue
@@ -644,7 +661,7 @@ func addFindFlags(cmd *cobra.Command) {
 	cmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
 	cmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
 	cmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
-	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text")
+	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text; a spool matching several search terms is emitted once")
 }
 
 // readOneScanForFind opens the TD-1, performs the handshake, reads a single

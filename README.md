@@ -270,6 +270,35 @@ Found 11 spools matching '*':
 ```
 The slot prefix (e.g. `AMS A:1`) matches the move command syntax — you can use it directly as a destination.
 
+Use the `--json` flag to get machine-readable output instead of the formatted text. It honors every filter above, so
+you can narrow the export the same way you'd narrow a normal search:
+> $ fil f -m Polymaker --json
+```json
+[
+  {
+    "id": 262,
+    "name": "PolyTerra™ Cotton White",
+    "vendor": "Polymaker",
+    "material": "Matte PLA",
+    "color_hex": "#e6dddb",
+    "location": "AMS B:4",
+    "remaining_g": 419.9
+  }
+]
+```
+
+Notes on the JSON form, since other tools depend on it:
+
+- The seven field names above are the contract — treat them as stable and don't rename them casually.
+- `color_hex` always carries a leading `#`, even though Spoolman stores it without one.
+- No matches produces `[]`, never `null`, so you can range over the result without a nil check.
+- A spool matching several search terms (`fil f blue matte --json`) appears once, not once per term.
+- All progress chatter ("Filtering by location: ...") goes to stderr, so stdout holds nothing but the JSON document
+  and `fil f -l ams --json | jq` works. Note this means those notices no longer land in the file when you redirect
+  stdout, in text mode too.
+- String fields are stripped of control characters for safe terminal display, so an exported `location` is not
+  guaranteed byte-identical to what Spoolman stores — don't feed it back in as a key.
+
 ---
 
 Use (u) - Mark a specified amount of a spool as used. You can specify several spools at once by repeating the spool id and amount.
