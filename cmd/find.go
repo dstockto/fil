@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +21,37 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/cobra"
 )
+
+// spoolExport is the machine-readable shape emitted by `fil find --json`.
+// It is intentionally small and stable so other tools can consume it without
+// scraping the human-formatted output.
+type spoolExport struct {
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	Vendor     string  `json:"vendor"`
+	Material   string  `json:"material"`
+	ColorHex   string  `json:"color_hex"`
+	Location   string  `json:"location"`
+	RemainingG float64 `json:"remaining_g"`
+}
+
+// toExport flattens a FindSpool into the export shape. ColorHex is normalized
+// to a leading '#'.
+func toExport(s models.FindSpool) spoolExport {
+	hex := strings.TrimSpace(s.Filament.ColorHex)
+	if hex != "" && !strings.HasPrefix(hex, "#") {
+		hex = "#" + hex
+	}
+	return spoolExport{
+		ID:         s.Id,
+		Name:       s.Filament.Name,
+		Vendor:     s.Filament.Vendor.Name,
+		Material:   s.Filament.Material,
+		ColorHex:   hex,
+		Location:   models.Sanitize(s.Location),
+		RemainingG: s.RemainingWeight,
+	}
+}
 
 // findCmd represents the find command.
 var findCmd = &cobra.Command{
@@ -130,6 +163,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		args = append(args, "*")
 	}
+
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	var jsonSpools []spoolExport
 
 	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 
@@ -326,6 +362,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 			})
 		}
 
+		if jsonOut {
+			for _, s := range spools {
+				jsonSpools = append(jsonSpools, toExport(s))
+			}
+			continue
+		}
+
 		var foundMsg string
 		if useNear {
 			if name == "*" {
@@ -511,6 +554,16 @@ func runFind(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if jsonOut {
+		if jsonSpools == nil {
+			jsonSpools = []spoolExport{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		return enc.Encode(jsonSpools)
+	}
+
 	return nil
 }
 
@@ -576,6 +629,7 @@ func init() {
 	findCmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
 	findCmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
 	findCmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
+	findCmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text")
 }
 
 // readOneScanForFind opens the TD-1, performs the handshake, reads a single
