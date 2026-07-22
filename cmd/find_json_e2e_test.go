@@ -210,8 +210,26 @@ func TestFindWritesNothingToProcessStdout(t *testing.T) {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
 
+	// The restore must be deferred: runFindForTest calls t.Fatalf on any command
+	// error, which unwinds via runtime.Goexit and would skip a plain restore
+	// statement, leaving os.Stdout pointing at this pipe for the rest of the
+	// package run. Closing w here too unblocks the drain goroutine on that path.
 	orig := os.Stdout
+	defer func() {
+		os.Stdout = orig
+		_ = w.Close() // no-op if the happy path below already closed it
+		_ = r.Close()
+	}()
 	os.Stdout = w
+
+	// Drain concurrently. A leak larger than the pipe buffer (64KB) would
+	// otherwise block the writer inside runFindForTest, hanging the test until
+	// the package timeout instead of reporting the leak this test exists to find.
+	leakedCh := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(r) // a closed write end yields EOF, not an error
+		leakedCh <- b
+	}()
 
 	// Exercise the JSON path and the human path, with and without the flags
 	// that emit progress chatter.
@@ -219,17 +237,14 @@ func TestFindWritesNothingToProcessStdout(t *testing.T) {
 	runFindForTest(t, fixtures, "*", "-l", "shelf")
 	runFindForTest(t, fixtures, "*", "--purchase")
 
+	// Restore and close before asserting, so t.Errorf output is safe and the
+	// drain goroutine sees EOF.
 	os.Stdout = orig
 	if err := w.Close(); err != nil {
 		t.Fatalf("failed to close pipe: %v", err)
 	}
 
-	leaked, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("failed to read pipe: %v", err)
-	}
-
-	// Restore is already done above, so t.Errorf output is safe here.
+	leaked := <-leakedCh
 	if len(leaked) > 0 {
 		t.Errorf("find wrote %d bytes directly to os.Stdout, bypassing cmd.OutOrStdout():\n%s", len(leaked), leaked)
 	}

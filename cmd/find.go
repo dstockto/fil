@@ -626,25 +626,25 @@ func init() {
 // addFindFlags registers the find command's flags. Split out of init() so tests
 // can build a fresh command with clean flag state instead of mutating the
 // package-level findCmd across cases.
-func addFindFlags(findCmd *cobra.Command) {
-	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
-	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
-	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
-	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
-	findCmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
-	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
-	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
-	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
-	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
-	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
-	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
-	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
-	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
-	findCmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
-	findCmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
-	findCmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
-	findCmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
-	findCmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text")
+func addFindFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
+	cmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
+	cmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
+	cmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
+	cmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
+	cmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
+	cmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
+	cmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
+	cmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	cmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
+	cmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
+	cmd.Flags().Bool("purchase", false, "show purchase link for each spool")
+	cmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
+	cmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
+	cmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
+	cmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
+	cmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
+	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text")
 }
 
 // readOneScanForFind opens the TD-1, performs the handshake, reads a single
