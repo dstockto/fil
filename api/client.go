@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -162,7 +163,7 @@ func (c Client) FindSpoolsByName(ctx context.Context, name string, filter SpoolF
 		case "color":
 			q.Set("filament.color_hex", v)
 		default:
-			fmt.Printf("unknown query param: %s\n", k)
+			_, _ = fmt.Fprintf(os.Stderr, "unknown query param: %s\n", k)
 		}
 	}
 
@@ -186,7 +187,7 @@ func (c Client) FindSpoolsByName(ctx context.Context, name string, filter SpoolF
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
@@ -227,7 +228,7 @@ func (c Client) GetFilamentById(ctx context.Context, id int) (*models.FindSpool,
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
@@ -280,7 +281,7 @@ func (c Client) FindSpoolsById(ctx context.Context, id int) (*models.FindSpool, 
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
@@ -343,7 +344,7 @@ func (c Client) UseFilament(ctx context.Context, spoolId int, amount float64) er
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
@@ -395,7 +396,7 @@ func (c Client) PatchSpool(ctx context.Context, spoolId int, updates map[string]
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
@@ -438,7 +439,7 @@ func (c Client) PatchFilament(ctx context.Context, filamentId int, updates map[s
 	defer func() {
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("failed to close response body: %v\n", closeErr)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to close response body: %v\n", closeErr)
 		}
 	}()
 
