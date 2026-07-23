@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -19,6 +21,44 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/spf13/cobra"
 )
+
+// spoolExport is the machine-readable shape emitted by `fil find --json`.
+// It is intentionally small and stable so other tools can consume it without
+// scraping the human-formatted output.
+type spoolExport struct {
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	Vendor     string  `json:"vendor"`
+	Material   string  `json:"material"`
+	ColorHex   string  `json:"color_hex"`
+	Location   string  `json:"location"`
+	RemainingG float64 `json:"remaining_g"`
+}
+
+// toExport flattens a FindSpool into the export shape. ColorHex is normalized
+// to a leading '#'.
+//
+// Every string field is run through models.Sanitize, not just Location: the
+// JSON encoder would escape control characters either way, but a consumer that
+// echoes name or vendor to a terminal would then replay whatever escape
+// sequence Spoolman happened to store. The trade-off is that these values are
+// display-safe rather than byte-identical to Spoolman's, so don't treat an
+// exported location as a key to write back through `fil move`.
+func toExport(s models.FindSpool) spoolExport {
+	hex := strings.TrimSpace(models.Sanitize(s.Filament.ColorHex))
+	if hex != "" && !strings.HasPrefix(hex, "#") {
+		hex = "#" + hex
+	}
+	return spoolExport{
+		ID:         s.Id,
+		Name:       models.Sanitize(s.Filament.Name),
+		Vendor:     models.Sanitize(s.Filament.Vendor.Name),
+		Material:   models.Sanitize(s.Filament.Material),
+		ColorHex:   hex,
+		Location:   models.Sanitize(s.Location),
+		RemainingG: s.RemainingWeight,
+	}
+}
 
 // findCmd represents the find command.
 var findCmd = &cobra.Command{
@@ -131,6 +171,22 @@ func runFind(cmd *cobra.Command, args []string) error {
 		args = append(args, "*")
 	}
 
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	var jsonSpools []spoolExport
+	// One spool can match several search terms (`fil find blue matte`). The text
+	// path prints it once under each term's header, where the repeat is legible
+	// as such; a flat JSON array has no headers, so the same spool would just
+	// appear twice and silently inflate any consumer that counts spools or sums
+	// remaining_g. Emit each spool at most once, keeping first-match order.
+	jsonSeen := map[int]bool{}
+
+	// All result output goes through out (stdout) and all progress chatter
+	// through msgs (stderr). Nothing in this function may write to os.Stdout
+	// directly, or `--json` stops being machine-parseable — and tests that
+	// capture via cmd.SetOut stop being able to prove it.
+	out := cmd.OutOrStdout()
+	msgs := cmd.ErrOrStderr()
+
 	apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 
 	var (
@@ -162,12 +218,14 @@ func runFind(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Progress chatter goes to stderr, not stdout, so that `--json` leaves stdout
+	// holding nothing but the JSON document.
 	if location, _ := cmd.Flags().GetString("location"); location != "" {
-		fmt.Printf("Filtering by location: %s\n", query["location"])
+		_, _ = fmt.Fprintf(msgs, "Filtering by location: %s\n", query["location"])
 	}
 
 	if needed, _ := cmd.Flags().GetBool("needed"); needed {
-		fmt.Println("Filtering by spools needed by projects")
+		_, _ = fmt.Fprintln(msgs, "Filtering by spools needed by projects")
 	}
 
 	// Allow additional filters later, for now, just default to 1.75mm filament
@@ -195,7 +253,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 		if limit <= 0 {
 			return fmt.Errorf("--limit must be positive, got %d", limit)
 		}
-		scanned, err := readOneScanForFind(ctx)
+		scanned, err := readOneScanForFind(ctx, msgs)
 		if err != nil {
 			return err
 		}
@@ -204,11 +262,11 @@ func runFind(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("scanned color %q is not parseable", scanned.Color)
 		}
 		target = c
-		fmt.Printf("Scanned color: %s %s\n", scanned.Color, models.GetColorBlock(scanned.Color, ""))
+		_, _ = fmt.Fprintf(msgs, "Scanned color: %s %s\n", scanned.Color, models.GetColorBlock(scanned.Color, ""))
 		if scanned.HasTD {
-			fmt.Printf("Scanned TD:    %.2fmm\n", scanned.TD)
+			_, _ = fmt.Fprintf(msgs, "Scanned TD:    %.2fmm\n", scanned.TD)
 		}
-		fmt.Println()
+		_, _ = fmt.Fprintln(msgs)
 		// Re-use the --near code path by marking useNear = true.
 		useNear = true
 	} else if useNear {
@@ -326,6 +384,17 @@ func runFind(cmd *cobra.Command, args []string) error {
 			})
 		}
 
+		if jsonOut {
+			for _, s := range spools {
+				if jsonSeen[s.Id] {
+					continue
+				}
+				jsonSeen[s.Id] = true
+				jsonSpools = append(jsonSpools, toExport(s))
+			}
+			continue
+		}
+
 		var foundMsg string
 		if useNear {
 			if name == "*" {
@@ -338,10 +407,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 		}
 		if len(spools) == 0 {
 			// print in red
-			color.HiRed(foundMsg)
+			_, _ = color.New(color.FgHiRed).Fprint(out, foundMsg)
 		} else {
 			// print in green
-			color.Green(foundMsg)
+			_, _ = color.New(color.FgGreen).Fprint(out, foundMsg)
 		}
 
 		totalRemaining := 0.0
@@ -377,9 +446,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 				}
 				deltaStr := color.New(color.Faint).Sprintf("ΔE %5.1f", deltas[s.Id])
 				boldLabel := color.New(color.Bold).Sprintf("%-*s", maxLabel, loc)
-				fmt.Printf(" %s  %s %s\n", deltaStr, boldLabel, s.StringNoLocation())
+				_, _ = fmt.Fprintf(out, " %s  %s %s\n", deltaStr, boldLabel, s.StringNoLocation())
 				if showPurchase {
-					fmt.Printf("    %s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+					_, _ = fmt.Fprintf(out, "    %s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
 				}
 				totalRemaining += s.RemainingWeight
 				totalUsed += s.UsedWeight
@@ -464,11 +533,11 @@ func runFind(cmd *cobra.Command, args []string) error {
 				if ls.spool.Id == 0 {
 					// Empty slot
 					dimmed := color.New(color.Faint).SprintFunc()
-					fmt.Printf(" %s %s\n", boldLabel, dimmed("(empty)"))
+					_, _ = fmt.Fprintf(out, " %s %s\n", boldLabel, dimmed("(empty)"))
 				} else {
-					fmt.Printf(" %s %s\n", boldLabel, ls.spool.StringNoLocation())
+					_, _ = fmt.Fprintf(out, " %s %s\n", boldLabel, ls.spool.StringNoLocation())
 					if showPurchase {
-						fmt.Printf("    %s\n", amazonLink(ls.spool.Filament.Vendor.Name, ls.spool.Filament.Name))
+						_, _ = fmt.Fprintf(out, "    %s\n", amazonLink(ls.spool.Filament.Vendor.Name, ls.spool.Filament.Name))
 					}
 					totalRemaining += ls.spool.RemainingWeight
 					totalUsed += ls.spool.UsedWeight
@@ -481,9 +550,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 					loc = "N/A"
 				}
 				boldLabel := color.New(color.Bold).Sprintf("%s", loc)
-				fmt.Printf(" %s %s\n", boldLabel, s.StringNoLocation())
+				_, _ = fmt.Fprintf(out, " %s %s\n", boldLabel, s.StringNoLocation())
 				if showPurchase {
-					fmt.Printf("%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
+					_, _ = fmt.Fprintf(out, "%s\n", amazonLink(s.Filament.Vendor.Name, s.Filament.Name))
 				}
 				totalRemaining += s.RemainingWeight
 				totalUsed += s.UsedWeight
@@ -498,7 +567,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 				spoolPlural = "spool"
 			}
 
-			fmt.Printf(
+			_, _ = fmt.Fprintf(out,
 				"%s: %d %s, %s: %.1fg, %s: %.1fg\n\n",
 				bold("Summary"),
 				len(spools),
@@ -509,6 +578,16 @@ func runFind(cmd *cobra.Command, args []string) error {
 				totalUsed,
 			)
 		}
+	}
+
+	if jsonOut {
+		if jsonSpools == nil {
+			jsonSpools = []spoolExport{}
+		}
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		return enc.Encode(jsonSpools)
 	}
 
 	return nil
@@ -558,29 +637,37 @@ func aggregateFilter(filters ...api.SpoolFilter) api.SpoolFilter {
 
 func init() {
 	rootCmd.AddCommand(findCmd)
+	addFindFlags(findCmd)
+}
 
-	findCmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
-	findCmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
-	findCmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
-	findCmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
-	findCmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
-	findCmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
-	findCmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
-	findCmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
-	findCmd.Flags().StringP("location", "l", "", "filter by location, default is all")
-	findCmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
-	findCmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
-	findCmd.Flags().Bool("purchase", false, "show purchase link for each spool")
-	findCmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
-	findCmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
-	findCmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
-	findCmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
-	findCmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
+// addFindFlags registers the find command's flags. Split out of init() so tests
+// can build a fresh command with clean flag state instead of mutating the
+// package-level findCmd across cases.
+func addFindFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("diameter", "d", "1.75", "filter by diameter, default is 1.75mm, '*' for all")
+	cmd.Flags().StringP("manufacturer", "m", "", "filter by manufacturer, default is all")
+	cmd.Flags().BoolP("allowed-archived", "a", false, "show archived spools, default is false")
+	cmd.Flags().Bool("archived-only", false, "show only archived spools, default is false")
+	cmd.Flags().Bool("has-comment", false, "show only spools with comments, default is false")
+	cmd.Flags().StringP("comment", "c", "", "find spools with a comment matching the provided value")
+	cmd.Flags().BoolP("used", "u", false, "show only spools that have been used")
+	cmd.Flags().BoolP("pristine", "p", false, "show only (pristine) spools that have not been used")
+	cmd.Flags().StringP("location", "l", "", "filter by location, default is all")
+	cmd.Flags().Bool("lru", false, "sort by least recently used first; never-used appear last")
+	cmd.Flags().Bool("mru", false, "sort by most recently used first; never-used appear last")
+	cmd.Flags().Bool("purchase", false, "show purchase link for each spool")
+	cmd.Flags().BoolP("needed", "n", false, "show only spools for filaments that are needed by plans but not loaded")
+	cmd.Flags().String("material", "", "filter by material substring (e.g. 'pla' matches 'PLA', 'Matte PLA', 'Silk PLA'). Comma-separated for multiple (case-insensitive)")
+	cmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
+	cmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
+	cmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
+	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text; a spool matching several search terms is emitted once")
 }
 
 // readOneScanForFind opens the TD-1, performs the handshake, reads a single
-// scan, and returns the result. Only used by `fil find --scan`.
-func readOneScanForFind(ctx context.Context) (devices.ScanResult, error) {
+// scan, and returns the result. Only used by `fil find --scan`. The prompt is
+// written to msgs (stderr) so it never contaminates `--json` output on stdout.
+func readOneScanForFind(ctx context.Context, msgs io.Writer) (devices.ScanResult, error) {
 	info, err := devices.Probe(nil)
 	if err != nil {
 		if errors.Is(err, devices.ErrNoDevice) {
@@ -598,6 +685,6 @@ func readOneScanForFind(ctx context.Context) (devices.ScanResult, error) {
 		return devices.ScanResult{}, fmt.Errorf("TD-1 handshake: %w", err)
 	}
 
-	fmt.Println("Insert a filament sample into the TD-1 to scan...")
+	_, _ = fmt.Fprintln(msgs, "Insert a filament sample into the TD-1 to scan...")
 	return devices.ReadScan(ctx, port, 0)
 }
