@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only reads the tree. The roadmap-sync
+# workflows request contents:write separately because they commit.
+permissions:
+  contents: read
+
+# A new push to a PR makes the in-flight run obsolete, so cancel it. main is
+# keyed per-ref too, but never cancelled mid-run since each commit there is the
+# only record of whether that state was green.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          # Read the version from go.mod rather than pinning it here, so the
+          # toolchain cannot drift from what the module declares.
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          # gofmt -l prints the files it would change and exits 0 either way,
+          # so the output is the signal, not the exit code.
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            echo
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        # -count=1 defeats the test cache so a green run always reflects this
+        # commit rather than a cached result from an earlier one.
+        run: go test ./... -count=1
