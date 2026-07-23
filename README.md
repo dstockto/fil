@@ -281,7 +281,8 @@ you can narrow the export the same way you'd narrow a normal search:
     "vendor": "Polymaker",
     "material": "Matte PLA",
     "color_hex": "#e6dddb",
-    "location": "AMS B:4",
+    "location": "AMS B",
+    "slot": 4,
     "remaining_g": 419.9
   }
 ]
@@ -289,15 +290,23 @@ you can narrow the export the same way you'd narrow a normal search:
 
 Notes on the JSON form, since other tools depend on it:
 
-- The seven field names above are the contract — treat them as stable and don't rename them casually.
+- The field names above are the contract — treat them as stable and don't rename them casually.
 - `color_hex` always carries a leading `#`, even though Spoolman stores it without one.
+- `location` is the raw Spoolman location, and `slot` is the 1-based position within it. They are kept separate
+  rather than pre-joined because Spoolman has no slot concept at all — the `AMS B:4` label the text output prints
+  is fil's own derivation. Rejoin them as `location + ":" + slot` when you want that label, which is also the form
+  `fil move` accepts as a destination.
+- `slot` is omitted entirely for spools outside a printer location, since slots are 1-based and a literal `0` would
+  invite treating it as a real slot.
 - No matches produces `[]`, never `null`, so you can range over the result without a nil check.
 - A spool matching several search terms (`fil f blue matte --json`) appears once, not once per term.
+- With `--near`, results are ranked by ΔE across the whole document and `--limit` is applied once to the combined
+  result — not once per search term, which would give you several separately-ranked runs in one array.
 - All progress chatter ("Filtering by location: ...") goes to stderr, so stdout holds nothing but the JSON document
   and `fil f -l ams --json | jq` works. Note this means those notices no longer land in the file when you redirect
   stdout, in text mode too.
-- String fields are stripped of control characters for safe terminal display, so an exported `location` is not
-  guaranteed byte-identical to what Spoolman stores — don't feed it back in as a key.
+- String fields have control characters and ANSI escapes stripped for safe terminal display. For any value Spoolman
+  can actually round-trip this changes nothing, so `location` stays usable as a key.
 
 ---
 
