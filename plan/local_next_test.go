@@ -67,10 +67,10 @@ func TestLocalNextRejectsMissingFields(t *testing.T) {
 	ops := newLocalWithStore(t, newFakeSpoolman(), store, &recordingHistory{}, NoopNotifier{})
 
 	cases := []NextRequest{
-		{Project: "Proj", Plate: "P1", Printer: "Bambu X1C"},                  // no Plan
-		{Plan: "test.yaml", Plate: "P1", Printer: "Bambu X1C"},                 // no Project
-		{Plan: "test.yaml", Project: "Proj", Printer: "Bambu X1C"},             // no Plate
-		{Plan: "test.yaml", Project: "Proj", Plate: "P1"},                      // no Printer
+		{Project: "Proj", Plate: "P1", Printer: "Bambu X1C"},       // no Plan
+		{Plan: "test.yaml", Plate: "P1", Printer: "Bambu X1C"},     // no Project
+		{Plan: "test.yaml", Project: "Proj", Printer: "Bambu X1C"}, // no Plate
+		{Plan: "test.yaml", Project: "Proj", Plate: "P1"},          // no Printer
 	}
 	for i, req := range cases {
 		if _, err := ops.Next(context.Background(), req); err == nil {

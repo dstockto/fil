@@ -40,7 +40,7 @@ type NotificationConfig struct {
 
 type PrinterConfig struct {
 	Locations  []string `json:"locations"`
-	Type       string   `json:"type,omitempty"`        // "bambu" or "prusa"
+	Type       string   `json:"type,omitempty"` // "bambu" or "prusa"
 	IP         string   `json:"ip,omitempty"`
 	Serial     string   `json:"serial,omitempty"`      // Bambu only
 	AccessCode string   `json:"access_code,omitempty"` // Bambu only
@@ -56,18 +56,18 @@ type Config struct {
 	// own probes. Useful when the server's own hostname isn't resolvable from
 	// inside its network (e.g. mDNS .local names inside Docker). Local-only
 	// (not part of shared config) so each host can override independently.
-	ApiBaseInternal string                      `json:"api_base_internal,omitempty"`
-	LowThresholds   map[string]float64          `json:"low_thresholds"`
-	LowIgnore       []string                    `json:"low_ignore"`
-	Printers        map[string]PrinterConfig    `json:"printers"`
-	Notifications   *NotificationConfig         `json:"notifications,omitempty"`
-	PlansDir        string                      `json:"plans_dir"`
-	ArchiveDir      string                      `json:"archive_dir"`
-	PauseDir        string                      `json:"pause_dir"`
-	PlansServer     string                      `json:"plans_server"`
-	TLSSkipVerify   bool                        `json:"tls_skip_verify"`
-	SharedConfigDir string                      `json:"shared_config_dir"`
-	AssembliesDir   string                      `json:"assemblies_dir"`
+	ApiBaseInternal string                   `json:"api_base_internal,omitempty"`
+	LowThresholds   map[string]float64       `json:"low_thresholds"`
+	LowIgnore       []string                 `json:"low_ignore"`
+	Printers        map[string]PrinterConfig `json:"printers"`
+	Notifications   *NotificationConfig      `json:"notifications,omitempty"`
+	PlansDir        string                   `json:"plans_dir"`
+	ArchiveDir      string                   `json:"archive_dir"`
+	PauseDir        string                   `json:"pause_dir"`
+	PlansServer     string                   `json:"plans_server"`
+	TLSSkipVerify   bool                     `json:"tls_skip_verify"`
+	SharedConfigDir string                   `json:"shared_config_dir"`
+	AssembliesDir   string                   `json:"assemblies_dir"`
 }
 
 // SharedConfig contains only the fields that are synced between machines via the server.

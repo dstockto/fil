@@ -71,4 +71,3 @@ func TestCollectFailableInProgressFiltersByStatusAndPrinter(t *testing.T) {
 		t.Errorf("got plates %v, want [A D]", gotPlates)
 	}
 }
-

@@ -17,39 +17,39 @@ import (
 // fakePlanOps lets handler tests inspect the request the server forwards
 // without needing a real LocalPlanOps + Spoolman + history writer chain.
 type fakePlanOps struct {
-	failCalled     bool
-	failGot        plan.FailRequest
-	failRet        plan.FailResult
-	failErr        error
-	completeCalled bool
-	completeGot    plan.CompleteRequest
-	completeRet    plan.CompleteResult
-	completeErr    error
-	nextCalled     bool
-	nextGot        plan.NextRequest
-	nextRet        plan.NextResult
-	nextErr        error
-	stopCalled     bool
-	stopGot        plan.StopRequest
-	stopErr        error
-	pauseCalled    bool
-	pauseGotName   string
-	pauseErr       error
-	resumeCalled    bool
-	resumeGotName   string
-	resumeErr       error
-	archiveCalled   bool
-	archiveGotName  string
-	archiveErr      error
-	unarchiveCalled bool
+	failCalled       bool
+	failGot          plan.FailRequest
+	failRet          plan.FailResult
+	failErr          error
+	completeCalled   bool
+	completeGot      plan.CompleteRequest
+	completeRet      plan.CompleteResult
+	completeErr      error
+	nextCalled       bool
+	nextGot          plan.NextRequest
+	nextRet          plan.NextResult
+	nextErr          error
+	stopCalled       bool
+	stopGot          plan.StopRequest
+	stopErr          error
+	pauseCalled      bool
+	pauseGotName     string
+	pauseErr         error
+	resumeCalled     bool
+	resumeGotName    string
+	resumeErr        error
+	archiveCalled    bool
+	archiveGotName   string
+	archiveErr       error
+	unarchiveCalled  bool
 	unarchiveGotName string
-	unarchiveErr    error
-	deleteCalled    bool
-	deleteGotName   string
-	deleteErr       error
-	resolveCalled   bool
-	resolveGot      plan.ResolveRequest
-	resolveErr      error
+	unarchiveErr     error
+	deleteCalled     bool
+	deleteGotName    string
+	deleteErr        error
+	resolveCalled    bool
+	resolveGot       plan.ResolveRequest
+	resolveErr       error
 	saveAllCalled    bool
 	saveAllGotName   string
 	saveAllErr       error

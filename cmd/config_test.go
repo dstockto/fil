@@ -200,7 +200,7 @@ func TestToSharedConfig(t *testing.T) {
 
 func TestApplyTo(t *testing.T) {
 	dst := &Config{
-		ApiBase: "http://old:1234",
+		ApiBase:  "http://old:1234",
 		PlansDir: "/local/plans",
 	}
 

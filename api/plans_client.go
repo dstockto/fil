@@ -587,4 +587,3 @@ func (c *PlanServerClient) GetHistory(ctx context.Context, since, until, printer
 	}
 	return entries, nil
 }
-

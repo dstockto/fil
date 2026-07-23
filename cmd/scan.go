@@ -38,16 +38,16 @@ func init() {
 
 // scanSession holds state that persists across scan iterations.
 type scanSession struct {
-	ctx          context.Context
-	port         devices.Port
-	deviceInfo   devices.PortInfo
-	apiClient    *api.Client
-	planClient   *api.PlanServerClient
-	allSpools    []models.FindSpool
-	sticky       *models.FindSpool // current target spool for incoming scans
-	lastUsed     *models.FindSpool // offered at top of picker when dropping stickiness
-	dryRun       bool
-	clientHost   string
+	ctx        context.Context
+	port       devices.Port
+	deviceInfo devices.PortInfo
+	apiClient  *api.Client
+	planClient *api.PlanServerClient
+	allSpools  []models.FindSpool
+	sticky     *models.FindSpool // current target spool for incoming scans
+	lastUsed   *models.FindSpool // offered at top of picker when dropping stickiness
+	dryRun     bool
+	clientHost string
 }
 
 func runScan(cmd *cobra.Command, _ []string) error {
