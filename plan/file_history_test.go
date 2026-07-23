@@ -153,7 +153,7 @@ func TestFileHistoryIgnoresPriorFailures(t *testing.T) {
 		// Earlier failure — must NOT be picked.
 		{
 			Timestamp: "2026-04-30T13:00:00Z",
-			Plan: "old.yaml", Project: "Old", Plate: "P2", Printer: "Bambu X1C",
+			Plan:      "old.yaml", Project: "Old", Plate: "P2", Printer: "Bambu X1C",
 			Failed: true, Cause: "spaghetti",
 		},
 	}

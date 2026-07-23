@@ -14,12 +14,12 @@ import (
 
 // TrayMismatch describes a mismatch between what fil thinks and what the printer reports.
 type TrayMismatch struct {
-	PrinterName string
-	Location    string
-	SlotPos     int // 1-based
-	FilColor    string
-	FilType     string
-	FilName     string
+	PrinterName  string
+	Location     string
+	SlotPos      int // 1-based
+	FilColor     string
+	FilType      string
+	FilName      string
 	PrinterColor string
 	PrinterType  string
 	SpoolID      int
@@ -262,12 +262,12 @@ func printFullTrayView(ctx context.Context, printerStatuses []api.PrinterStatus)
 
 		// First pass: collect row data and find max widths
 		type rowData struct {
-			match        string
-			slotLabel    string
-			filSwatch    string
-			filInfo      string
+			match         string
+			slotLabel     string
+			filSwatch     string
+			filInfo       string
 			printerSwatch string
-			printerInfo  string
+			printerInfo   string
 		}
 		var rows []rowData
 		maxSlot := 0

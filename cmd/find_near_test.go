@@ -9,12 +9,12 @@ import (
 
 func TestParseHexColor(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		want   bool
-		expR   float64
-		expG   float64
-		expB   float64
+		name  string
+		input string
+		want  bool
+		expR  float64
+		expG  float64
+		expB  float64
 	}{
 		{"six-digit with hash", "#ff0000", true, 1, 0, 0},
 		{"six-digit no hash", "00ff00", true, 0, 1, 0},

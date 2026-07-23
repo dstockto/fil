@@ -38,8 +38,8 @@ var locationCapacitySetCmd = &cobra.Command{
 	Long: `Set the capacity for a location. If capacity is not provided, uses the
 current spool count. Use --full to skip the confirmation prompt when
 setting from current count.`,
-	Args:    cobra.RangeArgs(1, 2),
-	RunE:    runLocationCapacitySet,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runLocationCapacitySet,
 }
 
 var locationCapacityShowCmd = &cobra.Command{

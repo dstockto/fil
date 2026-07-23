@@ -32,11 +32,11 @@ type ETAWatcher struct {
 	notifier     *Notifier
 	livePrinters map[string]bool // printers with live connections (skip ETA-based notifications)
 
-	mu        sync.Mutex
-	notified  map[plateKey]notifyState
-	timer     *time.Timer
-	cancel    context.CancelFunc
-	ctx       context.Context
+	mu       sync.Mutex
+	notified map[plateKey]notifyState
+	timer    *time.Timer
+	cancel   context.CancelFunc
+	ctx      context.Context
 }
 
 const reminderDelay = 5 * time.Minute

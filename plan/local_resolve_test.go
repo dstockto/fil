@@ -15,7 +15,7 @@ func resolvableSamplePlan() models.PlanFile {
 			Name: "Proj", Status: "todo",
 			Plates: []models.Plate{
 				{Name: "P1", Status: "todo", Needs: []models.PlateRequirement{
-					{Name: "PLA white", Material: "PLA"}, // index 0
+					{Name: "PLA white", Material: "PLA"},   // index 0
 					{Name: "PETG black", Material: "PETG"}, // index 1
 				}},
 			},
@@ -143,7 +143,7 @@ func TestLocalResolveSaveFailureSurfaces(t *testing.T) {
 func TestLocalResolveRequiresPlanStore(t *testing.T) {
 	ops := NewLocal(newFakeSpoolman(), StaticPrinterLocations{}, nil, &recordingHistory{}, NoopNotifier{})
 	err := ops.Resolve(context.Background(), ResolveRequest{
-		Plan: "test.yaml",
+		Plan:        "test.yaml",
 		Resolutions: []NeedResolution{{Project: "Proj", Plate: "P1", FilamentID: 100}},
 	})
 	if err == nil {

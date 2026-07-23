@@ -18,11 +18,11 @@ type fakeAdapter struct {
 	state PrinterState
 }
 
-func (f *fakeAdapter) Connect() error                              { return nil }
-func (f *fakeAdapter) Close() error                                { return nil }
-func (f *fakeAdapter) Status() PrinterState                        { return f.state }
-func (f *fakeAdapter) PushTray(TrayUpdate) error                   { return nil }
-func (f *fakeAdapter) OnStateChange(func(StateChangeEvent))        {}
+func (f *fakeAdapter) Connect() error                       { return nil }
+func (f *fakeAdapter) Close() error                         { return nil }
+func (f *fakeAdapter) Status() PrinterState                 { return f.state }
+func (f *fakeAdapter) PushTray(TrayUpdate) error            { return nil }
+func (f *fakeAdapter) OnStateChange(func(StateChangeEvent)) {}
 
 func readEntries(t *testing.T, path string) []HistoryEntry {
 	t.Helper()

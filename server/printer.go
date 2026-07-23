@@ -7,16 +7,16 @@ import (
 
 // PrinterState represents the current state of a printer.
 type PrinterState struct {
-	Name          string     `json:"name"`
-	Type          string     `json:"type"`                     // "bambu" or "prusa"
-	State         string     `json:"state"`                    // "idle", "printing", "paused", "finished", "failed", "offline"
-	Progress      int        `json:"progress,omitempty"`       // 0-100
-	RemainingMins int        `json:"remaining_mins,omitempty"` // minutes remaining
-	CurrentFile   string     `json:"current_file,omitempty"`
-	Layer         int        `json:"layer,omitempty"`
-	TotalLayers   int        `json:"total_layers,omitempty"`
-	ActiveTray    int        `json:"active_tray,omitempty"`    // active AMS tray index (-1 if unknown)
-	LastUpdated   time.Time  `json:"last_updated"`
+	Name          string    `json:"name"`
+	Type          string    `json:"type"`                     // "bambu" or "prusa"
+	State         string    `json:"state"`                    // "idle", "printing", "paused", "finished", "failed", "offline"
+	Progress      int       `json:"progress,omitempty"`       // 0-100
+	RemainingMins int       `json:"remaining_mins,omitempty"` // minutes remaining
+	CurrentFile   string    `json:"current_file,omitempty"`
+	Layer         int       `json:"layer,omitempty"`
+	TotalLayers   int       `json:"total_layers,omitempty"`
+	ActiveTray    int       `json:"active_tray,omitempty"` // active AMS tray index (-1 if unknown)
+	LastUpdated   time.Time `json:"last_updated"`
 	// LastFinishedAt records the most recent moment this printer transitioned
 	// into the "finished" state. Used by history logging so a print's wall-clock
 	// finish time reflects when the printer actually finished, not when the user
@@ -24,26 +24,26 @@ type PrinterState struct {
 	// it; intentionally not cleared on RUNNING/IDLE transitions so a stale value
 	// remains usable if the user clears the bed before completing in fil.
 	LastFinishedAt time.Time  `json:"last_finished_at,omitzero"`
-	Trays         []TrayInfo `json:"trays,omitempty"`
+	Trays          []TrayInfo `json:"trays,omitempty"`
 }
 
 // TrayInfo represents the state of a single filament tray/slot as reported by the printer.
 type TrayInfo struct {
-	AmsID        int    `json:"ams_id"`
-	TrayID       int    `json:"tray_id"`
-	Color        string `json:"color,omitempty"`         // hex RRGGBB (no alpha)
-	Type         string `json:"type,omitempty"`          // e.g. "PLA", "Matte PLA"
-	TempMin      int    `json:"temp_min,omitempty"`
-	TempMax      int    `json:"temp_max,omitempty"`
-	InfoIdx      string `json:"info_idx,omitempty"`      // Bambu filament profile ID
+	AmsID   int    `json:"ams_id"`
+	TrayID  int    `json:"tray_id"`
+	Color   string `json:"color,omitempty"` // hex RRGGBB (no alpha)
+	Type    string `json:"type,omitempty"`  // e.g. "PLA", "Matte PLA"
+	TempMin int    `json:"temp_min,omitempty"`
+	TempMax int    `json:"temp_max,omitempty"`
+	InfoIdx string `json:"info_idx,omitempty"` // Bambu filament profile ID
 }
 
 // TrayUpdate contains the fields to push to a printer tray.
 type TrayUpdate struct {
 	AmsID   int    `json:"ams_id"`
 	TrayID  int    `json:"tray_id"`
-	Color   string `json:"color"`              // hex RRGGBBAA
-	Type    string `json:"type"`               // e.g. "PLA", "Matte PLA"
+	Color   string `json:"color"` // hex RRGGBBAA
+	Type    string `json:"type"`  // e.g. "PLA", "Matte PLA"
 	TempMin int    `json:"temp_min"`
 	TempMax int    `json:"temp_max"`
 	InfoIdx string `json:"info_idx,omitempty"` // e.g. "GFL01"
