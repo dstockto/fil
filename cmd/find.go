@@ -25,6 +25,13 @@ import (
 // spoolExport is the machine-readable shape emitted by `fil find --json`.
 // It is intentionally small and stable so other tools can consume it without
 // scraping the human-formatted output.
+//
+// Location and Slot are kept as separate fields rather than pre-joined into the
+// "AMS B:4" label the text renderer prints. Spoolman has no slot model at all —
+// Location is what it actually stores, and the slot is fil's own derivation from
+// the locations_spoolorders setting. Exporting them apart keeps Location a
+// faithful Spoolman value and lets a consumer rebuild the display label (and the
+// `fil move` destination) as location + ":" + slot when it wants one.
 type spoolExport struct {
 	ID         int     `json:"id"`
 	Name       string  `json:"name"`
@@ -32,19 +39,73 @@ type spoolExport struct {
 	Material   string  `json:"material"`
 	ColorHex   string  `json:"color_hex"`
 	Location   string  `json:"location"`
+	Slot       int     `json:"slot,omitempty"`
 	RemainingG float64 `json:"remaining_g"`
 }
 
+// slotIndex maps a printer location to the 1-based slot number of each spool ID
+// listed for it. Non-printer locations are absent, so lookups there yield 0.
+type slotIndex map[string]map[int]int
+
+// buildSlotIndex derives slot numbers from the locations_spoolorders setting,
+// using the same rule the text renderer does: position within the location's
+// ordered ID list, 1-based.
+//
+// The index is keyed by location rather than flattened to a global ID -> slot
+// map, because Spoolman does not reliably remove a spool's ID from its old
+// location's order list when it moves. A flattened map would let a stale entry
+// under one location decide the slot for a spool that actually lives under
+// another, and since Go randomizes map iteration the winner would differ
+// between runs. Keying by location makes slotOf consult only the list belonging
+// to the spool's real location — the same cross-check the text renderer does
+// when it looks the spool up in spoolsByLoc.
+//
+// PadToCapacity is deliberately not applied here. It only appends EmptySlot
+// entries to reach the configured capacity, so it cannot shift the position of
+// any real ID — and the padding exists to render trailing "(empty)" rows, which
+// have no counterpart in the export.
+func buildSlotIndex(orders map[string][]int) slotIndex {
+	idx := make(slotIndex)
+	for loc, ids := range orders {
+		if !IsPrinterLocation(loc) {
+			continue
+		}
+		m := make(map[int]int, len(ids))
+		for i, id := range ids {
+			if id == EmptySlot || id == 0 {
+				continue
+			}
+			// A duplicated ID within one list is drift too; take the first
+			// position so the result does not depend on iteration order.
+			if _, dup := m[id]; !dup {
+				m[id] = i + 1
+			}
+		}
+		idx[loc] = m
+	}
+	return idx
+}
+
+// slotOf returns the 1-based slot for the spool at loc, or 0 when loc is not a
+// printer location or the spool is not listed under it.
+func (s slotIndex) slotOf(loc string, id int) int {
+	return s[loc][id]
+}
+
 // toExport flattens a FindSpool into the export shape. ColorHex is normalized
-// to a leading '#'.
+// to a leading '#'. slot is the spool's 1-based printer slot, or 0 when it is
+// not in a printer location.
 //
 // Every string field is run through models.Sanitize, not just Location: the
 // JSON encoder would escape control characters either way, but a consumer that
 // echoes name or vendor to a terminal would then replay whatever escape
-// sequence Spoolman happened to store. The trade-off is that these values are
-// display-safe rather than byte-identical to Spoolman's, so don't treat an
-// exported location as a key to write back through `fil move`.
-func toExport(s models.FindSpool) spoolExport {
+// sequence Spoolman happened to store. Sanitize only removes control characters
+// and ANSI escapes, so for the plain-text values locations actually hold it is
+// an identity transform and the exported Location stays usable as a key. A
+// location that did contain control characters would differ from the stored
+// value — but it would also be unusable in the text renderer, which sanitizes
+// the same way.
+func toExport(s models.FindSpool, slot int) spoolExport {
 	hex := strings.TrimSpace(models.Sanitize(s.Filament.ColorHex))
 	if hex != "" && !strings.HasPrefix(hex, "#") {
 		hex = "#" + hex
@@ -56,6 +117,7 @@ func toExport(s models.FindSpool) spoolExport {
 		Material:   models.Sanitize(s.Filament.Material),
 		ColorHex:   hex,
 		Location:   models.Sanitize(s.Location),
+		Slot:       slot,
 		RemainingG: s.RemainingWeight,
 	}
 }
@@ -179,6 +241,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 	// appear twice and silently inflate any consumer that counts spools or sums
 	// remaining_g. Emit each spool at most once, keeping first-match order.
 	jsonSeen := map[int]bool{}
+	// ΔE per exported spool, kept across all search terms so --near can be
+	// re-sorted globally at the end. Sorting per term would emit N locally
+	// ranked runs in one flat array, which reads as a single ranking and is not.
+	jsonDeltas := map[int]float64{}
 
 	// All result output goes through out (stdout) and all progress chatter
 	// through msgs (stderr). Nothing in this function may write to os.Stdout
@@ -212,6 +278,9 @@ func runFind(cmd *cobra.Command, args []string) error {
 		}
 		ranks[loc] = m
 	}
+	// Slot numbers come from the same orders map the text renderer uses, so the
+	// exported slot and the printed "AMS B:4" label can never disagree.
+	slots := buildSlotIndex(orders)
 
 	query, filters, err := buildFindQuery(cmd)
 	if err != nil {
@@ -390,7 +459,10 @@ func runFind(cmd *cobra.Command, args []string) error {
 					continue
 				}
 				jsonSeen[s.Id] = true
-				jsonSpools = append(jsonSpools, toExport(s))
+				if useNear {
+					jsonDeltas[s.Id] = deltas[s.Id]
+				}
+				jsonSpools = append(jsonSpools, toExport(s, slots.slotOf(s.Location, s.Id)))
 			}
 			continue
 		}
@@ -584,9 +656,34 @@ func runFind(cmd *cobra.Command, args []string) error {
 		if jsonSpools == nil {
 			jsonSpools = []spoolExport{}
 		}
+		// --near ranks per search term inside the loop above. The text path shows
+		// each term under its own header so the grouping is visible, but a flat
+		// array is read as one ranking, so re-rank globally and apply --limit once
+		// across the whole result rather than once per term.
+		//
+		// Truncating per term first and again here still yields the exact global
+		// top-N, so this is not an approximation: if a spool belongs in the global
+		// top-N then fewer than N spools beat it overall, so fewer than N beat it
+		// within its own term too, so it cannot have been dropped by that term's
+		// truncation. Don't "fix" this by deferring the per-term cut — it would
+		// only grow the intermediate slice.
+		if useNear {
+			sort.SliceStable(jsonSpools, func(i, j int) bool {
+				return jsonDeltas[jsonSpools[i].ID] < jsonDeltas[jsonSpools[j].ID]
+			})
+			if len(jsonSpools) > limit {
+				jsonSpools = jsonSpools[:limit]
+			}
+		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		enc.SetEscapeHTML(false)
+		// Deliberately propagated, unlike the text path's `_, _ = fmt.Fprintf`.
+		// A truncated JSON document is worse than a truncated table: it is
+		// unparseable, and a consumer piping into jq deserves a non-zero exit
+		// rather than a silent partial read. Note a closed stdout pipe (`| head`)
+		// raises SIGPIPE and never reaches here, so this covers real write
+		// failures such as a full disk on a redirect.
 		return enc.Encode(jsonSpools)
 	}
 
@@ -661,7 +758,7 @@ func addFindFlags(cmd *cobra.Command) {
 	cmd.Flags().String("near", "", "sort results by CIEDE2000 ΔE distance from a target hex color (e.g. '#ff5500'); pairs with --limit")
 	cmd.Flags().Int("limit", 10, "when --near or --scan is set, show only the N nearest results (must be positive)")
 	cmd.Flags().Bool("scan", false, "read one color from an attached TD-1 scanner and rank spools by ΔE against it")
-	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, remaining_g) instead of text; a spool matching several search terms is emitted once")
+	cmd.Flags().Bool("json", false, "output matching spools as JSON (id, name, vendor, material, color_hex, location, slot, remaining_g) instead of text; a spool matching several search terms is emitted once")
 }
 
 // readOneScanForFind opens the TD-1, performs the handshake, reads a single
