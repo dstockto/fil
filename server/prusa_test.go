@@ -144,3 +144,81 @@ func TestPrusaLastFinishedAtNotOverwrittenOnRepeat(t *testing.T) {
 		t.Errorf("LastFinishedAt should not move on repeat FINISHED; got %v want %v", p.state.LastFinishedAt, first)
 	}
 }
+
+// TestPrusaLastStartedAtSetOnPrintTransition mirrors the Bambu test: plan
+// history durations must come from when the printer began, not from
+// plate.StartedAt (when the user ran `fil p n`).
+func TestPrusaLastStartedAtSetOnPrintTransition(t *testing.T) {
+	p := NewPrusaAdapter("test", "127.0.0.1", "u", "pw")
+
+	// offline -> finished: first observation after connect, not a start.
+	p.applyStatusUpdate(prusaStatus("FINISHED"))
+	if !p.state.LastStartedAt.IsZero() {
+		t.Fatalf("expected LastStartedAt zero before any print start, got %v", p.state.LastStartedAt)
+	}
+
+	before := time.Now()
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+	after := time.Now()
+
+	if p.state.LastStartedAt.IsZero() {
+		t.Fatal("LastStartedAt should be set on finished->printing")
+	}
+	if p.state.LastStartedAt.Before(before) || p.state.LastStartedAt.After(after) {
+		t.Errorf("LastStartedAt %v not within [%v, %v]", p.state.LastStartedAt, before, after)
+	}
+}
+
+// TestPrusaOfflineToPrintingSuppressed: poll() resets to "offline" on fetch
+// error, so a status arriving mid-print is a first observation. Stamping it
+// would under-report the duration.
+func TestPrusaOfflineToPrintingSuppressed(t *testing.T) {
+	p := NewPrusaAdapter("test", "127.0.0.1", "u", "pw")
+
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+
+	if p.state.State != "printing" {
+		t.Errorf("state should still advance to printing, got %q", p.state.State)
+	}
+	if !p.state.LastStartedAt.IsZero() {
+		t.Errorf("expected LastStartedAt zero on offline->printing first observation, got %v", p.state.LastStartedAt)
+	}
+}
+
+// TestPrusaLastStartedAtSurvivesPauseResume: a resume is not a new print. Note
+// that ATTENTION also normalizes to "paused" on the Prusa, so filament-runout
+// recovery must not restamp the start either.
+func TestPrusaLastStartedAtSurvivesPauseResume(t *testing.T) {
+	p := NewPrusaAdapter("test", "127.0.0.1", "u", "pw")
+
+	p.applyStatusUpdate(prusaStatus("IDLE"))
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+	first := p.state.LastStartedAt
+	if first.IsZero() {
+		t.Fatal("precondition: LastStartedAt should be set after idle->printing")
+	}
+
+	p.applyStatusUpdate(prusaStatus("ATTENTION"))
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+
+	if !p.state.LastStartedAt.Equal(first) {
+		t.Errorf("LastStartedAt should not move on resume; got %v want %v", p.state.LastStartedAt, first)
+	}
+}
+
+// TestPrusaLastStartedAtNotOverwrittenOnRepeat: poll() runs every 30s during a
+// print and must not push the start forward.
+func TestPrusaLastStartedAtNotOverwrittenOnRepeat(t *testing.T) {
+	p := NewPrusaAdapter("test", "127.0.0.1", "u", "pw")
+
+	p.applyStatusUpdate(prusaStatus("IDLE"))
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+	first := p.state.LastStartedAt
+
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+	p.applyStatusUpdate(prusaStatus("PRINTING"))
+
+	if !p.state.LastStartedAt.Equal(first) {
+		t.Errorf("LastStartedAt should not move on repeat PRINTING; got %v want %v", p.state.LastStartedAt, first)
+	}
+}

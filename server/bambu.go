@@ -182,6 +182,14 @@ func (b *BambuAdapter) handleReport(payload []byte) {
 		if b.state.State == "finished" && oldState != "finished" && oldState != "" && oldState != "offline" {
 			b.state.LastFinishedAt = time.Now()
 		}
+		// LastStartedAt tracks real print starts. Same reconnect guard as
+		// above: a report arriving while the printer is already RUNNING is a
+		// first observation, not a start, and stamping it would under-report
+		// the duration by the elapsed time. "paused" is excluded too — a
+		// resume is not a new print.
+		if b.state.State == "printing" && oldState != "printing" && oldState != "paused" && oldState != "" && oldState != "offline" {
+			b.state.LastStartedAt = time.Now()
+		}
 	}
 
 	if pct, ok := printData["mc_percent"].(float64); ok {

@@ -23,8 +23,17 @@ type PrinterState struct {
 	// later ran `fil p c`. Stays valid (non-zero) until the next FINISH overwrites
 	// it; intentionally not cleared on RUNNING/IDLE transitions so a stale value
 	// remains usable if the user clears the bed before completing in fil.
-	LastFinishedAt time.Time  `json:"last_finished_at,omitzero"`
-	Trays          []TrayInfo `json:"trays,omitempty"`
+	LastFinishedAt time.Time `json:"last_finished_at,omitzero"`
+	// LastStartedAt records the most recent moment this printer began a print —
+	// the transition into "printing" from idle/finished/failed. Used by history
+	// logging so a print's duration reflects actual printer time, not the gap
+	// since the user ran `fil p n` (which can be days before the print runs).
+	// Resuming from a pause deliberately does NOT restamp it, so a paused print
+	// still reports its full duration. Like LastFinishedAt, it is not cleared on
+	// later transitions; history logging guards against a stale value by
+	// requiring it to precede the finish time.
+	LastStartedAt time.Time  `json:"last_started_at,omitzero"`
+	Trays         []TrayInfo `json:"trays,omitempty"`
 }
 
 // TrayInfo represents the state of a single filament tray/slot as reported by the printer.

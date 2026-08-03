@@ -99,3 +99,20 @@ func (pm *PrinterManager) LastFinishedAt(name string) (time.Time, bool) {
 	}
 	return t, true
 }
+
+// LastStartedAt returns the most recent time the named printer began a print.
+// The boolean is false if the printer is unknown or has no recorded start yet
+// (e.g. the server was restarted mid-print).
+func (pm *PrinterManager) LastStartedAt(name string) (time.Time, bool) {
+	pm.mu.RLock()
+	adapter, ok := pm.adapters[name]
+	pm.mu.RUnlock()
+	if !ok {
+		return time.Time{}, false
+	}
+	t := adapter.Status().LastStartedAt
+	if t.IsZero() {
+		return time.Time{}, false
+	}
+	return t, true
+}

@@ -183,3 +183,83 @@ func TestBambuLastFinishedAtUpdatedOnSecondFinishAfterRunning(t *testing.T) {
 		t.Errorf("LastFinishedAt should advance on second FINISH; got %v not after %v", b.state.LastFinishedAt, first)
 	}
 }
+
+// TestBambuLastStartedAtSetOnPrintTransition covers the fix for plan history
+// reporting hundreds of hours per print: durations were derived from
+// plate.StartedAt (when the user ran `fil p n`) rather than when the printer
+// actually began.
+func TestBambuLastStartedAtSetOnPrintTransition(t *testing.T) {
+	b := NewBambuAdapter("test", "127.0.0.1", "00M00A000000000", "12345678")
+
+	// offline -> finished: first observation after connect, not a start.
+	b.handleReport(reportPayload("FINISH"))
+	if !b.state.LastStartedAt.IsZero() {
+		t.Fatalf("expected LastStartedAt zero before any print start, got %v", b.state.LastStartedAt)
+	}
+
+	before := time.Now()
+	b.handleReport(reportPayload("RUNNING"))
+	after := time.Now()
+
+	if b.state.LastStartedAt.IsZero() {
+		t.Fatal("LastStartedAt should be set on finished->printing")
+	}
+	if b.state.LastStartedAt.Before(before) || b.state.LastStartedAt.After(after) {
+		t.Errorf("LastStartedAt %v not within [%v, %v]", b.state.LastStartedAt, before, after)
+	}
+}
+
+// TestBambuOfflineToPrintingSuppressed guards the reconnect case: a report
+// arriving while the printer is already mid-print is a first observation, and
+// stamping it would under-report the duration by however long the print had
+// already been running.
+func TestBambuOfflineToPrintingSuppressed(t *testing.T) {
+	b := NewBambuAdapter("test", "127.0.0.1", "00M00A000000000", "12345678")
+
+	b.handleReport(reportPayload("RUNNING"))
+
+	if b.state.State != "printing" {
+		t.Errorf("state should still advance to printing, got %q", b.state.State)
+	}
+	if !b.state.LastStartedAt.IsZero() {
+		t.Errorf("expected LastStartedAt zero on offline->printing first observation, got %v", b.state.LastStartedAt)
+	}
+}
+
+// TestBambuLastStartedAtSurvivesPauseResume: a pause/resume is not a new print,
+// so the original start must stand or the duration loses everything before the
+// pause.
+func TestBambuLastStartedAtSurvivesPauseResume(t *testing.T) {
+	b := NewBambuAdapter("test", "127.0.0.1", "00M00A000000000", "12345678")
+
+	b.handleReport(reportPayload("IDLE"))
+	b.handleReport(reportPayload("RUNNING"))
+	first := b.state.LastStartedAt
+	if first.IsZero() {
+		t.Fatal("precondition: LastStartedAt should be set after idle->printing")
+	}
+
+	b.handleReport(reportPayload("PAUSE"))
+	b.handleReport(reportPayload("RUNNING"))
+
+	if !b.state.LastStartedAt.Equal(first) {
+		t.Errorf("LastStartedAt should not move on resume; got %v want %v", b.state.LastStartedAt, first)
+	}
+}
+
+// TestBambuLastStartedAtNotOverwrittenOnRepeat: repeated RUNNING reports arrive
+// continuously during a print and must not push the start forward.
+func TestBambuLastStartedAtNotOverwrittenOnRepeat(t *testing.T) {
+	b := NewBambuAdapter("test", "127.0.0.1", "00M00A000000000", "12345678")
+
+	b.handleReport(reportPayload("IDLE"))
+	b.handleReport(reportPayload("RUNNING"))
+	first := b.state.LastStartedAt
+
+	b.handleReport(reportPayload("RUNNING"))
+	b.handleReport(reportPayload("RUNNING"))
+
+	if !b.state.LastStartedAt.Equal(first) {
+		t.Errorf("LastStartedAt should not move on repeat RUNNING; got %v want %v", b.state.LastStartedAt, first)
+	}
+}

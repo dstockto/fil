@@ -50,6 +50,24 @@ type PrevPrint struct {
 	Name      string `json:"name,omitempty"`
 }
 
+// printerStartUsable reports whether the printer's LastStartedAt can stand in
+// for the plate's StartedAt.
+//
+// The guard exists because LastStartedAt is not cleared between prints: if the
+// user kicks off the next print before running `fil p c` on the previous one,
+// LastStartedAt has already advanced past the finish we're recording. Falling
+// back to plate.StartedAt is better than emitting a negative duration.
+//
+// With no printer-reported finish (finished is zero), there is nothing to
+// check the start against, so we decline rather than pair a fresh start with a
+// save-time completion.
+func printerStartUsable(started, finished time.Time) bool {
+	if started.IsZero() || finished.IsZero() {
+		return false
+	}
+	return started.Before(finished)
+}
+
 // logCompletions compares old and new plan states and appends history entries
 // for any plates that transitioned to "completed".
 func (s *PlanServer) logCompletions(planName string, oldPlan, newPlan *models.PlanFile) {
@@ -110,9 +128,20 @@ func (s *PlanServer) logCompletions(planName string, oldPlan, newPlan *models.Pl
 			}
 
 			finishedAt := ""
+			var finishedTime time.Time
 			if printer != "" && s.Printers != nil {
 				if t, ok := s.Printers.LastFinishedAt(printer); ok {
 					finishedAt = t.Format(time.RFC3339)
+					finishedTime = t
+				}
+			}
+
+			// Prefer the printer's own start over plate.StartedAt, which is
+			// only the moment the user ran `fil p n` — often days before the
+			// print actually ran, which inflated durations in plan history.
+			if printer != "" && s.Printers != nil {
+				if t, ok := s.Printers.LastStartedAt(printer); ok && printerStartUsable(t, finishedTime) {
+					startedAt = t.Format(time.RFC3339)
 				}
 			}
 

@@ -172,6 +172,14 @@ func (p *PrusaAdapter) applyStatusUpdate(status map[string]interface{}) string {
 			if p.state.State == "finished" && oldState != "finished" && oldState != "" && oldState != "offline" {
 				p.state.LastFinishedAt = time.Now()
 			}
+			// LastStartedAt tracks real print starts. Same reconnect guard as
+			// above: a status arriving while the printer is already PRINTING is
+			// a first observation, not a start, and stamping it would
+			// under-report the duration by the elapsed time. "paused" is
+			// excluded too — a resume is not a new print.
+			if p.state.State == "printing" && oldState != "printing" && oldState != "paused" && oldState != "" && oldState != "offline" {
+				p.state.LastStartedAt = time.Now()
+			}
 		}
 	}
 	return oldState
