@@ -344,13 +344,19 @@ func (r completePlateRef) displayLine() string {
 	return line + suffix
 }
 
-// collectCompletablePlates walks plans and returns non-completed plates,
-// with in-progress plates sorted first.
+// collectCompletablePlates discovers plans and returns their non-completed
+// plates, with in-progress plates sorted first.
 func collectCompletablePlates() ([]completePlateRef, []DiscoveredPlan, error) {
 	plans, err := discoverPlans()
 	if err != nil {
 		return nil, nil, err
 	}
+	return completablePlatesFrom(plans), plans, nil
+}
+
+// completablePlatesFrom flattens every non-completed plate across all plans,
+// with in-progress plates first and discovery order preserved otherwise.
+func completablePlatesFrom(plans []DiscoveredPlan) []completePlateRef {
 	var inProg, other []completePlateRef
 	for di, dp := range plans {
 		for pi, proj := range dp.Plan.Projects {
@@ -379,7 +385,7 @@ func collectCompletablePlates() ([]completePlateRef, []DiscoveredPlan, error) {
 			}
 		}
 	}
-	return append(inProg, other...), plans, nil
+	return append(inProg, other...)
 }
 
 // buildCompletePreview resolves the needs for the selected plate against the

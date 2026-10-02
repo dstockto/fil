@@ -30,26 +30,21 @@ var planCompleteCmd = &cobra.Command{
 		ctx := cmd.Context()
 		apiClient := api.NewClient(Cfg.ApiBase, Cfg.TLSSkipVerify)
 
-		plans, err := discoverPlans()
+		refs, plans, err := collectCompletablePlates()
 		if err != nil {
 			return fmt.Errorf("discover plans: %w", err)
 		}
-		dp, err := selectPlan("Select plan file", plans)
-		if err != nil {
-			return err
-		}
-		planFile := dp.Plan
-
-		projIdx, plateIdx, err := selectPlateToComplete(planFile)
-		if err != nil {
-			return err
-		}
-		if projIdx < 0 {
+		if len(refs) == 0 {
 			fmt.Println("Nothing to complete.")
 			return nil
 		}
-		plate := planFile.Projects[projIdx].Plates[plateIdx]
-		project := planFile.Projects[projIdx]
+		ref, err := selectPlateToComplete(refs)
+		if err != nil {
+			return err
+		}
+		dp := &plans[ref.discoveredIdx]
+		project := dp.Plan.Projects[ref.projectIdx]
+		plate := project.Plates[ref.plateIdx]
 
 		printerName := pickPrinterForComplete(plate)
 		var printerLocations []string
@@ -87,43 +82,10 @@ var planCompleteCmd = &cobra.Command{
 	},
 }
 
-// selectPlateToComplete prompts the user to pick a plate from the plan,
-// preferring in-progress plates at the top. Returns -1 indices when there's
-// nothing to complete.
-func selectPlateToComplete(planFile models.PlanFile) (int, int, error) {
-	type opt struct {
-		projIdx  int
-		plateIdx int
-	}
-	var inProgressOptions, otherOptions []string
-	var inProgressOptMap, otherOptMap []opt
-
-	for i, proj := range planFile.Projects {
-		if proj.Status == "completed" {
-			continue
-		}
-		for j, plate := range proj.Plates {
-			if plate.Status == "completed" {
-				continue
-			}
-			label := fmt.Sprintf("%s / %s", proj.Name, plate.Name)
-			if plate.Status == "in-progress" && plate.Printer != "" {
-				label = fmt.Sprintf("%s / %s (printing on %s)", proj.Name, plate.Name, plate.Printer)
-				inProgressOptions = append(inProgressOptions, label)
-				inProgressOptMap = append(inProgressOptMap, opt{projIdx: i, plateIdx: j})
-			} else {
-				otherOptions = append(otherOptions, label)
-				otherOptMap = append(otherOptMap, opt{projIdx: i, plateIdx: j})
-			}
-		}
-	}
-
-	options := append(inProgressOptions, otherOptions...)
-	optMap := append(inProgressOptMap, otherOptMap...)
-	if len(options) == 0 {
-		return -1, -1, nil
-	}
-
+// selectPlateToComplete prompts the user to pick one plate from every plan.
+// refs come from completablePlatesFrom, so in-progress plates are at the top.
+func selectPlateToComplete(refs []completePlateRef) (completePlateRef, error) {
+	options := completePlateLines(refs)
 	prompt := promptui.Select{
 		Label:             "Which plate did you complete?",
 		Items:             options,
@@ -136,9 +98,9 @@ func selectPlateToComplete(planFile models.PlanFile) (int, int, error) {
 	}
 	idx, _, err := prompt.Run()
 	if err != nil {
-		return 0, 0, err
+		return completePlateRef{}, err
 	}
-	return optMap[idx].projIdx, optMap[idx].plateIdx, nil
+	return refs[idx], nil
 }
 
 // pickPrinterForComplete returns the printer to use for filament-usage
