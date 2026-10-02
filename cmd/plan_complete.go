@@ -115,10 +115,7 @@ func pickPrinterForComplete(plate models.Plate) string {
 	if len(Cfg.Printers) == 0 {
 		return ""
 	}
-	var printerNames []string
-	for name := range Cfg.Printers {
-		printerNames = append(printerNames, name)
-	}
+	printerNames := sortedPrinterNames(Cfg.Printers)
 	if len(printerNames) == 1 {
 		return printerNames[0]
 	}
