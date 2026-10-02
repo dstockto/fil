@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,10 +31,7 @@ var planNextCmd = &cobra.Command{
 		if len(Cfg.Printers) == 0 {
 			return fmt.Errorf("no printers configured in config.json")
 		}
-		var printerNames []string
-		for name := range Cfg.Printers {
-			printerNames = append(printerNames, name)
-		}
+		printerNames := sortedPrinterNames(Cfg.Printers)
 		promptPrinter := promptui.Select{
 			Label:             "Which printer are you using?",
 			Items:             printerNames,
@@ -818,4 +816,15 @@ var planNextCmd = &cobra.Command{
 
 func init() {
 	planCmd.AddCommand(planNextCmd)
+}
+
+// sortedPrinterNames returns the configured printer names in alphabetical
+// order. Ranging over the map directly gives a different order each run.
+func sortedPrinterNames(printers map[string]PrinterConfig) []string {
+	var names []string
+	for name := range printers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
