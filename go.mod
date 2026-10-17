@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/icholy/digest v1.1.0
 	github.com/lucasb-eyer/go-colorful v1.3.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -25,7 +26,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
