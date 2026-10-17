@@ -2,97 +2,53 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/inventory"
 )
 
 // EmptySlot is the sentinel value used in locations_spoolorders to represent
 // an unoccupied slot in a printer location (AMS unit, etc.).
-const EmptySlot = -1
+const EmptySlot = inventory.EmptySlot
+
+// cfgLayout builds the placement layout from the loaded config.
+func cfgLayout() inventory.Layout {
+	var l inventory.Layout
+	if Cfg == nil {
+		return l
+	}
+	for name, p := range Cfg.Printers {
+		l.Printers = append(l.Printers, inventory.Printer{Name: name, Type: p.Type, Locations: p.Locations})
+	}
+	if len(Cfg.LocationCapacity) > 0 {
+		l.Capacity = make(map[string]int, len(Cfg.LocationCapacity))
+		for loc, c := range Cfg.LocationCapacity {
+			l.Capacity[loc] = c.Capacity
+		}
+	}
+	return l
+}
 
 // IsPrinterLocation returns true if the given location is listed under any
 // printer in the config's Printers map.
-func IsPrinterLocation(location string) bool {
-	if Cfg == nil || Cfg.Printers == nil {
-		return false
-	}
-	for _, p := range Cfg.Printers {
-		for _, loc := range p.Locations {
-			if loc == location {
-				return true
-			}
-		}
-	}
-	return false
-}
+func IsPrinterLocation(location string) bool { return cfgLayout().IsPrinterLocation(location) }
 
 // PrinterTrayMapping describes how a location+slot maps to a printer's tray.
-type PrinterTrayMapping struct {
-	PrinterName string
-	PrinterType string
-	AmsID       int // index of the location within the printer's locations list
-	TrayID      int // 0-based slot index within the location
-}
-
-// SupportsTrayPush reports whether this printer type accepts pushed tray
-// metadata updates (filament color/type/etc). Currently only Bambu printers
-// support this; Prusa and any unknown types do not. Update this single
-// function when adding a new printer type that supports tray pushes.
-func (m *PrinterTrayMapping) SupportsTrayPush() bool {
-	if m == nil {
-		return false
-	}
-	return m.PrinterType == "bambu"
-}
+type PrinterTrayMapping = inventory.TrayMapping
 
 // MapLocationToTray maps a location name and 1-based slot position to a printer tray.
 // Returns nil if the location is not a printer location or printer has no type configured.
 func MapLocationToTray(location string, slotPos int) *PrinterTrayMapping {
-	if Cfg == nil || Cfg.Printers == nil {
-		return nil
-	}
-	for name, pCfg := range Cfg.Printers {
-		if pCfg.Type == "" {
-			continue
-		}
-		for locIdx, loc := range pCfg.Locations {
-			if loc == location {
-				return &PrinterTrayMapping{
-					PrinterName: name,
-					PrinterType: pCfg.Type,
-					AmsID:       locIdx,
-					TrayID:      slotPos - 1, // convert 1-based to 0-based
-				}
-			}
-		}
-	}
-	return nil
+	return cfgLayout().MapLocationToTray(location, slotPos)
 }
 
 // PadToCapacity ensures a printer location's spool order array is at least
 // as long as its configured capacity, padding with EmptySlot (-1) sentinels.
-// Non-printer locations and locations without capacity config are returned as-is.
-func PadToCapacity(location string, ids []int) []int {
-	if !IsPrinterLocation(location) {
-		return ids
-	}
-	if Cfg == nil || Cfg.LocationCapacity == nil {
-		return ids
-	}
-	capInfo, ok := Cfg.LocationCapacity[location]
-	if !ok {
-		return ids
-	}
-	for len(ids) < capInfo.Capacity {
-		ids = append(ids, EmptySlot)
-	}
-	return ids
-}
+func PadToCapacity(location string, ids []int) []int { return cfgLayout().PadToCapacity(location, ids) }
 
 // MapToAlias maps a Location alias to a Location name. If it's not found in the map, it returns the original string.
 func MapToAlias(to string) string {
@@ -160,30 +116,7 @@ func ParseDestSpec(input string) (DestSpec, error) {
 // returns it as a map[Location][]spoolID. If not set or empty, returns an
 // empty map.
 func LoadLocationOrders(ctx context.Context, apiClient *api.Client) (map[string][]int, error) {
-	settings, err := apiClient.GetSettings(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch settings: %w", err)
-	}
-	entry, ok := settings["locations_spoolorders"]
-	if !ok {
-		return map[string][]int{}, nil
-	}
-
-	var rawString string
-	if err := json.Unmarshal(entry.Value, &rawString); err != nil {
-		return nil, fmt.Errorf("failed to decode settings value wrapper: %w", err)
-	}
-	if rawString == "" {
-		return map[string][]int{}, nil
-	}
-	var orders map[string][]int
-	if err := json.Unmarshal([]byte(rawString), &orders); err != nil {
-		return nil, fmt.Errorf("failed to parse locations_spoolorders JSON: %w", err)
-	}
-	if orders == nil {
-		orders = map[string][]int{}
-	}
-	return orders, nil
+	return inventory.LoadLocationOrders(ctx, apiClient)
 }
 
 // RemoveFromAllOrders removes id from every Location list to avoid duplicates.
@@ -191,41 +124,11 @@ func LoadLocationOrders(ctx context.Context, apiClient *api.Client) (map[string]
 // positional slot tracking. For non-printer locations, the id is removed and
 // the array collapses.
 func RemoveFromAllOrders(orders map[string][]int, id int) map[string][]int {
-	for loc, ids := range orders {
-		if IsPrinterLocation(loc) {
-			// Replace with sentinel to preserve slot positions
-			for i, v := range ids {
-				if v == id {
-					ids[i] = EmptySlot
-				}
-			}
-			orders[loc] = ids
-		} else {
-			kept := make([]int, 0, len(ids))
-			for _, v := range ids {
-				if v != id {
-					kept = append(kept, v)
-				}
-			}
-			orders[loc] = kept
-		}
-	}
-	return orders
+	return cfgLayout().RemoveFromAllOrders(orders, id)
 }
 
 // InsertAt inserts val at index i (0-based) into slice s, shifting elements to the right.
-func InsertAt(s []int, i int, val int) []int {
-	if i < 0 {
-		i = 0
-	}
-	if i > len(s) {
-		i = len(s)
-	}
-	s = append(s, 0)
-	copy(s[i+1:], s[i:])
-	s[i] = val
-	return s
-}
+func InsertAt(s []int, i int, val int) []int { return inventory.InsertAt(s, i, val) }
 
 // indexOf returns the 0-based index of val in s, or -1 if not found.
 func indexOf(s []int, val int) int {
@@ -239,26 +142,11 @@ func indexOf(s []int, val int) int {
 
 // CountSpools returns the number of actual spool IDs in a location order list,
 // excluding EmptySlot sentinels.
-func CountSpools(ids []int) int {
-	count := 0
-	for _, id := range ids {
-		if id != EmptySlot {
-			count++
-		}
-	}
-	return count
-}
+func CountSpools(ids []int) int { return inventory.CountSpools(ids) }
 
 // FirstEmptySlot returns the 0-based index of the first EmptySlot sentinel in
 // the slice, or -1 if there are no empty slots.
-func FirstEmptySlot(ids []int) int {
-	for i, id := range ids {
-		if id == EmptySlot {
-			return i
-		}
-	}
-	return -1
-}
+func FirstEmptySlot(ids []int) int { return inventory.FirstEmptySlot(ids) }
 
 // RoundAmount rounds a float64 to one decimal place using RoundToEven.
 func RoundAmount(amount float64) float64 {
