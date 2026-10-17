@@ -33,6 +33,8 @@ type PlanServer struct {
 	Watcher         *ETAWatcher
 	Printers        *PrinterManager
 	Notifier        *Notifier
+	// Events feeds GET /events (Server-Sent Events). Nil disables the stream.
+	Events *EventHub
 	// PlanOps runs verbs that mutate Plan state (currently only Fail; more
 	// verbs migrate from cmd/plan_*.go in subsequent PRs). The server uses a
 	// LocalPlanOps under the hood — Remote-Mode CLIs delegate here.
@@ -83,6 +85,7 @@ func (s *PlanServer) Routes() http.Handler {
 		{"POST", "/scan-history", s.handleScanHistoryPost},
 		{"GET", "/scan-history", s.handleScanHistoryGet},
 		{"GET", "/printers", s.handleListPrinters},
+		{"GET", "/events", s.handleEvents},
 		{"POST", "/printers/{name}/push-tray", s.handlePushTray},
 		{"GET", "/version", s.handleVersion},
 		{"GET", "/doctor", s.handleHealth},
