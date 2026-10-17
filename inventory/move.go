@@ -38,9 +38,12 @@ type MoveResult struct {
 	Displaced int // spool bumped from the requested printer slot, or 0
 }
 
-// Move moves one spool the same way `fil move <id> <location>[:slot]` does:
-// it updates locations_spoolorders first (so Spoolman's UI order reflects the
-// move immediately), then the spool's location.
+// Move moves one spool with the placement rules `fil move <id> <location>[:slot]`
+// uses: it updates locations_spoolorders first (so Spoolman's UI order
+// reflects the move immediately), then the spool's location. Location must be
+// the exact Spoolman name; unlike the CLI's argument parsing, no location
+// aliases are resolved. A printer slot must be within the location's capacity
+// (or its current slot count when no capacity is configured).
 //
 // The read-modify-write of locations_spoolorders is not atomic against other
 // writers (another fil CLI, the Spoolman UI); callers in one process should
@@ -49,7 +52,8 @@ func Move(ctx context.Context, sm Spoolman, l Layout, req MoveRequest) (MoveResu
 	if req.SpoolID <= 0 {
 		return MoveResult{}, fmt.Errorf("%w: spool id must be positive", ErrBadRequest)
 	}
-	if strings.TrimSpace(req.Location) == "" {
+	req.Location = strings.TrimSpace(req.Location)
+	if req.Location == "" {
 		return MoveResult{}, fmt.Errorf("%w: location is required", ErrBadRequest)
 	}
 	if req.Slot < 0 {
@@ -69,6 +73,18 @@ func Move(ctx context.Context, sm Spoolman, l Layout, req MoveRequest) (MoveResu
 		orders[loc] = l.PadToCapacity(loc, orders[loc])
 	}
 	orders[req.Location] = l.PadToCapacity(req.Location, orders[req.Location])
+
+	// Place pads a printer list out to the requested slot, so an unbounded
+	// slot would write that many empty slots to Spoolman.
+	if req.Slot > 0 && l.IsPrinterLocation(req.Location) {
+		limit, ok := l.Capacity[req.Location]
+		if !ok {
+			limit = max(len(orders[req.Location]), 1)
+		}
+		if req.Slot > limit {
+			return MoveResult{}, fmt.Errorf("%w: %s has %d slots", ErrBadRequest, req.Location, limit)
+		}
+	}
 
 	orders = l.RemoveFromAllOrders(orders, req.SpoolID)
 	displaced := l.Place(orders, req.SpoolID, req.Location, req.Slot)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -29,9 +30,10 @@ type moveResponse struct {
 	TrayError  string `json:"tray_error,omitempty"`
 }
 
-// handleMoveSpool moves one spool with the same rules as `fil move`, then
-// pushes tray info when the destination is a Bambu AMS slot (what the CLI does
-// through POST /printers/{name}/push-tray).
+// handleMoveSpool moves one spool with fil move's placement rules (exact
+// location names; no alias resolution), then pushes tray info when the
+// destination is a Bambu AMS slot (what the CLI does through
+// POST /printers/{name}/push-tray).
 func (s *PlanServer) handleMoveSpool(w http.ResponseWriter, r *http.Request) {
 	if s.Spoolman == nil {
 		http.Error(w, "spoolman not configured", http.StatusServiceUnavailable)
@@ -49,8 +51,10 @@ func (s *PlanServer) handleMoveSpool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Moves rewrite the whole locations_spoolorders setting; serialize ours.
+	// WithoutCancel: a client hanging up between the order write and the
+	// location write must not leave the two disagreeing.
 	s.moveMu.Lock()
-	res, err := inventory.Move(r.Context(), s.Spoolman, s.Layout, inventory.MoveRequest{SpoolID: id, Location: body.Location, Slot: body.Slot})
+	res, err := inventory.Move(context.WithoutCancel(r.Context()), s.Spoolman, s.Layout, inventory.MoveRequest{SpoolID: id, Location: body.Location, Slot: body.Slot})
 	s.moveMu.Unlock()
 	switch {
 	case errors.Is(err, inventory.ErrBadRequest):

@@ -114,6 +114,46 @@ func TestMoveRejectsBadRequests(t *testing.T) {
 	}
 }
 
+// The endpoint takes slot from the network; Place would pad a printer list
+// out to any slot asked for and write it all to Spoolman.
+func TestMoveRejectsSlotPastCapacity(t *testing.T) {
+	l := testLayout()
+	for _, req := range []MoveRequest{
+		{SpoolID: 194, Location: "AMS A", Slot: 5},
+		{SpoolID: 194, Location: "AMS A", Slot: 1_000_000_000},
+	} {
+		sm := newFake()
+		if _, err := Move(context.Background(), sm, l, req); !errors.Is(err, ErrBadRequest) || len(sm.calls) != 0 {
+			t.Errorf("%+v: err = %v, calls = %v", req, err, sm.calls)
+		}
+	}
+	// Without a configured capacity the current slot count is the limit.
+	delete(l.Capacity, "AMS A")
+	sm := newFake()
+	if _, err := Move(context.Background(), sm, l, MoveRequest{SpoolID: 194, Location: "AMS A", Slot: 5}); !errors.Is(err, ErrBadRequest) {
+		t.Errorf("uncapped slot 5 of 4: err = %v", err)
+	}
+	if _, err := Move(context.Background(), sm, l, MoveRequest{SpoolID: 194, Location: "AMS A", Slot: 4}); err != nil {
+		t.Errorf("uncapped slot 4 of 4: %v", err)
+	}
+	// Shelves clamp a position to the end of the list, so any position is fine.
+	if _, err := Move(context.Background(), newFake(), l, MoveRequest{SpoolID: 194, Location: "Shelf 3C", Slot: 99}); err != nil {
+		t.Errorf("shelf position 99: %v", err)
+	}
+}
+
+func TestMoveTrimsLocation(t *testing.T) {
+	sm := newFake()
+	res, err := Move(context.Background(), sm, testLayout(), MoveRequest{SpoolID: 194, Location: " AMS A ", Slot: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Treated as the printer location (bump), not as a new shelf "AMS A ".
+	if res.To != "AMS A" || res.Displaced != 267 || sm.locations[194] != "AMS A" {
+		t.Errorf("result = %+v, location = %q", res, sm.locations[194])
+	}
+}
+
 func TestMoveUnknownSpool(t *testing.T) {
 	sm := newFake()
 	_, err := Move(context.Background(), sm, testLayout(), MoveRequest{SpoolID: 4242, Location: "AMS A"})

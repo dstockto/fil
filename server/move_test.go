@@ -42,7 +42,10 @@ func (m *memSpoolman) FindSpoolsById(_ context.Context, id int) (*models.FindSpo
 	return s, nil
 }
 
-func (m *memSpoolman) MoveSpool(_ context.Context, id int, to string) error {
+func (m *memSpoolman) MoveSpool(ctx context.Context, id int, to string) error {
+	if err := ctx.Err(); err != nil {
+		return err // a real client's request would be cancelled too
+	}
 	m.locations[id] = to
 	return nil
 }
@@ -162,6 +165,39 @@ func TestMoveSpoolErrors(t *testing.T) {
 				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+// A client that hangs up after sending the body must not leave the slot
+// order written but the spool's location unchanged.
+func TestMoveSpoolFinishesAfterClientDisconnect(t *testing.T) {
+	s, sm, _ := moveServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/api/fil/spools/194/move", strings.NewReader(`{"location":"Shelf 3C"}`)).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, req)
+	if sm.locations[194] != "Shelf 3C" || !contains(sm.orders["Shelf 3C"], 194) {
+		t.Errorf("location = %q, Shelf 3C order = %v; want both updated", sm.locations[194], sm.orders["Shelf 3C"])
+	}
+}
+
+func contains(ids []int, id int) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMoveSpoolSlotPastCapacity(t *testing.T) {
+	s, sm, _ := moveServer(t)
+	if rec, _ := postMove(t, s, "194", `{"location":"AMS A","slot":1000}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	if len(sm.orders["AMS A"]) != 4 || sm.locations[194] != "Shelf 1A" {
+		t.Errorf("wrote anyway: AMS A = %v, location = %q", sm.orders["AMS A"], sm.locations[194])
 	}
 }
 
