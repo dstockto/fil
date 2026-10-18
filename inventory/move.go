@@ -19,8 +19,9 @@ type Spoolman interface {
 	MoveSpool(ctx context.Context, spoolId int, to string) error
 }
 
-// ErrBadRequest marks a move request that can't be carried out as asked.
-var ErrBadRequest = errors.New("bad move request")
+// ErrBadRequest marks a move or archive request that can't be carried out as
+// asked.
+var ErrBadRequest = errors.New("bad request")
 
 // MoveRequest moves one spool. Slot is 1-based; 0 means no slot.
 type MoveRequest struct {

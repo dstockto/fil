@@ -171,7 +171,7 @@ func handshakeTD1(ctx context.Context, p devices.Port) error {
 }
 
 // loop reads scans in a loop, processing each until the user quits or the
-// context is cancelled.
+// context is canceled.
 func (s *scanSession) loop() error {
 	for {
 		// 0 = drain unlimited non-scan lines (display commands, banners, etc).

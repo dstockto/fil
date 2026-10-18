@@ -115,7 +115,7 @@ func runArchive(cmd *cobra.Command, args []string) error {
 					Stdout:    NoBellStdout,
 				}
 				if _, err := prompt.Run(); err != nil {
-					fmt.Println("Archive cancelled.")
+					fmt.Println("Archive canceled.")
 					return nil
 				}
 				confirmed = true
@@ -129,25 +129,13 @@ func runArchive(cmd *cobra.Command, args []string) error {
 		return loadErr
 	}
 
-	// Remove each selected spool ID from all Location lists
+	// Remove each selected spool ID from all Location lists, trimming trailing
+	// empty slots on printer locations that exceed capacity
+	ids := make([]int, 0, len(spools))
 	for _, s := range spools {
-		orders = RemoveFromAllOrders(orders, s.Id)
+		ids = append(ids, s.Id)
 	}
-
-	// Trim trailing empty slots on printer locations that exceed capacity
-	for loc, ids := range orders {
-		if !IsPrinterLocation(loc) {
-			continue
-		}
-		if Cfg != nil && Cfg.LocationCapacity != nil {
-			if lc, ok := Cfg.LocationCapacity[loc]; ok && lc.Capacity > 0 {
-				for len(ids) > lc.Capacity && ids[len(ids)-1] == EmptySlot {
-					ids = ids[:len(ids)-1]
-				}
-				orders[loc] = ids
-			}
-		}
-	}
+	orders = cfgLayout().ArchiveOrders(orders, ids...)
 
 	if dryRun {
 		for _, s := range spools {

@@ -37,9 +37,10 @@ type PlanServer struct {
 	Notifier        *Notifier
 	// Events feeds GET /events (Server-Sent Events). Nil disables the stream.
 	Events *EventHub
-	// Spoolman and Layout back POST /spools/{id}/move; a nil Spoolman
-	// disables it. moveMu serializes this server's moves.
-	Spoolman inventory.Spoolman
+	// Spoolman and Layout back POST /spools/{id}/move and /archive; a nil
+	// Spoolman disables them. moveMu serializes this server's writes to
+	// locations_spoolorders.
+	Spoolman SpoolmanAPI
 	Layout   inventory.Layout
 	moveMu   sync.Mutex
 	// PlanOps runs verbs that mutate Plan state (currently only Fail; more
@@ -94,6 +95,7 @@ func (s *PlanServer) Routes() http.Handler {
 		{"GET", "/printers", s.handleListPrinters},
 		{"GET", "/events", s.handleEvents},
 		{"POST", "/spools/{id}/move", s.handleMoveSpool},
+		{"POST", "/spools/{id}/archive", s.handleArchiveSpool},
 		{"POST", "/printers/{name}/push-tray", s.handlePushTray},
 		{"GET", "/version", s.handleVersion},
 		{"GET", "/doctor", s.handleHealth},

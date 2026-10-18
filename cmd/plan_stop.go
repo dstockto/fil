@@ -106,7 +106,7 @@ var planStopCmd = &cobra.Command{
 			return fmt.Errorf("stop: %w", err)
 		}
 
-		fmt.Printf("Cancelled %s - %s — set back to todo\n", models.Sanitize(selected.projectName), models.Sanitize(selected.plateName))
+		fmt.Printf("Canceled %s - %s — set back to todo\n", models.Sanitize(selected.projectName), models.Sanitize(selected.plateName))
 		return nil
 	},
 }
