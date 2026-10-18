@@ -145,7 +145,7 @@ var planNextCmd = &cobra.Command{
 					}); err != nil {
 						return fmt.Errorf("stop %s/%s: %w", ip.projectName, ip.plateName, err)
 					}
-					fmt.Printf("Cancelled %s - %s — set back to todo\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
+					fmt.Printf("Canceled %s - %s — set back to todo\n", models.Sanitize(ip.projectName), models.Sanitize(ip.plateName))
 				}
 				discovered, _ = discoverPlans()
 				fmt.Println()

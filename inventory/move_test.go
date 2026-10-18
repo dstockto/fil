@@ -52,6 +52,12 @@ func (f *fakeSpoolman) MoveSpool(_ context.Context, id int, to string) error {
 	return nil
 }
 
+func (f *fakeSpoolman) ArchiveSpool(_ context.Context, id int) error {
+	f.calls = append(f.calls, "archive")
+	f.locations[id] = ""
+	return nil
+}
+
 func newFake() *fakeSpoolman {
 	return &fakeSpoolman{
 		orders:    map[string][]int{"Shelf 1A": {52, 53, 194}, "AMS A": {159, 114, 267, 197}},

@@ -69,7 +69,7 @@ func websocketURL(base string) (string, error) {
 	return u.String(), nil
 }
 
-// Run connects and reconnects until ctx is cancelled.
+// Run connects and reconnects until ctx is canceled.
 func (w *SpoolmanWatcher) Run(ctx context.Context) {
 	w.defaults()
 	wsURL, err := websocketURL(w.BaseURL)
@@ -105,7 +105,7 @@ func (w *SpoolmanWatcher) Run(ctx context.Context) {
 	}
 }
 
-// listen reads messages until the connection fails or ctx is cancelled,
+// listen reads messages until the connection fails or ctx is canceled,
 // publishing one inventory event per burst of changes.
 func (w *SpoolmanWatcher) listen(ctx context.Context, conn *websocket.Conn) {
 	deadline := func() time.Time { return time.Now().Add(w.PingEvery * 5 / 2) }

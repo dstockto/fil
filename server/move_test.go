@@ -18,6 +18,7 @@ import (
 type memSpoolman struct {
 	orders    map[string][]int
 	locations map[int]string
+	archived  []int
 }
 
 func (m *memSpoolman) GetSettings(context.Context) (map[string]api.SettingEntry, error) {
@@ -44,9 +45,18 @@ func (m *memSpoolman) FindSpoolsById(_ context.Context, id int) (*models.FindSpo
 
 func (m *memSpoolman) MoveSpool(ctx context.Context, id int, to string) error {
 	if err := ctx.Err(); err != nil {
-		return err // a real client's request would be cancelled too
+		return err // a real client's request would be canceled too
 	}
 	m.locations[id] = to
+	return nil
+}
+
+func (m *memSpoolman) ArchiveSpool(ctx context.Context, id int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.archived = append(m.archived, id)
+	m.locations[id] = ""
 	return nil
 }
 

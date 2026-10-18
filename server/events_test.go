@@ -80,7 +80,7 @@ func TestEventHubCancelStopsDelivery(t *testing.T) {
 
 	h.Publish(Event{Name: EventInventory})
 	if _, ok := <-ch; ok {
-		t.Error("cancelled subscriber received an event")
+		t.Error("canceled subscriber received an event")
 	}
 }
 

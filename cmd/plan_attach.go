@@ -82,7 +82,7 @@ var planAttachCmd = &cobra.Command{
 				}
 				_, err := confirmPrompt.Run()
 				if err != nil {
-					fmt.Println("Cancelled.")
+					fmt.Println("Canceled.")
 					return nil
 				}
 				pdfPath = pdfs[0]
