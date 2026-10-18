@@ -256,8 +256,11 @@ var serveCmd = &cobra.Command{
 		}
 		var spoolman plan.Spoolman
 		if spoolBase != "" {
-			spoolman = api.NewClient(spoolBase, Cfg.TLSSkipVerify)
+			client := api.NewClient(spoolBase, Cfg.TLSSkipVerify)
+			spoolman = client
+			s.Spoolman = client // POST /spools/{id}/move
 		}
+		s.Layout = cfgLayout()
 		printerLocs := plan.StaticPrinterLocations{}
 		for name, p := range Cfg.Printers {
 			printerLocs[name] = p.Locations

@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/dstockto/fil/api"
+	"github.com/dstockto/fil/inventory"
 	"github.com/dstockto/fil/models"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -264,13 +264,13 @@ func runMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply moves to orders in-memory
+	layout := cfgLayout()
 	for _, m := range moves {
 		if m.err != nil || m.spoolId <= 0 {
 			continue
 		}
 
 		destLoc := m.dest.Location
-		destIsPrinter := IsPrinterLocation(destLoc)
 
 		// Snapshot before state for destination and source locations
 		snapshotLocation(destLoc)
@@ -280,60 +280,16 @@ func runMove(cmd *cobra.Command, args []string) error {
 
 		// Remove ID from all lists to avoid duplicates.
 		// For printer locations this replaces the ID with EmptySlot.
-		orders = RemoveFromAllOrders(orders, m.spoolId)
+		orders = layout.RemoveFromAllOrders(orders, m.spoolId)
 
-		// Insert/append into destination
-		list := orders[destLoc]
-		if destIsPrinter {
-			if m.dest.hasPos {
-				p := m.dest.pos
-				if p < 1 {
-					p = 1
-				}
-				idx := p - 1
-				if idx >= len(list) {
-					// Extend to fit the requested slot
-					for len(list) <= idx {
-						list = append(list, EmptySlot)
-					}
-				}
-				occupant := list[idx]
-				if occupant == EmptySlot {
-					// Slot is empty — just place the spool
-					list[idx] = m.spoolId
-				} else {
-					// Slot is occupied — replace and append occupant to end
-					list[idx] = m.spoolId
-					list = append(list, occupant)
-					fmt.Printf("  Spool #%d displaced from slot %d to end of %s\n", occupant, p, destLoc)
-				}
-			} else {
-				// No slot specified — find first empty slot
-				emptyIdx := FirstEmptySlot(list)
-				if emptyIdx >= 0 {
-					list[emptyIdx] = m.spoolId
-				} else {
-					// No empty slots — append (exceeding capacity)
-					list = append(list, m.spoolId)
-				}
-			}
-		} else {
-			// Non-printer location: original insert/append behavior
-			if m.dest.hasPos {
-				p := m.dest.pos
-				if p < 1 {
-					p = 1
-				}
-				if p > len(list)+1 {
-					p = len(list) + 1
-				}
-				idx := p - 1
-				list = InsertAt(list, idx, m.spoolId)
-			} else {
-				list = append(list, m.spoolId)
-			}
+		// Insert into the destination (shared rules: inventory.Layout.Place).
+		pos := 0
+		if m.dest.hasPos {
+			pos = max(m.dest.pos, 1)
 		}
-		orders[destLoc] = list
+		if displaced := layout.Place(orders, m.spoolId, destLoc, pos); displaced != 0 {
+			fmt.Printf("  Spool #%d displaced from slot %d to end of %s\n", displaced, pos, destLoc)
+		}
 	}
 
 	// Execute
@@ -450,38 +406,23 @@ func pushTrayUpdate(m move, orders map[string][]int) {
 		return
 	}
 
-	mapping := MapLocationToTray(destLoc, slotPos)
-	if !mapping.SupportsTrayPush() {
+	// No tray for non-Bambu printers or for a spool listed past the last slot.
+	mapping := cfgLayout().TrayFor(destLoc, slotPos)
+	if mapping == nil {
 		return
 	}
 
-	// Build color string with alpha (RRGGBBFF)
-	colorHex := strings.TrimPrefix(m.spool.Filament.ColorHex, "#")
-	if len(colorHex) == 6 {
-		colorHex += "FF"
-	}
-
-	// Look up the filament profile for accurate tray_info_idx
-	trayType := m.spool.Filament.Material
-	profile := LookupFilamentProfile(m.spool.Filament.Vendor.Name, m.spool.Filament.Name, m.spool.Filament.Material)
-	if profile != nil {
-		trayType = profile.TrayType
-	}
-
-	infoIdx := ""
-	if profile != nil {
-		infoIdx = profile.InfoIdx
-	}
+	tray := inventory.TrayPushFor(m.spool)
 
 	client := api.NewPlanServerClient(Cfg.PlansServer, version, Cfg.TLSSkipVerify)
 	err := client.PushTray(context.Background(), mapping.PrinterName, api.TrayPushRequest{
 		AmsID:   mapping.AmsID,
 		TrayID:  mapping.TrayID,
-		Color:   strings.ToUpper(colorHex),
-		Type:    trayType,
-		TempMin: 190,
-		TempMax: 240,
-		InfoIdx: infoIdx,
+		Color:   tray.Color,
+		Type:    tray.Type,
+		TempMin: tray.TempMin,
+		TempMax: tray.TempMax,
+		InfoIdx: tray.InfoIdx,
 	})
 	if err != nil {
 		fmt.Printf("  Note: could not update printer tray: %v\n", err)

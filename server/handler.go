@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/dstockto/fil/inventory"
 	"github.com/dstockto/fil/models"
 	"github.com/dstockto/fil/plan"
 	"gopkg.in/yaml.v3"
@@ -35,6 +37,11 @@ type PlanServer struct {
 	Notifier        *Notifier
 	// Events feeds GET /events (Server-Sent Events). Nil disables the stream.
 	Events *EventHub
+	// Spoolman and Layout back POST /spools/{id}/move; a nil Spoolman
+	// disables it. moveMu serializes this server's moves.
+	Spoolman inventory.Spoolman
+	Layout   inventory.Layout
+	moveMu   sync.Mutex
 	// PlanOps runs verbs that mutate Plan state (currently only Fail; more
 	// verbs migrate from cmd/plan_*.go in subsequent PRs). The server uses a
 	// LocalPlanOps under the hood — Remote-Mode CLIs delegate here.
@@ -86,6 +93,7 @@ func (s *PlanServer) Routes() http.Handler {
 		{"GET", "/scan-history", s.handleScanHistoryGet},
 		{"GET", "/printers", s.handleListPrinters},
 		{"GET", "/events", s.handleEvents},
+		{"POST", "/spools/{id}/move", s.handleMoveSpool},
 		{"POST", "/printers/{name}/push-tray", s.handlePushTray},
 		{"GET", "/version", s.handleVersion},
 		{"GET", "/doctor", s.handleHealth},
