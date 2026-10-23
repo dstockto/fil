@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -162,8 +163,10 @@ func (h *EventHub) WatchPrinters(ctx context.Context, pm *PrinterManager, interv
 }
 
 // plansSnapshot is a key for change detection over the plan directories: each
-// file's directory, name, size and modification time. A missing directory
-// (no pause or archive dir configured) just contributes nothing.
+// plan file's directory, name, size and modification time. Only .yaml/.yml
+// files count, as in the plan list; the plans dir also holds the scan and
+// print history logs, which change without any plan changing. A missing
+// directory (no pause or archive dir configured) just contributes nothing.
 func plansSnapshot(dirs []string) string {
 	var b strings.Builder
 	for _, dir := range dirs {
@@ -177,6 +180,9 @@ func plansSnapshot(dirs []string) string {
 		for _, e := range entries {
 			info, err := e.Info()
 			if err != nil || info.IsDir() {
+				continue
+			}
+			if ext := strings.ToLower(filepath.Ext(e.Name())); ext != ".yaml" && ext != ".yml" {
 				continue
 			}
 			fmt.Fprintf(&b, "%s/%s %d %d\n", dir, e.Name(), info.Size(), info.ModTime().UnixNano())

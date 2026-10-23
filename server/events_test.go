@@ -282,8 +282,9 @@ func TestWatchPlansPublishesOnFileChanges(t *testing.T) {
 	go h.WatchPlans(t.Context(), []string{plans, "", archive}, 10*time.Millisecond)
 	expectNoEvent(t, ch, 50*time.Millisecond)
 
-	// A plate step rewrites the plan file (whole, so one poll can't see it
-	// half written).
+	// A plate step rewrites the plan file. Written via rename here so a poll
+	// can't land mid-write; real saves overwrite in place, where such a poll
+	// adds one more (harmless) event.
 	tmp := filepath.Join(t.TempDir(), "a.yaml")
 	if err := os.WriteFile(tmp, []byte("name: a\nstatus: in-progress\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -293,6 +294,14 @@ func TestWatchPlansPublishesOnFileChanges(t *testing.T) {
 	}
 	if ev := recvEvent(t, ch); ev.Name != EventPlans {
 		t.Fatalf("got event %q, want %q", ev.Name, EventPlans)
+	}
+	expectNoEvent(t, ch, 50*time.Millisecond)
+
+	// The history logs share the plans dir but aren't plans.
+	for _, name := range []string{"scan-history.jsonl", "print-history.jsonl", ".fil-doctor-1"} {
+		if err := os.WriteFile(filepath.Join(plans, name), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	expectNoEvent(t, ch, 50*time.Millisecond)
 
