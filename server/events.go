@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,6 +18,7 @@ import (
 const (
 	EventPrinters  = "printers"  // data: the same []PrinterState as GET /printers, sorted by name
 	EventInventory = "inventory" // data: InventoryChange
+	EventPlans     = "plans"     // data: {}; a plan file was added, changed, moved or removed
 )
 
 // eventBuffer is how many undelivered events a subscriber may queue. A
@@ -154,6 +158,58 @@ func (h *EventHub) WatchPrinters(ctx context.Context, pm *PrinterManager, interv
 			}
 			last = key
 			h.Publish(Event{Name: EventPrinters, Data: data})
+		}
+	}
+}
+
+// plansSnapshot is a key for change detection over the plan directories: each
+// plan file's directory, name, size and modification time. Only .yaml/.yml
+// files count, as in the plan list; the plans dir also holds the scan and
+// print history logs, which change without any plan changing. A missing
+// directory (no pause or archive dir configured) just contributes nothing.
+func plansSnapshot(dirs []string) string {
+	var b strings.Builder
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			info, err := e.Info()
+			if err != nil || info.IsDir() {
+				continue
+			}
+			if ext := strings.ToLower(filepath.Ext(e.Name())); ext != ".yaml" && ext != ".yml" {
+				continue
+			}
+			fmt.Fprintf(&b, "%s/%s %d %d\n", dir, e.Name(), info.Size(), info.ModTime().UnixNano())
+		}
+	}
+	return b.String()
+}
+
+// WatchPlans publishes a "plans" event whenever a file in the plan
+// directories is added, changed, moved or removed. It watches the files
+// rather than fil serve's own handlers so plans saved by a CLI working on the
+// directories directly are seen too.
+func (h *EventHub) WatchPlans(ctx context.Context, dirs []string, interval time.Duration) {
+	last := plansSnapshot(dirs)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			key := plansSnapshot(dirs)
+			if key == last {
+				continue
+			}
+			last = key
+			h.Publish(Event{Name: EventPlans, Data: []byte(`{}`)})
 		}
 	}
 }

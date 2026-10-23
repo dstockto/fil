@@ -274,12 +274,14 @@ var serveCmd = &cobra.Command{
 		)
 
 		// Live change stream (GET /api/fil/events): printer state from the
-		// adapters, inventory changes from Spoolman's websocket — so clients
-		// see moves made from any fil CLI or the Spoolman UI.
+		// adapters, inventory changes from Spoolman's websocket, plan changes
+		// from the plan directories — so clients see moves and plan steps
+		// made from any fil CLI or the Spoolman UI.
 		s.Events = server.NewEventHub()
 		if s.Printers != nil {
 			go s.Events.WatchPrinters(ctx, s.Printers, 2*time.Second)
 		}
+		go s.Events.WatchPlans(ctx, []string{Cfg.PlansDir, Cfg.PauseDir, Cfg.ArchiveDir}, 2*time.Second)
 		if spoolBase != "" {
 			watcher := &server.SpoolmanWatcher{BaseURL: spoolBase, TLSSkipVerify: Cfg.TLSSkipVerify, Hub: s.Events}
 			go watcher.Run(ctx)
