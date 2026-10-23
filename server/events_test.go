@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -267,4 +269,48 @@ func TestHandleEventsDisabled(t *testing.T) {
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)
 	}
+}
+
+func TestWatchPlansPublishesOnFileChanges(t *testing.T) {
+	plans, archive := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(plans, "a.yaml"), []byte("name: a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := NewEventHub()
+	ch, cancel := h.Subscribe()
+	defer cancel()
+	go h.WatchPlans(t.Context(), []string{plans, "", archive}, 10*time.Millisecond)
+	expectNoEvent(t, ch, 50*time.Millisecond)
+
+	// A plate step rewrites the plan file (whole, so one poll can't see it
+	// half written).
+	tmp := filepath.Join(t.TempDir(), "a.yaml")
+	if err := os.WriteFile(tmp, []byte("name: a\nstatus: in-progress\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, filepath.Join(plans, "a.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if ev := recvEvent(t, ch); ev.Name != EventPlans {
+		t.Fatalf("got event %q, want %q", ev.Name, EventPlans)
+	}
+	expectNoEvent(t, ch, 50*time.Millisecond)
+
+	// Archiving moves it to another watched directory.
+	if err := os.Rename(filepath.Join(plans, "a.yaml"), filepath.Join(archive, "a.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if ev := recvEvent(t, ch); ev.Name != EventPlans {
+		t.Fatalf("got event %q, want %q", ev.Name, EventPlans)
+	}
+	// A poll between the two directory reads can see the file in both, which
+	// is one more (harmless) event; after that it goes quiet.
+	select {
+	case ev := <-ch:
+		if ev.Name != EventPlans {
+			t.Fatalf("got event %q, want %q", ev.Name, EventPlans)
+		}
+	case <-time.After(50 * time.Millisecond):
+	}
+	expectNoEvent(t, ch, 50*time.Millisecond)
 }
